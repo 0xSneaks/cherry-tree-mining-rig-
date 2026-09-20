@@ -1,0 +1,29 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Anchor
+.anchor/
+test-ledger/
+/idl
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env*.local
+!.env.example
+
+# Keys — never commit a keypair
+*.json.key
+/keys
+wallet-*.json
+
+# OS
+.DS_Store

@@ -1,0 +1,11 @@
+[package]
+name = "rigs-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Pure integer reward-accounting engine for SOL RIGS. No Solana dependencies."
+license = "MIT"
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"

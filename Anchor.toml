@@ -1,0 +1,28 @@
+# Anchor CLI config.
+#
+# The program and its full test suite build and run WITHOUT the Anchor CLI or
+# the SBF toolchain — see README "Testing without the SBF toolchain". This file
+# is here for deploying to devnet once `anchor` and `solana` are installed.
+
+[toolchain]
+anchor_version = "0.31.2"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+sol_rigs = "By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH"
+
+[programs.devnet]
+sol_rigs = "By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "cargo test --workspace"

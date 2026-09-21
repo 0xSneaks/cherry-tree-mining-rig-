@@ -131,6 +131,23 @@ else
   pass "no wallet addresses hardcoded in Rust source (only the program ID)"
 fi
 
+# ---------------------------------------------------------------- CSP
+echo
+echo "--> content security policy"
+if grep -q "connect-src 'self' https: wss:" app/next.config.ts 2>/dev/null; then
+  bad "connect-src is still a wildcard"
+else
+  pass "connect-src is an allowlist, not a wildcard"
+fi
+if grep -q "unsafe-eval" app/next.config.ts && ! grep -q "dev ? \[\"'unsafe-eval'\"\]" app/next.config.ts; then
+  warn "'unsafe-eval' may be reachable in production — check app/next.config.ts"
+else
+  pass "'unsafe-eval' is dev-only"
+fi
+for d in "object-src 'none'" "frame-src 'none'" "base-uri 'self'"; do
+  grep -q "$d" app/next.config.ts && pass "CSP sets $d" || bad "CSP is missing $d"
+done
+
 # ---------------------------------------------------------------- SBF
 echo
 echo "--> SBF / Anchor toolchain"

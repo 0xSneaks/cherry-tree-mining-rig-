@@ -7,6 +7,7 @@
  * It does NOT fund rewards. Funding is a separate, explicit step.
  */
 import {
+  assertConnectedToDevnet,
   chainTime,
   connect,
   fail,
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
 
   const pdas = await programAddresses();
   const chain = connect(rpcUrl);
+  await assertConnectedToDevnet(chain);
 
   section('about to initialize');
   row('program ID', PROGRAM_ID);

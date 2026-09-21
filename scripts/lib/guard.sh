@@ -12,16 +12,31 @@ green() { printf '\033[32m%s\033[0m\n' "$*"; }
 dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
 die()   { red "FAIL: $*"; exit 1; }
 
-# Load .env if present. Never echo its contents.
+# Load .env if present. Never echo its contents, and never `source` it:
+# sourcing would execute whatever is in the file, and an env file should be
+# data. Parsed line by line into the environment instead.
 load_env() {
-  local root="$1"
-  if [[ -f "$root/.env" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "$root/.env"
-    set +a
-    dim "loaded $root/.env"
-  fi
+  local root="$1" line key value
+  [[ -f "$root/.env" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"          # strip leading space
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"             # strip trailing space
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    value="${value%\"}"; value="${value#\"}"         # strip matched quotes
+    value="${value%\'}"; value="${value#\'}"
+    # Anything already exported wins, so a one-off override on the command
+    # line is not silently replaced by the file.
+    [[ -n "${!key:-}" ]] || export "$key=$value"
+  done < "$root/.env"
+
+  dim "loaded $root/.env"
 }
 
 # Hard-fail on anything that is not devnet. This is the single place that
@@ -53,6 +68,34 @@ require_devnet() {
         ;;
     esac
   fi
+}
+
+# Genesis hashes are the chain's own identity. `require_devnet` trusts the
+# operator's label; this verifies it against the chain that answered.
+DEVNET_GENESIS="EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+MAINNET_GENESIS="5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+TESTNET_GENESIS="4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY"
+
+assert_connected_to_devnet() {
+  local rpc="$1" hash
+  hash=$(solana genesis-hash --url "$rpc" 2>/dev/null) \
+    || die "could not read the genesis hash from $rpc"
+
+  case "$hash" in
+    "$DEVNET_GENESIS")
+      green "  genesis $hash (devnet, verified on chain)" ;;
+    "$MAINNET_GENESIS")
+      die "MAINNET IS REFUSED. $rpc answered with the mainnet-beta genesis hash." ;;
+    "$TESTNET_GENESIS")
+      die "$rpc is testnet, not devnet. Refusing." ;;
+    *)
+      case "$rpc" in
+        *localhost*|*127.0.0.1*)
+          dim "  genesis $hash (local validator) — allowed" ;;
+        *)
+          die "$rpc is not devnet: genesis $hash does not match $DEVNET_GENESIS." ;;
+      esac ;;
+  esac
 }
 
 require_cmd() {

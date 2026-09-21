@@ -8,6 +8,7 @@
  *   ./scripts/devnet-fund.sh <amountSol> <durationSeconds>
  */
 import {
+  assertConnectedToDevnet,
   chainTime,
   connect,
   fail,
@@ -81,6 +82,7 @@ async function main(): Promise<void> {
 
   const pdas = await programAddresses();
   const chain = connect(rpcUrl);
+  await assertConnectedToDevnet(chain);
 
   const before = await fetchConfig(chain);
   if (!before) fail('the program is not initialised on this cluster. Run devnet-init first.');

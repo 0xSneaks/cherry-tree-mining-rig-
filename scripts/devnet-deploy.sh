@@ -47,6 +47,13 @@ echo "  keypair file  $ANCHOR_WALLET"
 echo "  public key    $DEPLOYER"
 
 solana config set --url "$SOLANA_RPC_URL" --keypair "$ANCHOR_WALLET" >/dev/null
+
+echo
+echo "--> cluster identity (asked of the chain, not the config)"
+assert_connected_to_devnet "$SOLANA_RPC_URL"
+
+echo
+echo "--> deployer balance"
 BALANCE=$(solana balance "$DEPLOYER" --url "$SOLANA_RPC_URL")
 echo "  devnet balance $BALANCE"
 

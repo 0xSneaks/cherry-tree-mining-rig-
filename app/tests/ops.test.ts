@@ -21,7 +21,14 @@ import {
   fundRewardsInstruction,
   initializeInstruction,
 } from '../scripts/ops/admin-instructions';
-import { loadSigner, requireDevnet, requireEnv, sol } from '../scripts/ops/common';
+import {
+  GENESIS_HASH,
+  assertGenesisIsDevnet,
+  loadSigner,
+  requireDevnet,
+  requireEnv,
+  sol,
+} from '../scripts/ops/common';
 
 const PDAS: ProgramAddresses = {
   config: address('11111111111111111111111111111112'),
@@ -82,6 +89,52 @@ describe('requireDevnet', () => {
   it('accepts a local validator', () => {
     set('devnet', 'http://127.0.0.1:8899');
     expect(requireDevnet().rpcUrl).toBe('http://127.0.0.1:8899');
+  });
+});
+
+/**
+ * `requireDevnet` trusts the operator's label. This is the check that does
+ * not: the chain states its own identity and anything but devnet is refused.
+ */
+describe('assertGenesisIsDevnet', () => {
+  const RPC = 'https://rpc.example.com';
+
+  it('accepts the real devnet genesis hash', () => {
+    expect(() => assertGenesisIsDevnet(GENESIS_HASH.devnet, RPC)).not.toThrow();
+  });
+
+  it('refuses mainnet even when the URL says nothing about it', () => {
+    expect(() => assertGenesisIsDevnet(GENESIS_HASH.mainnet, RPC)).toThrow(
+      /MAINNET IS REFUSED/,
+    );
+  });
+
+  it('refuses testnet', () => {
+    expect(() => assertGenesisIsDevnet(GENESIS_HASH.testnet, RPC)).toThrow(/testnet/);
+  });
+
+  it('refuses a cluster it cannot identify', () => {
+    expect(() => assertGenesisIsDevnet('SomeOtherGenesisHash11111111111111111111111', RPC))
+      .toThrow(/not devnet/);
+  });
+
+  it('allows a local validator, which has a fresh genesis every run', () => {
+    for (const url of ['http://127.0.0.1:8899', 'http://localhost:8899']) {
+      expect(() =>
+        assertGenesisIsDevnet('FreshLocalGenesisHash1111111111111111111111', url),
+      ).not.toThrow();
+    }
+  });
+
+  it('refuses mainnet even from a local URL — value beats convenience', () => {
+    expect(() => assertGenesisIsDevnet(GENESIS_HASH.mainnet, 'http://127.0.0.1:8899'))
+      .toThrow(/MAINNET IS REFUSED/);
+  });
+
+  it('pins the three well-known genesis hashes', () => {
+    expect(GENESIS_HASH.devnet).toBe('EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG');
+    expect(GENESIS_HASH.mainnet).toBe('5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d');
+    expect(GENESIS_HASH.testnet).toBe('4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY');
   });
 });
 

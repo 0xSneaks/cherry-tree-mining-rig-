@@ -3,7 +3,7 @@
  *
  * Covers spec §12.20 / §12.21 / §12.26 and the copy constraints in §2 and §10.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { stubCherryHost, stubRpc, WALLET } from './fixtures';
 
@@ -278,5 +278,107 @@ test.describe('wallet address plumbing', () => {
     // The miner PDA is derived from the host-supplied wallet, so the wallet
     // itself shows up in the balance lookup.
     expect(requests.join('\n')).toContain(WALLET);
+  });
+});
+
+test.describe('content security policy', () => {
+  test('the production CSP is an allowlist, not a wildcard', async ({ page }) => {
+    const response = await page.goto('/');
+    const csp = response!.headers()['content-security-policy'] ?? '';
+
+    // A page holding a live wallet session must not be able to reach
+    // arbitrary origins, so `connect-src` names the RPC rather than `https:`.
+    expect(csp).toContain("connect-src 'self' https://api.devnet.solana.com");
+    // The bare scheme wildcards `https:` / `wss:` — not the `https://host`
+    // entries, which are exactly what an allowlist is made of.
+    expect(csp).not.toMatch(/connect-src[^;]*\shttps:(?!\/)/);
+    expect(csp).not.toMatch(/connect-src[^;]*\swss:(?!\/)/);
+
+    // eval belongs to the dev server only.
+    expect(csp).not.toContain("'unsafe-eval'");
+
+    for (const directive of [
+      "default-src 'self'",
+      "object-src 'none'",
+      "frame-src 'none'",
+      "form-action 'none'",
+      "base-uri 'self'",
+      'upgrade-insecure-requests',
+    ]) {
+      expect(csp, directive).toContain(directive);
+    }
+  });
+});
+
+/**
+ * A tightened CSP is only worth having if the app still runs under it. These
+ * drive the real flows with a violation listener attached, so a directive
+ * that breaks the page fails the suite here instead of silently degrading
+ * the app in production.
+ */
+test.describe('CSP is survivable', () => {
+  async function watchViolations(page: Page): Promise<() => Promise<string[]>> {
+    const fromConsole: string[] = [];
+    await page.addInitScript(() => {
+      (window as unknown as { __csp: string[] }).__csp = [];
+      document.addEventListener('securitypolicyviolation', (e) => {
+        (window as unknown as { __csp: string[] }).__csp.push(
+          `${e.violatedDirective} blocked ${e.blockedURI}`,
+        );
+      });
+    });
+    page.on('console', (m) => {
+      const t = m.text();
+      if (/Content Security Policy|Refused to/i.test(t)) fromConsole.push(t);
+    });
+    return async () => [
+      ...fromConsole,
+      ...(await page.evaluate(
+        () => (window as unknown as { __csp?: string[] }).__csp ?? [],
+      )),
+    ];
+  }
+
+  test('the embedded path raises none, including on interaction', async ({ page }) => {
+    const collect = await watchViolations(page);
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+
+    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.locator('.readout-value--hero')).toBeVisible();
+    // A blocked event handler would only surface once something is clicked.
+    await page.getByRole('button', { name: '25', exact: true }).click();
+    await expect(page.getByRole('button', { name: /Hire 25 rigs/i })).toBeVisible();
+
+    expect(await collect()).toEqual([]);
+  });
+
+  test('the standalone path raises none', async ({ page }) => {
+    const collect = await watchViolations(page);
+    await stubRpc(page, { withMiner: false });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'THE CHERRY TREE' })).toBeVisible();
+    expect(await collect()).toEqual([]);
+  });
+
+  test('the blink card raises none', async ({ page }) => {
+    const collect = await watchViolations(page);
+    await page.goto('/result?kind=compound&rigs=54&compounded=12');
+    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    expect(await collect()).toEqual([]);
+  });
+
+  test('the RPC origin the app actually calls is permitted', async ({ page }) => {
+    const collect = await watchViolations(page);
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    // Reaching first paint with real rig data means the RPC call went out
+    // and was not blocked by connect-src.
+    await expect(
+      page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
+    ).toHaveText('42RIGS');
+    expect(await collect()).toEqual([]);
   });
 });

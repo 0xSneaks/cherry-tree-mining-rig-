@@ -1,9 +1,15 @@
 # THE CHERRY TREE — devnet runbook
 
-Devnet only. Every script in `scripts/` refuses mainnet outright, in two
-independent places: the shell guard in `scripts/lib/guard.sh` and again inside
-the TypeScript in `app/scripts/ops/common.ts`. Neither can be bypassed by
-going around the other.
+Devnet only, enforced three ways:
+
+1. The shell guard in `scripts/lib/guard.sh` refuses any `SOLANA_CLUSTER`
+   that is not devnet, and any RPC URL that looks like mainnet.
+2. The same check runs again inside `app/scripts/ops/common.ts`, so going
+   around the shell does not bypass it.
+3. Before the first transaction, every script asks the **chain** for its
+   genesis hash and refuses anything but devnet's. A label in an env file is
+   a claim; the genesis hash is the fact — a private or proxied RPC that says
+   nothing about itself still cannot be mainnet.
 
 No script in this repository funds rewards on its own. Deploy does not,
 initialize does not. Funding is always a separate, deliberate command.
@@ -223,15 +229,50 @@ in V1.
 
 ---
 
-## Pre-mainnet hardening
+## Content Security Policy
 
-Tracked, not done, and deliberately out of scope for devnet readiness:
+Tightened and, more importantly, **verified survivable**: four browser tests
+drive the embedded path, the standalone path, the blink card and an
+interaction with a `securitypolicyviolation` listener attached, so a
+directive that breaks the app fails the suite rather than degrading
+production quietly.
 
-- **CSP.** `script-src` currently allows `'unsafe-inline' 'unsafe-eval'` and
-  `connect-src` allows `https: wss:`. Next.js needs a nonce-based CSP to drop
-  `unsafe-inline`, and `connect-src` should be narrowed to the specific RPC
-  and JWKS origins once those are fixed. Tightening it needs iteration against
-  a real Cherry host, so it is not worth destabilising devnet readiness for.
+What ships:
+
+```
+default-src 'self'; script-src 'self' 'unsafe-inline';
+style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;
+connect-src 'self' <your RPC> <its wss> https://chat.cherry.fun;
+frame-ancestors 'self' https://chat.cherry.fun;
+frame-src 'none'; object-src 'none'; form-action 'none';
+base-uri 'self'; worker-src 'self'; manifest-src 'self';
+upgrade-insecure-requests
+```
+
+`connect-src` is **derived from configuration**, not a wildcard: it is built
+from `NEXT_PUBLIC_SOLANA_RPC_URL`, `CHERRY_JWKS_URL` and the Cherry host at
+build time. This matters more here than in most apps because the page holds a
+live wallet session — a blanket `https:` would let any injected script
+exfiltrate anywhere. `CSP_EXTRA_CONNECT_SRC` takes a space-separated list of
+additional origins for deployments behind a proxy; it is still an allowlist.
+
+`'unsafe-eval'` is gone from production and kept only for the dev server,
+which needs it for React Refresh.
+
+### Still open: `script-src 'unsafe-inline'`
+
+Next.js inlines a bootstrap script into every document. Removing
+`'unsafe-inline'` means serving that script under a per-request nonce, which
+forces **every page to render dynamically** — and the embedded path's
+prerendered first paint is the single thing the spec is most insistent about.
+The trade is not worth making for devnet. Before mainnet, either accept
+dynamic rendering for `/` or move the bootstrap behind a hash-based
+`script-src`.
+
+## Other pre-mainnet hardening
+
+Tracked, not done, deliberately out of scope for devnet readiness:
+
 - Rate-limit and attribution stores are in-memory; a deployment needs real ones.
 - A program upgrade-authority policy (multisig or burn) before any mainnet
   consideration.

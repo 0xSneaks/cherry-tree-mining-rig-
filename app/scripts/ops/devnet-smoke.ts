@@ -23,6 +23,7 @@
  *   ./scripts/devnet-smoke.sh [rigsA] [rigsB] [waitSeconds]
  */
 import {
+  assertConnectedToDevnet,
   chainTime,
   connect,
   fail,
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
 
   const pdas = await programAddresses();
   const chain = connect(rpcUrl);
+  await assertConnectedToDevnet(chain);
 
   const config0 = await fetchConfig(chain);
   if (!config0) fail('the program is not initialised on this cluster. Run devnet-init first.');
@@ -248,18 +250,40 @@ async function main(): Promise<void> {
     console.log(`        ${detail}`);
   };
 
-  // PROOF 1b — the arithmetic. The emission that accrued while only A held
-  // rigs is `accumulatorBeforeB * rigsA / PRECISION`. If B had been credited
-  // any of it, B's earnings would exceed what its own watermark allows.
+  // PROOF 1b — the counterfactual, in exact lamports.
+  //
+  // Had B's watermark started at zero instead of at the live accumulator, B
+  // would have been handed the whole pre-existing slice: `rigsB * accumulator
+  // at purchase / PRECISION`. Everything B has actually realised is compared
+  // against that figure, so the gap is the emission B was correctly denied
+  // rather than an identity that holds by construction.
+  const counterfactualForB = (rigsB * accumulatorBeforeB) / PRECISION;
+  const bAccountedFor = compoundedB + minerB.pendingRewards;
   const bMaxEarnable =
     (minerB.rigs * (config.rewardPerRigStored - minerB0.rewardPerRigPaid)) / PRECISION;
-  const bAccountedFor = compoundedB + minerB.pendingRewards;
+
+  row('B would have received', `${counterfactualForB} lamports if credited from zero`);
+  row('B actually realised', `${bAccountedFor} lamports`);
+  row('B denied (pre-ownership)', `${counterfactualForB} lamports`);
+
   assert(
     'wallet B received NO reward attributable to time before it owned rigs',
-    bAccountedFor <= bMaxEarnable && minerB0.pendingRewards === 0n,
-    `B's watermark at purchase = ${minerB0.rewardPerRigPaid} = accumulator then (${accumulatorBeforeB}); ` +
-      `everything B has since realised (${bAccountedFor}) is within the ` +
-      `${bMaxEarnable} its own watermark permits. A accrued alone for ${elapsedAAlone}s.`,
+    minerB0.pendingRewards === 0n &&
+      minerB0.rewardPerRigPaid === accumulatorBeforeB &&
+      bAccountedFor <= bMaxEarnable,
+    `B's watermark at purchase was ${minerB0.rewardPerRigPaid}, exactly the accumulator ` +
+      `then (${accumulatorBeforeB}), and its ore bin was empty. A had accrued alone for ` +
+      `${elapsedAAlone}s, worth ${counterfactualForB} lamports to ${rigsB} rigs — none of ` +
+      `which reached B. Everything B has realised (${bAccountedFor}) sits within the ` +
+      `${bMaxEarnable} its own watermark permits.`,
+  );
+
+  // The same slice, seen from A's side: A is the only wallet that could have
+  // earned during that window, so nothing went missing either.
+  assert(
+    'the pre-B emission was real and went to wallet A, not nowhere',
+    accumulatorBeforeB > 0n && claimedA > 0n,
+    `accumulator advanced to ${accumulatorBeforeB} before B arrived; A claimed ${claimedA} lamports`,
   );
 
   // PROOF 2 — the fully-funded invariant, in exact lamports.

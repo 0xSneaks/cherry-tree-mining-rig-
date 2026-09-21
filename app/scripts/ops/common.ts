@@ -85,6 +85,50 @@ export function requireDevnet(): { cluster: string; rpcUrl: string } {
   return { cluster, rpcUrl };
 }
 
+/**
+ * Genesis hashes, which are the chain's own identity. A label in an env file
+ * is a claim; this is the fact.
+ */
+export const GENESIS_HASH = {
+  devnet: 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',
+  mainnet: '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d',
+  testnet: '4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY',
+} as const;
+
+/**
+ * The cluster check that cannot be fooled by a mislabeled RPC URL.
+ *
+ * `requireDevnet` trusts what the operator wrote down. This verifies it
+ * against the chain that actually answered, so an endpoint that says nothing
+ * about itself — a private or proxied RPC — still cannot be mainnet.
+ *
+ * A local validator has a fresh genesis hash every run and is allowed
+ * through, since it holds nothing of value by definition.
+ */
+export function assertGenesisIsDevnet(hash: string, rpcUrl: string): void {
+  if (hash === GENESIS_HASH.devnet) return;
+
+  if (hash === GENESIS_HASH.mainnet) {
+    fail(
+      `MAINNET IS REFUSED. ${rpcUrl} answered with the mainnet-beta genesis hash ` +
+        `(${hash}), whatever SOLANA_CLUSTER says.`,
+    );
+  }
+  if (hash === GENESIS_HASH.testnet) {
+    fail(`${rpcUrl} is testnet (genesis ${hash}), not devnet. Refusing.`);
+  }
+
+  if (/localhost|127\.0\.0\.1/.test(rpcUrl)) {
+    console.log(`  note: local validator (genesis ${hash}) — allowed.`);
+    return;
+  }
+
+  fail(
+    `${rpcUrl} is not devnet: genesis hash ${hash} does not match ` +
+      `${GENESIS_HASH.devnet}. Refusing to touch an unidentified cluster.`,
+  );
+}
+
 export function requireEnv(name: string, hint: string): string {
   const v = process.env[name];
   if (!v) fail(`${name} is not set. ${hint}`);
@@ -192,6 +236,16 @@ export async function vaultDistributable(chain: Chain, address: Address): Promis
   const balance = BigInt(acc.value.lamports);
   const reserve = BigInt(rent);
   return balance > reserve ? balance - reserve : 0n;
+}
+
+/**
+ * Ask the connected chain which chain it is, and refuse anything but devnet.
+ * Called before the first transaction of every operations script.
+ */
+export async function assertConnectedToDevnet(chain: Chain): Promise<void> {
+  const hash = await chain.rpc.getGenesisHash().send();
+  assertGenesisIsDevnet(hash, chain.rpcUrl);
+  row('genesis hash', `${hash} (devnet, verified on chain)`);
 }
 
 export async function chainTime(chain: Chain): Promise<bigint> {

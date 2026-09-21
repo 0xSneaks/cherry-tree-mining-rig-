@@ -1,4 +1,4 @@
-//! Acceptance tests 1-13 and 19 from SOL RIGS spec §12.
+//! Acceptance tests 1-13 and 19 from THE CHERRY TREE spec §12.
 //!
 //! Each test is named for the numbered requirement it discharges.
 

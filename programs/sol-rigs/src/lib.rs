@@ -1,4 +1,9 @@
-//! # SOL RIGS
+//! # THE CHERRY TREE
+//!
+//! Product name: THE CHERRY TREE. The crate, program module and PDA seeds
+//! keep their original technical names (`sol_rigs`, `rigs-engine`) so the
+//! program ID, instruction discriminators and account discriminators are
+//! unchanged by the rebrand.
 //!
 //! A Solana-native mining **simulation** with SOL-denominated rewards.
 //!

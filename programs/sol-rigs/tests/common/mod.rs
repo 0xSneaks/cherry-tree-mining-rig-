@@ -1,4 +1,4 @@
-//! `solana-program-test` harness for the SOL RIGS program.
+//! `solana-program-test` harness for THE CHERRY TREE program.
 //!
 //! Runs the real Anchor entrypoint against a real runtime: real account
 //! validation, real PDAs, real lamport movement. No SBF toolchain required.

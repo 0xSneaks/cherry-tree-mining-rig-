@@ -1,6 +1,6 @@
 //! # rigs-engine
 //!
-//! The money logic of SOL RIGS, with **zero Solana dependencies**.
+//! The money logic of THE CHERRY TREE, with **zero Solana dependencies**.
 //!
 //! Everything that decides how many lamports a user is owed lives here so it
 //! can be exercised by an ordinary `cargo test` on the host target. The Anchor

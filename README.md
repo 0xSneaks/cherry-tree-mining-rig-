@@ -1,7 +1,15 @@
-# SOL RIGS
+# THE CHERRY TREE
 
 A Solana-native mining **simulation** with SOL-denominated rewards, built as a
 [Cherry](https://chat.cherry.fun) mini-app.
+
+> **Naming.** The product is **THE CHERRY TREE**; "Cherry Tree" in prose and
+> `cherry-tree` as a slug. The crate and program keep their original technical
+> names (`rigs-engine`, `sol-rigs`, the `sol_rigs` module), as do the PDA seed
+> strings and the program ID — renaming those would change every instruction
+> and account discriminator and invalidate the deployed address for no
+> user-visible benefit. `app/src/lib/brand.ts` is the single source of the
+> display name.
 
 Buy rigs → rigs produce hashpower → SOL accrues → claim it or compound it into
 more rigs. The classic ROI-miner loop with the payout engine replaced by a
@@ -38,10 +46,14 @@ accounting across a full buy → accrue → claim cycle.
 ## Layout
 
 ```
-crates/rigs-engine/     all money logic — zero Solana dependencies
-programs/sol-rigs/      the Anchor program: account validation + lamport moves
-app/                    Next.js mini-app (Cherry embed + standalone fallback)
-scripts/verify.sh       everything that can be checked without a live chain
+crates/rigs-engine/         all money logic — zero Solana dependencies
+programs/sol-rigs/          the Anchor program: account validation + lamport moves
+app/                        Next.js mini-app (Cherry embed + standalone fallback)
+app/scripts/ops/            devnet operations: initialize, fund, smoke test
+scripts/verify.sh           everything checkable without a live chain
+scripts/verify-deploy-ready.sh  pre-deploy gate: IDs, branding, secrets, scripts
+scripts/devnet-*.sh         devnet-only deploy / init / fund / smoke entrypoints
+DEPLOY.md                   the runbook
 ```
 
 The split is the point. Every decision about how many lamports someone is owed
@@ -91,6 +103,25 @@ path in V1 is `withdraw_fees`, and it is seed-bound to the fee vault.
 
 ---
 
+## Deploying
+
+See **[DEPLOY.md](DEPLOY.md)** for the full runbook. In short:
+
+```bash
+cp .env.example .env && $EDITOR .env   # paths and public keys only, never key material
+./scripts/verify.sh                    # full test pipeline
+./scripts/verify-deploy-ready.sh       # pre-deploy gate
+./scripts/devnet-deploy.sh             # real SBF build + deploy
+./scripts/devnet-init.sh               # config + three vault PDAs, verified back
+./scripts/devnet-fund.sh 0.5 3600      # explicit, never automatic
+./scripts/devnet-smoke.sh 5 5 45       # two wallets, real elapsed time
+```
+
+Every one of those scripts refuses mainnet, in the shell guard and again in
+the TypeScript. Deployer/authority and reward funder are independent roles,
+supplied as a keypair **path** and a **public key** respectively; neither is
+hardcoded anywhere.
+
 ## Building and testing
 
 ```bash
@@ -127,7 +158,7 @@ trusted to stay in step by hand:
 
 ## Test coverage against the spec's acceptance list
 
-**114 tests: 35 Rust, 57 vitest, 22 Playwright.**
+**132 tests: 35 Rust, 75 vitest, 22 Playwright.**
 
 | # | Requirement | Covered by |
 |---|---|---|

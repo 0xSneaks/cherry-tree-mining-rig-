@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from 'next';
 
+import { PRODUCT_DESCRIPTION, PRODUCT_NAME } from '../lib/brand';
+
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SOL RIGS',
-  description:
-    'A Solana-native mining simulation with SOL-denominated rewards, paid from a funded reward vault.',
+  title: PRODUCT_NAME,
+  description: PRODUCT_DESCRIPTION,
 };
 
 /** Mobile first, 390 × 844, inside the Cherry WebView on Seeker. */

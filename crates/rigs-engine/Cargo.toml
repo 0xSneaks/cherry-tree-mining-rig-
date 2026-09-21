@@ -2,7 +2,7 @@
 name = "rigs-engine"
 version = "0.1.0"
 edition = "2021"
-description = "Pure integer reward-accounting engine for SOL RIGS. No Solana dependencies."
+description = "Pure integer reward-accounting engine for THE CHERRY TREE. No Solana dependencies."
 license = "MIT"
 
 [dependencies]

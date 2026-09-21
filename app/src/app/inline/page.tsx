@@ -12,6 +12,7 @@
  * Keyed by `payload.message_id`, so a given blink message always renders the
  * same snapshot.
  */
+import { PRODUCT_NAME } from '../../lib/brand';
 import { ResultCard, type ResultParams } from '../../components/ResultCard';
 import { verifySession } from '../../lib/server/launchToken';
 
@@ -60,7 +61,7 @@ function Expired({ reason }: { reason: string }) {
     <main className="shell" style={{ maxWidth: 480 }}>
       <div className="panel">
         <p className="section-title" style={{ marginBottom: 6 }}>
-          SOL RIGS
+          {PRODUCT_NAME}
         </p>
         <p className="note">{reason}</p>
       </div>

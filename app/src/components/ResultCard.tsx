@@ -4,6 +4,7 @@
  * Shared blinks are read-only snapshots — no callback buttons, no bot behind
  * them. Nothing here reads the chain, and nothing here is interactive.
  */
+import { PRODUCT_NAME } from '../lib/brand';
 import { formatCount, formatSol } from '../lib/format';
 
 export type ResultParams = {
@@ -32,7 +33,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
       ? `+${formatCount(compounded)} RIGS`
       : claimed !== null
         ? `${formatSol(claimed, 4)} SOL CLAIMED`
-        : 'SOL RIGS';
+        : PRODUCT_NAME;
 
   return (
     <main
@@ -41,7 +42,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
     >
       <div className="panel">
         <p className="section-title" style={{ marginBottom: 6 }}>
-          SOL RIGS · MINE REPORT
+          {PRODUCT_NAME} · MINE REPORT
         </p>
         <p
           style={{

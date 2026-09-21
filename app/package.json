@@ -1,6 +1,7 @@
 {
-  "name": "sol-rigs-app",
+  "name": "cherry-tree-app",
   "version": "0.1.0",
+  "description": "THE CHERRY TREE — Solana-native mining simulation, as a Cherry mini-app.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -27,6 +28,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vitest": "^5.0.1"
   }

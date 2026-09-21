@@ -14,16 +14,29 @@ out/
 dist/
 *.tsbuildinfo
 
-# Env
+# Env — never commit a filled-in env file.
 .env
 .env.local
 .env*.local
 !.env.example
 
-# Keys — never commit a keypair
-*.json.key
-/keys
-wallet-*.json
-
-# OS
-.DS_Store
+# ---------------------------------------------------------------------------
+# Wallet / key material.
+#
+# Deliberately NOT a blanket `*.json` ignore: the repo legitimately tracks
+# package.json, tsconfig.json, lockfiles and test fixtures. These patterns
+# target keypair files by name and location instead.
+# ---------------------------------------------------------------------------
+/keys/
+/wallets/
+/.secrets/
+*keypair*.json
+*-authority.json
+*-funder.json
+*-deployer.json
+smoke-*.json
+id.json
+*.pem
+*.key
+*.seed
+*.mnemonic

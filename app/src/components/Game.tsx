@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Address } from '@solana/kit';
 
 import { buyRigs, claim, compound } from '../lib/actions';
+import { PRODUCT_NAME, PRODUCT_NAME_SHORT } from '../lib/brand';
 import { rpc } from '../lib/chain';
 import { formatCount, formatSol } from '../lib/format';
 import { estimatedOutputPerDay } from '../lib/program/accrual';
@@ -167,7 +168,7 @@ export function Game({ host }: { host: Host }) {
   return (
     <main className="shell">
       <header className="masthead">
-        <h1 className="wordmark">SOL RIGS</h1>
+        <h1 className="wordmark">{PRODUCT_NAME}</h1>
         {host.mode === 'standalone' ? host.connectSlot : null}
       </header>
       <div className="subhead">
@@ -194,7 +195,7 @@ export function Game({ host }: { host: Host }) {
         </div>
       ) : !config || !snap ? (
         <div className="banner banner--alert">
-          The SOL RIGS program is not initialised on this cluster yet.
+          {PRODUCT_NAME_SHORT} program is not initialised on this cluster yet.
         </div>
       ) : (
         <>
@@ -281,7 +282,7 @@ export function Game({ host }: { host: Host }) {
           />
 
           <p className="disclosure">
-            SOL RIGS is a mining <em>simulation</em>. SOL is not proof-of-work
+            {PRODUCT_NAME_SHORT} is a mining <em>simulation</em>. SOL is not proof-of-work
             mined: rigs do not participate in Solana consensus and do not
             cryptographically produce new SOL. Rewards are paid from a funded
             reward vault, are denominated in SOL, and vary with total hashpower

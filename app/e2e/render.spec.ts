@@ -24,7 +24,7 @@ test.describe('standalone path', () => {
     await stubRpc(page, { withMiner: false });
     await page.goto('/');
 
-    await expect(page.getByRole('heading', { name: 'SOL RIGS' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'THE CHERRY TREE' })).toBeVisible();
     // Outside Cherry, the connect affordance is required.
     await expect(page.getByText(/No Solana wallet detected|Connect/i)).toBeVisible();
     // Room UI is hidden with no room context.
@@ -65,8 +65,11 @@ test.describe('embedded path', () => {
 
   test('shows room context and the room leaderboard section', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Mine Shaft')).toBeVisible();
+    // The room name appears twice — in the header line and in the leaderboard
+    // heading — so both are asserted explicitly rather than by substring.
+    await expect(page.getByText('Mine Shaft · 412 members')).toBeVisible();
     await expect(page.getByText('This room')).toBeVisible();
+    await expect(page.getByText('Top miners in Mine Shaft')).toBeVisible();
   });
 
   /** §10 — the buy quote adds up on screen, fee included and disclosed. */
@@ -240,7 +243,7 @@ test.describe('blink result card', () => {
 
   test('ignores junk params rather than rendering them', async ({ page }) => {
     await page.goto('/result?rigs=<script>alert(1)</script>&compounded=NaN');
-    await expect(page.getByText('SOL RIGS · MINE REPORT')).toBeVisible();
+    await expect(page.getByText('THE CHERRY TREE · MINE REPORT')).toBeVisible();
     const text = await page.locator('body').innerText();
     expect(text).not.toContain('alert(1)');
     expect(text).not.toContain('NaN');

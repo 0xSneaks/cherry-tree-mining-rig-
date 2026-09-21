@@ -13,6 +13,7 @@ import {
   useCherryEnvironment,
 } from '@cherrydotfun/miniapp-sdk/react';
 
+import { PRODUCT_NAME } from '../lib/brand';
 import { EmbeddedGame } from './EmbeddedGame';
 import { StandaloneGame } from './StandaloneGame';
 
@@ -29,7 +30,7 @@ export function GameRoot() {
   if (!mounted) {
     return (
       <main className="shell">
-        <h1 className="wordmark">SOL RIGS</h1>
+        <h1 className="wordmark">{PRODUCT_NAME}</h1>
         <p className="note" style={{ marginTop: 10 }}>
           Spinning up the shaft…
         </p>

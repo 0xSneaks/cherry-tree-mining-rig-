@@ -2,7 +2,7 @@
 name = "sol-rigs"
 version = "0.1.0"
 edition = "2021"
-description = "SOL RIGS — fully-funded Solana mining simulation with SOL-denominated rewards"
+description = "THE CHERRY TREE — fully-funded Solana mining simulation with SOL-denominated rewards"
 license = "MIT"
 
 [lib]

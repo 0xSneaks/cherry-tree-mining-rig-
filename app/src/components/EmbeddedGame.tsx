@@ -17,6 +17,7 @@ import {
   useCherryWallet,
 } from '@cherrydotfun/miniapp-sdk/react';
 
+import { PRODUCT_NAME } from '../lib/brand';
 import { cherrySigner } from '../lib/signer';
 import { Game, type Host } from './Game';
 import type { SharePayload } from './ShareCard';
@@ -101,7 +102,7 @@ export function EmbeddedGame() {
   if (!isReady) {
     return (
       <main className="shell">
-        <h1 className="wordmark">SOL RIGS</h1>
+        <h1 className="wordmark">{PRODUCT_NAME}</h1>
         <p className="note" style={{ marginTop: 10 }}>
           Spinning up the shaft…
         </p>

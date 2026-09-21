@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Everything that can be verified without a live chain or a real Cherry host.
-# Run this before claiming anything works.
+# THE CHERRY TREE — everything verifiable without a live chain or a real
+# Cherry host. Run this before claiming anything works.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 echo "==> cargo fmt --check"
 cargo fmt --all -- --check
@@ -18,7 +19,7 @@ cargo clippy --workspace --all-targets 2>&1 \
   && { echo "!! clippy findings in first-party code"; exit 1; }
 echo "    clean"
 
-echo "==> cargo test (program + engine, 35 tests)"
+echo "==> cargo test (program + engine)"
 RUST_LOG=error cargo test --workspace
 
 echo "==> regenerating cross-language fixtures"
@@ -33,20 +34,26 @@ git diff --quiet app/tests/fixtures || {
   echo "!! fixtures drifted — the TypeScript port is out of step with the engine"
   exit 1
 }
+echo "    fixtures agree"
 
-cd app
+cd "$ROOT/app"
+
 echo "==> tsc --noEmit"
 npx tsc --noEmit
 
-echo "==> vitest (57 tests)"
-npx vitest run
+echo "==> vitest"
+npx vitest run 2>&1 | tail -12
 
 echo "==> next build"
-npx next build
+npx next build 2>&1 | tail -3
 
-echo "==> playwright (22 tests)"
+echo "==> playwright"
 PLAYWRIGHT_CHROMIUM_PATH="${PLAYWRIGHT_CHROMIUM_PATH:-/opt/pw-browsers/chromium}" \
-  npx playwright test
+  npx playwright test 2>&1 | tail -6
+
+cd "$ROOT"
+echo "==> deploy readiness"
+./scripts/verify-deploy-ready.sh
 
 echo
 echo "All green."

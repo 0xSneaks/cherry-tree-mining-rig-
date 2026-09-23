@@ -134,19 +134,44 @@ fi
 # ---------------------------------------------------------------- CSP
 echo
 echo "--> content security policy"
-if grep -q "connect-src 'self' https: wss:" app/next.config.ts 2>/dev/null; then
+# One source, two consumers: next.config.ts serves these as response headers
+# on a Node deployment, and scripts/emit-static-headers.ts writes the same
+# policy into the static export's _headers file.
+CSP_SRC="app/src/lib/csp.ts"
+[[ -f "$CSP_SRC" ]] || bad "$CSP_SRC is missing — the CSP has no single source"
+
+if grep -q "connect-src 'self' https: wss:" "$CSP_SRC" 2>/dev/null; then
   bad "connect-src is still a wildcard"
 else
   pass "connect-src is an allowlist, not a wildcard"
 fi
-if grep -q "unsafe-eval" app/next.config.ts && ! grep -q "dev ? \[\"'unsafe-eval'\"\]" app/next.config.ts; then
-  warn "'unsafe-eval' may be reachable in production — check app/next.config.ts"
+if grep -q "unsafe-eval" "$CSP_SRC" && ! grep -q "dev ? \[\"'unsafe-eval'\"\]" "$CSP_SRC"; then
+  warn "'unsafe-eval' may be reachable in production — check $CSP_SRC"
 else
   pass "'unsafe-eval' is dev-only"
 fi
 for d in "object-src 'none'" "frame-src 'none'" "base-uri 'self'"; do
-  grep -q "$d" app/next.config.ts && pass "CSP sets $d" || bad "CSP is missing $d"
+  grep -q "$d" "$CSP_SRC" && pass "CSP sets $d" || bad "CSP is missing $d"
 done
+# frame-ancestors is what lets Cherry web frame the app, and X-Frame-Options
+# is what would silently block it. Both are asserted, not assumed.
+grep -q "frame-ancestors 'self' \${CHERRY_HOST}" "$CSP_SRC" \
+  && pass "CSP sets frame-ancestors for the Cherry host" \
+  || bad "CSP is missing frame-ancestors for chat.cherry.fun"
+# Matches the header being SET (a header key, or a setHeader call) rather than
+# merely mentioned — the source comments explain at length why it is absent.
+if grep -rniE "(key:[[:space:]]*['\"]x-frame-options|setHeader\([[:space:]]*['\"]x-frame-options|['\"]x-frame-options['\"][[:space:]]*:)" \
+     app/src app/next.config.ts app/scripts 2>/dev/null | grep -q .; then
+  bad "X-Frame-Options is set somewhere — it silently blocks the Cherry web iframe"
+else
+  pass "X-Frame-Options is never set"
+fi
+# A static host cannot send headers from Next, so the export ships _headers.
+if [[ -f app/scripts/emit-static-headers.ts ]]; then
+  pass "static export emits _headers for a header-capable host"
+else
+  bad "app/scripts/emit-static-headers.ts is missing — a static host would send no CSP"
+fi
 
 # ---------------------------------------------------------------- SBF
 echo

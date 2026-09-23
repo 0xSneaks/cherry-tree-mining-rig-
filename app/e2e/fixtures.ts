@@ -254,3 +254,54 @@ export async function stubCherryHost(
     { token },
   );
 }
+
+/**
+ * Impersonate the Cherry host for an *inline* launch — a blink card, or the
+ * live preview Cherry shows in the share picker.
+ *
+ * Inline mode is a different bootstrap from the embedded one above: the SDK
+ * reads `mode` and `token` from the launch URL and then asks the host for the
+ * blink context over the bridge (`host.init`), rather than waiting for the
+ * host to push `cherry:init`. The snapshot the card renders comes back on
+ * that response, so this stub is what makes the blink path testable at all.
+ */
+export async function stubCherryInlineHost(
+  page: Page,
+  ctx: {
+    params: Record<string, unknown>;
+    messageId?: string;
+    roomId?: string;
+    route?: string;
+  },
+): Promise<void> {
+  const response = {
+    viewerWallet: WALLET,
+    roomId: ctx.roomId ?? 'room-42',
+    messageId: ctx.messageId ?? 'msg-1',
+    route: ctx.route ?? '/result',
+    params: ctx.params,
+    height: 'medium',
+  };
+
+  await page.addInitScript((hostInit) => {
+    const w = window as unknown as {
+      __cherry?: boolean;
+      ReactNativeWebView?: { postMessage(data: string): void };
+    };
+    w.__cherry = true;
+
+    w.ReactNativeWebView = {
+      postMessage(raw: string) {
+        let msg: { type?: string; id?: string; method?: string };
+        try {
+          msg = JSON.parse(raw);
+        } catch {
+          return;
+        }
+        if (msg.type !== 'cherry:request' || !msg.id) return;
+        const result = msg.method === 'host.init' ? hostInit : {};
+        setTimeout(() => window.postMessage({ type: 'cherry:response', id: msg.id, result }, '*'), 0);
+      },
+    };
+  }, response);
+}

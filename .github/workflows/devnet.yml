@@ -1,0 +1,296 @@
+name: Devnet deploy and end-to-end
+
+# THE CHERRY TREE — the real devnet path: build SBF, deploy, initialise, fund
+# a tiny reward schedule, then prove BUY → ACCRUE → COMPOUND → CLAIM with two
+# independent wallets.
+#
+# Why this exists as a workflow: the development container has no Solana
+# toolchain and cannot reach either `release.anza.xyz` or
+# `api.devnet.solana.com`. A GitHub runner has both.
+#
+# DEVNET ONLY, and in three independent places:
+#   1. `SOLANA_CLUSTER` is pinned to `devnet` here and is not an input.
+#   2. `scripts/lib/guard.sh:require_devnet` refuses anything else.
+#   3. `assert_connected_to_devnet` asks the chain for its genesis hash and
+#      refuses the mainnet one even if the URL claims otherwise.
+#
+# Manual dispatch only. It never runs on a push.
+#
+# Key material: the three keypairs arrive as repository secrets, are written
+# with `umask 077` to a directory outside the checkout, are never echoed, and
+# are shredded in an `always()` step. Only public keys reach the log or the
+# run report.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reward_sol:
+        description: 'Devnet SOL to fund the reward vault with (hard cap 1.0)'
+        required: true
+        default: '0.05'
+      reward_duration_seconds:
+        description: 'Length of the reward schedule in seconds'
+        required: true
+        default: '3600'
+      rigs_a:
+        description: 'Rigs bought by smoke wallet A'
+        required: true
+        default: '10'
+      rigs_b:
+        description: 'Rigs bought by smoke wallet B'
+        required: true
+        default: '25'
+      wait_seconds:
+        description: 'Seconds to let rewards accrue before compound/claim'
+        required: true
+        default: '60'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devnet
+  cancel-in-progress: false
+
+env:
+  SOLANA_CLUSTER: devnet
+  SOLANA_RPC_URL: https://api.devnet.solana.com
+  ANCHOR_VERSION: 0.31.2
+  SOLANA_VERSION: stable
+
+jobs:
+  devnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse to run without the keypairs
+        env:
+          PROGRAM: ${{ secrets.DEVNET_PROGRAM_KEYPAIR }}
+          AUTHORITY: ${{ secrets.DEVNET_AUTHORITY_KEYPAIR }}
+          FUNDER: ${{ secrets.DEVNET_REWARD_FUNDER_KEYPAIR }}
+        run: |
+          missing=0
+          for name in PROGRAM AUTHORITY FUNDER; do
+            if [ -z "${!name}" ]; then
+              echo "::error::secret DEVNET_${name}_KEYPAIR is not set"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          # The authority and the reward funder are separate roles by design.
+          if [ "$AUTHORITY" = "$FUNDER" ]; then
+            echo "::error::the authority and the reward funder must be different wallets"
+            exit 1
+          fi
+
+      - name: Bound the reward amount
+        run: |
+          amount='${{ inputs.reward_sol }}'
+          case "$amount" in
+            ''|*[!0-9.]*) echo "::error::reward_sol is not a number"; exit 1 ;;
+          esac
+          # Devnet SOL is free but not infinite, and a stray zero should not
+          # tie up an airdrop faucet for an hour.
+          over=$(awk -v a="$amount" 'BEGIN { print (a > 1.0) ? 1 : 0 }')
+          [ "$over" -eq 0 ] || { echo "::error::reward_sol $amount exceeds the 1.0 cap"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo and the Solana toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.local/share/solana
+            ~/.avm
+            target
+          key: devnet-${{ runner.os }}-anchor${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install the Solana toolchain
+        run: |
+          if [ ! -x "$HOME/.local/share/solana/install/active_release/bin/solana" ]; then
+            sh -c "$(curl -sSfL https://release.anza.xyz/${SOLANA_VERSION}/install)"
+          fi
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor ${{ env.ANCHOR_VERSION }}
+        run: |
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          command -v avm >/dev/null 2>&1 || \
+            cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install "$ANCHOR_VERSION"
+          avm use "$ANCHOR_VERSION"
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+
+      - name: Report the toolchain
+        run: |
+          solana --version
+          anchor --version
+          cargo build-sbf --version
+
+      # Written outside the checkout so no keypair can ever be picked up by a
+      # build, a test glob, or an accidental `git add`.
+      - name: Materialise the keypairs
+        env:
+          PROGRAM: ${{ secrets.DEVNET_PROGRAM_KEYPAIR }}
+          AUTHORITY: ${{ secrets.DEVNET_AUTHORITY_KEYPAIR }}
+          FUNDER: ${{ secrets.DEVNET_REWARD_FUNDER_KEYPAIR }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s' "$PROGRAM"   > "$RUNNER_TEMP/keys/program.json"
+          printf '%s' "$AUTHORITY" > "$RUNNER_TEMP/keys/authority.json"
+          printf '%s' "$FUNDER"    > "$RUNNER_TEMP/keys/funder.json"
+          # Two throwaway devnet users. Generated per run rather than stored:
+          # they hold only airdropped SOL and exist to prove the flows.
+          solana-keygen new --no-bip39-passphrase -s -o "$RUNNER_TEMP/keys/smoke-a.json"
+          solana-keygen new --no-bip39-passphrase -s -o "$RUNNER_TEMP/keys/smoke-b.json"
+
+          # Only public keys are ever printed.
+          {
+            echo "AUTHORITY_PUBKEY=$(solana-keygen pubkey "$RUNNER_TEMP/keys/authority.json")"
+            echo "FUNDER_PUBKEY=$(solana-keygen pubkey "$RUNNER_TEMP/keys/funder.json")"
+            echo "SMOKE_A_PUBKEY=$(solana-keygen pubkey "$RUNNER_TEMP/keys/smoke-a.json")"
+            echo "SMOKE_B_PUBKEY=$(solana-keygen pubkey "$RUNNER_TEMP/keys/smoke-b.json")"
+            echo "PROGRAM_PUBKEY=$(solana-keygen pubkey "$RUNNER_TEMP/keys/program.json")"
+          } >> "$GITHUB_ENV"
+
+      - name: The program keypair must match the declared program ID
+        run: |
+          expected=$(grep -oE 'EXPECTED_PROGRAM_ID="[^"]+"' scripts/lib/guard.sh | sed -E 's/.*"(.*)"/\1/')
+          echo "declared  $expected"
+          echo "keypair   $PROGRAM_PUBKEY"
+          if [ "$PROGRAM_PUBKEY" != "$expected" ]; then
+            echo "::error::DEVNET_PROGRAM_KEYPAIR is for $PROGRAM_PUBKEY but the source declares $expected."
+            echo "::error::Not rewriting declare_id! to match — that would silently change the deployed address."
+            exit 1
+          fi
+
+      - name: Verify the chain we are pointed at
+        run: |
+          solana config set --url "$SOLANA_RPC_URL" >/dev/null
+          source scripts/lib/guard.sh
+          require_devnet
+          assert_connected_to_devnet "$SOLANA_RPC_URL"
+
+      - name: Fund the runner wallets from the devnet faucet
+        run: |
+          set -e
+          airdrop() {
+            local who="$1" want="$2" tries=0
+            until [ "$tries" -ge 6 ]; do
+              if solana airdrop "$want" "$who" --url "$SOLANA_RPC_URL" >/dev/null 2>&1; then
+                echo "  airdropped $want SOL to $who"
+                return 0
+              fi
+              tries=$((tries + 1))
+              sleep 20
+            done
+            echo "::warning::airdrop to $who did not succeed after $tries attempts"
+          }
+          # The deploy is the expensive one; the rest only pay fees and rig costs.
+          for _ in 1 2 3; do airdrop "$AUTHORITY_PUBKEY" 2; done
+          airdrop "$FUNDER_PUBKEY" 1
+          airdrop "$SMOKE_A_PUBKEY" 2
+          airdrop "$SMOKE_B_PUBKEY" 2
+          for who in "$AUTHORITY_PUBKEY" "$FUNDER_PUBKEY" "$SMOKE_A_PUBKEY" "$SMOKE_B_PUBKEY"; do
+            echo "  $who $(solana balance "$who" --url "$SOLANA_RPC_URL")"
+          done
+
+      - name: Install app dependencies
+        working-directory: app
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm ci
+
+      # Nothing reaches devnet until the offline suite passes.
+      - name: Offline verification
+        run: |
+          cargo test --workspace
+          cd app && npx vitest run
+
+      - name: Write the operations env
+        run: |
+          umask 077
+          cat > .env <<EOF
+          SOLANA_CLUSTER=devnet
+          SOLANA_RPC_URL=$SOLANA_RPC_URL
+          ANCHOR_WALLET=$RUNNER_TEMP/keys/authority.json
+          CHERRY_TREE_REWARD_FUNDER=$FUNDER_PUBKEY
+          CHERRY_TREE_REWARD_FUNDER_KEYPAIR=$RUNNER_TEMP/keys/funder.json
+          CHERRY_TREE_RIG_PRICE_LAMPORTS=10000000
+          CHERRY_TREE_PURCHASE_FEE_BPS=300
+          CHERRY_TREE_SMOKE_WALLET_A=$RUNNER_TEMP/keys/smoke-a.json
+          CHERRY_TREE_SMOKE_WALLET_B=$RUNNER_TEMP/keys/smoke-b.json
+          EOF
+
+      - name: Build SBF and deploy to devnet
+        run: |
+          mkdir -p target/deploy
+          cp "$RUNNER_TEMP/keys/program.json" target/deploy/sol_rigs-keypair.json
+          ./scripts/devnet-deploy.sh 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+
+      - name: Initialise
+        run: ./scripts/devnet-init.sh 2>&1 | tee "$RUNNER_TEMP/init.log"
+
+      - name: Fund the reward vault
+        run: |
+          ./scripts/devnet-fund.sh \
+            '${{ inputs.reward_sol }}' '${{ inputs.reward_duration_seconds }}' \
+            2>&1 | tee "$RUNNER_TEMP/fund.log"
+
+      - name: Two-wallet smoke — BUY, ACCRUE, COMPOUND, CLAIM
+        run: |
+          ./scripts/devnet-smoke.sh \
+            '${{ inputs.rigs_a }}' '${{ inputs.rigs_b }}' '${{ inputs.wait_seconds }}' \
+            2>&1 | tee "$RUNNER_TEMP/smoke.log"
+
+      - name: Record the run
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/report"
+          {
+            echo "# THE CHERRY TREE — devnet run"
+            echo
+            echo "commit:   $GITHUB_SHA"
+            echo "cluster:  devnet"
+            echo "rpc:      $SOLANA_RPC_URL"
+            echo "program:  $PROGRAM_PUBKEY"
+            echo
+            echo "## Public keys (no secret material)"
+            echo "authority:     $AUTHORITY_PUBKEY"
+            echo "reward funder: $FUNDER_PUBKEY"
+            echo "smoke A:       $SMOKE_A_PUBKEY"
+            echo "smoke B:       $SMOKE_B_PUBKEY"
+            echo
+            for stage in deploy init fund smoke; do
+              echo "## $stage"
+              echo '```'
+              cat "$RUNNER_TEMP/$stage.log" 2>/dev/null || echo "(did not run)"
+              echo '```'
+              echo
+            done
+          } > "$RUNNER_TEMP/report/devnet-run.md"
+          cat "$RUNNER_TEMP/report/devnet-run.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the run report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: devnet-run
+          path: ${{ runner.temp }}/report/
+
+      - name: Shred the keypairs
+        if: always()
+        run: |
+          shred -u "$RUNNER_TEMP"/keys/*.json 2>/dev/null || rm -f "$RUNNER_TEMP"/keys/*.json
+          rm -f .env target/deploy/sol_rigs-keypair.json

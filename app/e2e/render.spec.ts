@@ -5,7 +5,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { stubCherryHost, stubRpc, WALLET } from './fixtures';
+import { stubCherryHost, stubCherryInlineHost, stubRpc, WALLET } from './fixtures';
 
 /** Spec §10: banned copy. None of this may appear anywhere on the screen. */
 const BANNED = [
@@ -247,6 +247,55 @@ test.describe('blink result card', () => {
     const text = await page.locator('body').innerText();
     expect(text).not.toContain('alert(1)');
     expect(text).not.toContain('NaN');
+  });
+});
+
+/**
+ * The shared blink.
+ *
+ * `share()` is called with `previewable: true`, which tells the Cherry host
+ * this route renders correctly from `route` + `params` alone — no message id,
+ * no room, no chain read. The host then shows a real preview in the share
+ * picker instead of a skeleton. These assert that promise holds: the snapshot
+ * has to come from the blink context the host supplies over the bridge, not
+ * from the query string.
+ */
+test.describe('blink snapshot from the Cherry host', () => {
+  test('an inline render shows the host-supplied snapshot', async ({ page }) => {
+    await stubCherryInlineHost(page, {
+      params: { kind: 'compound', rigs: '77', compounded: '19' },
+    });
+    await page.goto('/result?mode=inline&token=stub');
+
+    await expect(page.getByText('+19 RIGS')).toBeVisible();
+    await expect(page.getByText('77')).toBeVisible();
+  });
+
+  test('a share-picker preview renders from params with no message id', async ({
+    page,
+  }) => {
+    await stubCherryInlineHost(page, {
+      messageId: '',
+      roomId: '',
+      params: { kind: 'claim', rigs: '31', claimed: '250000000' },
+    });
+    await page.goto('/result?mode=preview&token=stub');
+
+    await expect(page.getByText(/0\.2500 SOL CLAIMED/)).toBeVisible();
+    await expect(page.getByText('31')).toBeVisible();
+  });
+
+  test('the signed snapshot wins over a tampered query string', async ({ page }) => {
+    await stubCherryInlineHost(page, {
+      params: { kind: 'compound', rigs: '77', compounded: '19' },
+    });
+    // Everything after `token` is attacker-controlled in a shared URL.
+    await page.goto('/result?mode=inline&token=stub&rigs=999999&compounded=888888');
+
+    await expect(page.getByText('+19 RIGS')).toBeVisible();
+    const text = await page.locator('body').innerText();
+    expect(text).not.toContain('999999');
+    expect(text).not.toContain('888888');
   });
 });
 

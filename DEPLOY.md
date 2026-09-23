@@ -50,6 +50,27 @@ avm install 0.31.2 && avm use 0.31.2
 cd app && npm ci && cd ..
 ```
 
+### Or run the whole thing on a GitHub runner
+
+Every step from here to the smoke test is wired into
+`.github/workflows/devnet.yml`, dispatched manually. It installs the
+toolchain, builds SBF, deploys, initialises, funds a tiny schedule and runs
+the two-wallet smoke test, then uploads a run report with the program ID,
+signatures and vault addresses. Use it when the machine you are on has no
+Solana toolchain or no route to devnet.
+
+It needs three repository secrets, each the **contents** of a keypair JSON:
+
+| Secret | Role |
+|---|---|
+| `DEVNET_PROGRAM_KEYPAIR` | the program's own keypair. Must be the keypair for `By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH` — the workflow refuses to deploy under any other address rather than rewriting `declare_id!`. |
+| `DEVNET_AUTHORITY_KEYPAIR` | pays for the deploy and becomes the program authority. |
+| `DEVNET_REWARD_FUNDER_KEYPAIR` | the only signer permitted to call `fund_rewards`. The workflow refuses to run if this equals the authority. |
+
+The two smoke wallets are generated per run and funded from the devnet
+faucet — they are throwaway test users, so there is nothing to store. Devnet
+SOL only; the reward amount is capped at 1.0 SOL by the workflow itself.
+
 Create the wallets, **outside this repository**:
 
 ```bash
@@ -248,6 +269,19 @@ frame-src 'none'; object-src 'none'; form-action 'none';
 base-uri 'self'; worker-src 'self'; manifest-src 'self';
 upgrade-insecure-requests
 ```
+
+The policy lives in `app/src/lib/csp.ts` and has exactly two consumers:
+`next.config.ts`, which serves it as real response headers on a Node
+deployment, and `app/scripts/emit-static-headers.ts`, which writes the same
+policy into the static export's `_headers` file for a host that reads one
+(Cloudflare Pages, Netlify). Two hand-maintained copies of a security policy
+is how they drift, so there is one.
+
+A host that sends no headers at all — GitHub Pages — cannot satisfy
+`frame-ancestors`, and a `<meta http-equiv>` tag is not equivalent: the
+directive is ignored there by specification. That is fine for Cherry's mobile
+WebView, which does not frame anything, and not enough for Cherry web. See
+`CHERRY.md` §3.
 
 `connect-src` is **derived from configuration**, not a wildcard: it is built
 from `NEXT_PUBLIC_SOLANA_RPC_URL`, `CHERRY_JWKS_URL` and the Cherry host at

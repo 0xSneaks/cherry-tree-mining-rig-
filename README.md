@@ -214,6 +214,10 @@ Everything else in the table above is green.
 
 ## Mini-app notes
 
+Full integration status, the Cherry registration packet and the hosting
+constraint are in [`CHERRY.md`](./CHERRY.md).
+
+
 - **Embedded is the primary path.** No connect-wallet step: the wallet arrives
   with the Cherry handshake, and a test asserts the embed renders no connect UI
   at all.

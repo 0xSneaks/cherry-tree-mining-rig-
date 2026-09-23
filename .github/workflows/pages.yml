@@ -68,7 +68,16 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
         run: npm run build
 
-      # Pages runs Jekyll otherwise, which strips the _next directory.
+      # Emit `_headers` alongside the build, from the same CSP the Node
+      # deployment serves. GitHub Pages ignores it; Cloudflare Pages and
+      # Netlify read it, so pointing either at this same build gives Cherry
+      # web the `frame-ancestors` header it needs with no code change.
+      - name: Emit static host headers
+        working-directory: app
+        run: npm run emit:headers
+
+      # Pages runs Jekyll otherwise, which strips the _next directory and
+      # every file whose name starts with an underscore, `_headers` included.
       - name: Disable Jekyll
         run: touch app/out/.nojekyll
 

@@ -63,7 +63,8 @@ env:
   # no corresponding keypair anywhere in this workflow.
   FEE_RECIPIENT: FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp
   ANCHOR_VERSION: 0.31.2
-  SOLANA_VERSION: stable
+  # Pinned: scripts/lib/sbf.sh refuses cargo-build-sbf older than 4.1.0.
+  SOLANA_VERSION: v4.1.0
 
 jobs:
   devnet:
@@ -124,7 +125,7 @@ jobs:
             ~/.local/share/solana
             ~/.avm
             target
-          key: devnet-${{ runner.os }}-anchor${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          key: devnet-${{ runner.os }}-solana${{ env.SOLANA_VERSION }}-anchor${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Install the Solana toolchain
         run: |
@@ -146,7 +147,7 @@ jobs:
         run: |
           solana --version
           anchor --version
-          cargo build-sbf --version
+          cargo-build-sbf --version
 
       # Written outside the checkout so no keypair can ever be picked up by a
       # build, a test glob, or an accidental `git add`.

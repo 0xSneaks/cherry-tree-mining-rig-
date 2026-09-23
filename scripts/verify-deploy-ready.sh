@@ -305,10 +305,12 @@ fi
 # ---------------------------------------------------------------- SBF
 echo
 echo "--> SBF / Anchor toolchain"
-if command -v anchor >/dev/null 2>&1 && cargo build-sbf --version >/dev/null 2>&1; then
-  pass "anchor and cargo build-sbf available — scripts/devnet-deploy.sh can produce a real artifact"
+# shellcheck source=lib/sbf.sh
+source "$ROOT/scripts/lib/sbf.sh"
+if command -v anchor >/dev/null 2>&1 && resolve_cargo_build_sbf 2>/dev/null; then
+  pass "anchor and cargo-build-sbf $CARGO_BUILD_SBF_VERSION (platform-tools $SBF_TOOLS_VERSION) — scripts/devnet-deploy.sh can produce a real artifact"
 else
-  warn "SBF BUILD: BLOCKED — anchor and/or cargo build-sbf are not installed here."
+  warn "SBF BUILD: BLOCKED — anchor and/or cargo-build-sbf >= $SBF_MIN_CARGO_BUILD_SBF are not installed here."
   warn "            The program's tests run the real Anchor entrypoint under"
   warn "            solana-program-test's NATIVE processor. That is NOT an SBF pass."
 fi

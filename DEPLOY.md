@@ -70,8 +70,10 @@ never the contents of a keypair file.
 ## 0. Prerequisites
 
 ```bash
-# Solana CLI + Anchor
-sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+# Solana CLI + Anchor. Agave v4.1.0 is pinned: scripts/lib/sbf.sh refuses
+# cargo-build-sbf < 4.1.0 (older runners cannot parse edition-2024 crates)
+# and always builds with --tools-version v1.52.
+sh -c "$(curl -sSfL https://release.anza.xyz/v4.1.0/install)"
 cargo install --git https://github.com/coral-xyz/anchor avm --locked
 avm install 0.31.2 && avm use 0.31.2
 
@@ -164,7 +166,11 @@ things that are merely unavailable (no SBF toolchain, no devnet, no
 ./scripts/devnet-deploy.sh
 ```
 
-Builds the real SBF artifact with `anchor build` and deploys it. It refuses to
+Builds the real SBF artifact with the pinned toolchain (`scripts/build-sbf.sh`
+does the build alone: cargo-build-sbf >= 4.1.0, `--tools-version v1.52`),
+writes the IDL to `target/idl/sol_rigs.json` and `target/types/sol_rigs.ts`
+with `anchor idl build` (what `anchor build` did after compiling), and
+deploys it. It refuses to
 continue if the program ID differs between `declare_id!`, `Anchor.toml`
 (both profiles), the frontend constant, and the build's program keypair — and
 it will **not** rewrite any of them to make them agree. A mismatch is yours to

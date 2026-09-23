@@ -15,6 +15,8 @@
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/guard.sh
 source "$ROOT/scripts/lib/guard.sh"
+# shellcheck source=lib/sbf.sh
+source "$ROOT/scripts/lib/sbf.sh"
 
 load_env "$ROOT"
 : "${SOLANA_CLUSTER:=devnet}"
@@ -34,9 +36,8 @@ echo "--> toolchain"
 require_cmd solana solana-keygen anchor cargo
 echo "  solana  $(solana --version)"
 echo "  anchor  $(anchor --version)"
-cargo build-sbf --version >/dev/null 2>&1 \
-  || die "cargo build-sbf is unavailable — the Solana platform tools are not installed"
-echo "  sbf     $(cargo build-sbf --version 2>&1 | head -1)"
+resolve_cargo_build_sbf || die "no usable cargo-build-sbf (see above)"
+echo "  sbf     $CARGO_BUILD_SBF ($CARGO_BUILD_SBF_VERSION), platform-tools $SBF_TOOLS_VERSION"
 
 echo
 echo "--> deployer wallet"
@@ -66,9 +67,19 @@ echo "--> program ID consistency (pre-build)"
 check_program_id_consistency "$ROOT"
 
 echo
-echo "--> anchor build (real SBF artifact)"
+echo "--> SBF build (real artifact, pinned toolchain)"
 cd "$ROOT"
-anchor build || die "anchor build failed"
+build_sbf || die "SBF build failed"
+
+# `anchor build` used to emit these as a second step after the SBF compile.
+# Same generator (host `cargo test` with the idl-build feature, not SBF), same
+# Anchor.toml settings, same output paths. `anchor deploy` reads the IDL only
+# to stamp the program address into it; it never uploads it.
+echo "--> IDL (anchor idl build)"
+mkdir -p target/idl target/types
+anchor idl build -p sol_rigs -o target/idl/sol_rigs.json -t target/types/sol_rigs.ts \
+  || die "IDL build failed"
+echo "  idl       $ROOT/target/idl/sol_rigs.json"
 
 SO_PATH="$ROOT/target/deploy/sol_rigs.so"
 [[ -f "$SO_PATH" ]] || die "expected artifact not produced: $SO_PATH"

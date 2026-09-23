@@ -76,3 +76,13 @@ describe('user-facing terminology', () => {
     expect(game).toMatch(/Replant/);
   });
 });
+
+describe('founder privacy', () => {
+  it('never names the founder in the UI — only the wallet is used, internally', () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      if (/sneaks/i.test(readFileSync(f, 'utf8'))) offenders.push(f.slice(root.length + 1));
+    }
+    expect(offenders).toEqual([]);
+  });
+});

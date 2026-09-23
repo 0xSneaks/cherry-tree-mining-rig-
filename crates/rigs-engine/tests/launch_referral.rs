@@ -20,7 +20,6 @@ fn ctx(launch_t0: i64, now: i64) -> PurchaseContext {
         launch_t0,
         now,
         is_founder: false,
-        owns_founder_name: false,
         schedule_active: true,
         identity: ProvenIdentity::None,
     }
@@ -86,28 +85,30 @@ fn identity_matrix() {
 // --------------------------------------------------------------- activation
 
 #[test]
-fn only_the_verified_founder_with_a_funded_schedule_activates() {
-    // Wrong wallet, even holding a .skr.
+fn only_the_founder_wallet_with_a_funded_schedule_activates() {
+    // Any other wallet — even one proving a .skr or .sns domain.
+    for identity in [
+        ProvenIdentity::None,
+        ProvenIdentity::Skr,
+        ProvenIdentity::Sns,
+    ] {
+        let mut c = ctx(NOT_ACTIVATED, T0);
+        c.identity = identity;
+        assert_eq!(
+            gate_purchase(&c),
+            Err(EngineError::AccessDenied),
+            "{identity:?}"
+        );
+    }
+
+    // The founder wallet, but the reward schedule is not live.
     let mut c = ctx(NOT_ACTIVATED, T0);
-    c.identity = ProvenIdentity::Skr;
-    assert_eq!(gate_purchase(&c), Err(EngineError::AccessDenied));
-
-    // Right wallet, but it did not prove it owns the founder name (a spoofed
-    // or transferred-away sneaks.skr).
-    c.is_founder = true;
-    assert_eq!(gate_purchase(&c), Err(EngineError::AccessDenied));
-
-    // A wallet that owns the name but is not the pinned founder.
-    c.is_founder = false;
-    c.owns_founder_name = true;
-    assert_eq!(gate_purchase(&c), Err(EngineError::AccessDenied));
-
-    // Founder, verified, but the reward schedule is not live.
     c.is_founder = true;
     c.schedule_active = false;
     assert_eq!(gate_purchase(&c), Err(EngineError::ActivationUnfunded));
 
-    // Founder, verified, funded: this is the activation.
+    // The founder wallet with a funded schedule: this is the activation. It
+    // needs no domain proof — the wallet is the authority.
     c.schedule_active = true;
     assert_eq!(gate_purchase(&c), Ok(PurchaseGate::Activation));
     assert_eq!(
@@ -121,7 +122,6 @@ fn t0_can_never_move_once_written() {
     // A second founder purchase is an ordinary purchase in an open phase.
     let mut c = ctx(T0, T0 + 5);
     c.is_founder = true;
-    c.owns_founder_name = true;
     c.identity = ProvenIdentity::Skr;
     let gate = gate_purchase(&c).unwrap();
     assert_eq!(gate, PurchaseGate::Open);
@@ -138,7 +138,6 @@ proptest! {
     #[test]
     fn t0_is_immutable_and_phases_are_monotone(
         founder in any::<bool>(),
-        owns in any::<bool>(),
         id in 0u8..3,
         a in 0i64..(10 * DAY),
         b in 0i64..(10 * DAY),
@@ -146,7 +145,7 @@ proptest! {
         let identity = [ProvenIdentity::None, ProvenIdentity::Skr, ProvenIdentity::Sns][id as usize];
         let now = T0 + a;
         let c = PurchaseContext { launch_t0: T0, now, is_founder: founder,
-            owns_founder_name: owns, schedule_active: true, identity };
+            schedule_active: true, identity };
         if let Ok(g) = gate_purchase(&c) {
             prop_assert_eq!(g, PurchaseGate::Open);
             prop_assert_eq!(t0_after_success(g, T0, now), T0);

@@ -92,7 +92,7 @@ async function main() {
   section('result');
   row('T0', `${r.t0} (${new Date(Number(r.t0) * 1000).toISOString()})`);
   row('APR now (bps)', r.aprBps);
-  row('SNS early access in', r.countdown === null ? '—' : `${r.countdown} s`);
+  row('.sns early access in', r.countdown === null ? '—' : `${r.countdown} s`);
   row('VERIFY', r.ok ? 'PASS' : 'FAIL');
   console.log('\n  STOP. No further transaction is sent by this tool.\n');
   if (!r.ok) process.exitCode = 1;

@@ -1,21 +1,15 @@
 /**
  * What the first-buy preflight expects to find. Every value is checked against
- * the chain at preflight time; none is trusted on its own.
+ * the chain at preflight time.
  *
- * EXPECTED_FOUNDER provenance:
- *   - `sneaks.skr` → this wallet per AllDomains' own resolver
- *     (alldomains.id/api/domain-owner/sneaks.skr, read 2026-09-23), and
- *   - the same address is the Seeker fee-receiving wallet the founder
- *     supplied for `fee_recipient` earlier in this repository.
- *   Two independent sources agree, but neither is an on-chain read, so the
- *   preflight re-reads the `sneaks.skr` name record from chain and the
- *   program verifies it again inside the activation purchase.
+ * EXPECTED_FOUNDER is the founder activation authority: the first successful
+ * purchase this exact wallet signs is T0. It is pinned on-chain in
+ * `config.founder` at initialize; the program enforces it.
  */
 import { address } from '@solana/kit';
 
 export const EXPECTED_FOUNDER = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
 export const EXPECTED_FEE_RECIPIENT = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
-export const FOUNDER_NAME = 'sneaks.skr';
 
 /** Genesis hashes identify the cluster independently of the RPC URL. */
 export const GENESIS_HASH = {

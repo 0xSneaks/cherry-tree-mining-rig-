@@ -3,7 +3,7 @@
 /**
  * Launch state, from `config.launch_t0` and the chain clock only.
  *
- * PRE-LAUNCH → .SKR GENESIS (24h) → .SKR + SNS EARLY ACCESS (24h) → PUBLIC.
+ * PRE-LAUNCH → .SKR GENESIS (24h) → .SKR + .SNS EARLY ACCESS (24h) → PUBLIC.
  * Nothing on this panel can move a phase: the program enforces the same
  * function of the same two numbers inside `buy_rigs`.
  */
@@ -19,9 +19,9 @@ import {
 } from '../lib/program/launch';
 
 const IDENTITY_LABEL: Record<Identity, string> = {
-  skr: '.skr verified',
-  sns: 'SNS name verified',
-  none: 'No .skr or SNS name found',
+  skr: '.skr domain verified',
+  sns: '.sns domain verified',
+  none: 'No .skr or .sns domain found',
 };
 
 export function LaunchPanel({
@@ -45,16 +45,16 @@ export function LaunchPanel({
   switch (phase) {
     case 'preLaunch':
       title = 'The grove is dormant';
-      line = 'Founder activation pending.';
+      line = 'Founder activation pending';
       break;
     case 'skrGenesis':
       title = 'Genesis is live';
       line = '.SKR genesis access';
-      countdown = next !== null ? `SNS early access in ${formatCountdown(next)}` : null;
+      countdown = next !== null ? `.sns early access in ${formatCountdown(next)}` : null;
       break;
     case 'skrSnsEarly':
-      title = 'SNS early access';
-      line = '.SKR + SNS holders may plant';
+      title = '.sns early access';
+      line = '.SKR + .SNS holders may plant';
       countdown = next !== null ? `Public in ${formatCountdown(next)}` : null;
       break;
     case 'public':
@@ -67,7 +67,7 @@ export function LaunchPanel({
   if (wallet && phase !== 'public') {
     if (phase === 'preLaunch') {
       eligibility = isFounder
-        ? 'Founder wallet connected. Activation is one deliberate first planting.'
+        ? 'Founder wallet connected. One deliberate first planting activates the grove.'
         : 'Planting opens when the founder activates the grove.';
     } else if (identity) {
       eligibility = `${IDENTITY_LABEL[identity]} · ${

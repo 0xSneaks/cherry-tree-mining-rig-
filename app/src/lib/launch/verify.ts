@@ -8,7 +8,6 @@ import { address, type Address } from '@solana/kit';
 
 import type { Config, Miner } from '../program/accounts';
 import { IX_DISCRIMINATOR, PROGRAM_ID } from '../program/constants';
-import { FOUNDER_NAME_ACCOUNT } from '../program/identity';
 import { accessPhase, secondsToNextPhase } from '../program/launch';
 import { quotePurchase } from '../program/pricing';
 import { aprBps, yieldInputs } from '../program/yield';
@@ -87,8 +86,8 @@ export function evaluateFirstBuy(
   );
   add(
     'no unexpected accounts',
-    isBuy && buy.accounts[7] === FOUNDER_NAME_ACCOUNT && buy.accounts.length === 8,
-    isBuy ? `identity ${buy.accounts[7]}, ${buy.accounts.length} accounts` : 'no buy_rigs',
+    isBuy && buy.accounts.length === 7,
+    isBuy ? `${buy.accounts.length} accounts` : 'no buy_rigs',
   );
   add('purchase amount', count === expected.seeds, `${count} seeds (expected ${expected.seeds})`);
 
@@ -143,7 +142,7 @@ export function evaluateFirstBuy(
   const countdown = secondsToNextPhase(t0, s.chainTime);
   add('access phase = .SKR GENESIS', phase === 'skrGenesis', phase);
   add(
-    'countdown ≈ 24h to SNS',
+    'countdown ≈ 24h to .sns access',
     countdown !== null && countdown > 0n && countdown <= 86_400n,
     `${countdown} s`,
   );

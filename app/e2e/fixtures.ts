@@ -222,7 +222,7 @@ export async function stubCherryHost(
       app_id: 'sol-rigs-test-app',
       room_id: room.id,
       room: { title: room.title, member_count: room.memberCount },
-      user: { display_name: 'sneaks', avatar_url: '' },
+      user: { display_name: 'planter', avatar_url: '' },
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 300,
     }),

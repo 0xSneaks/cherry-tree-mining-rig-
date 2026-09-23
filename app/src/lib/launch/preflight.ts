@@ -10,7 +10,6 @@ import type { Address, Instruction } from '@solana/kit';
 
 import type { Config } from '../program/accounts';
 import { IX_DISCRIMINATOR, PROGRAM_ID, SYSTEM_PROGRAM_ID } from '../program/constants';
-import { FOUNDER_NAME_ACCOUNT, founderNameOwnedBy } from '../program/identity';
 import type { ProgramAddresses } from '../program/pdas';
 import { quotePurchase, type PurchaseQuote } from '../program/pricing';
 import { aprBps, yieldInputs } from '../program/yield';
@@ -26,7 +25,6 @@ export type PreflightInput = {
   pdas: ProgramAddresses;
   founderWallet: Address;
   founderMinerExists: boolean;
-  founderNameAccount: { address: Address; owner: Address; data: Uint8Array } | null;
   rewardVaultDistributable: bigint;
   chainTime: bigint;
   founderLamports: bigint;
@@ -53,7 +51,10 @@ function outstanding(c: Config): bigint {
   return c.totalRewardFunded - c.totalRewardClaimed - c.totalRewardCompounded;
 }
 
-/** The only instruction shape an activation may have. */
+/**
+ * The only instruction shape an activation may have: the seven declared
+ * accounts and nothing else — the founder wallet needs no domain proof.
+ */
 function expectedAccounts(i: PreflightInput, miner: Address): Address[] {
   return [
     i.founderWallet,
@@ -63,7 +64,6 @@ function expectedAccounts(i: PreflightInput, miner: Address): Address[] {
     i.pdas.feeVault,
     i.pdas.rewardVault,
     SYSTEM_PROGRAM_ID,
-    FOUNDER_NAME_ACCOUNT,
   ];
 }
 
@@ -94,8 +94,6 @@ export function evaluatePreflight(i: PreflightInput, founderMiner: Address): Pre
     i.founderWallet === EXPECTED_FOUNDER,
     `connected ${i.founderWallet}, expected ${EXPECTED_FOUNDER}`,
   );
-  const name = founderNameOwnedBy(i.founderNameAccount, i.founderWallet, i.chainTime);
-  add('sneaks.skr ownership on chain', name.ok, name.reason);
 
   add('program initialised', c !== null, c ? 'config found' : 'config PDA missing');
   if (c) {
@@ -158,8 +156,7 @@ export function evaluatePreflight(i: PreflightInput, founderMiner: Address): Pre
     add('expected purchase fee', true, `${quote.feeLamports} lamports to the fee vault`);
   }
 
-  // The instruction must be exactly one buy_rigs with no referrer, and the
-  // founder's own sneaks.skr record as the identity.
+  // The instruction must be exactly one buy_rigs, no referrer, no extras.
   if (i.instruction) {
     const ix = i.instruction;
     const data = ix.data ?? new Uint8Array();
@@ -175,7 +172,7 @@ export function evaluatePreflight(i: PreflightInput, founderMiner: Address): Pre
     add(
       'instruction contains only expected operations',
       shapeOk,
-      shapeOk ? 'one buy_rigs, no referrer, sneaks.skr identity' : 'unexpected instruction shape',
+      shapeOk ? 'one buy_rigs, no referrer, no extra accounts' : 'unexpected instruction shape',
     );
   } else {
     add('instruction contains only expected operations', false, 'no instruction built');

@@ -112,7 +112,7 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         fee_vault_bump: 252,
         version: 1,
         bump: 253,
-        // The founder the preflight expects (`sneaks.skr` → this wallet).
+        // The founder activation wallet the preflight expects.
         founder: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
         launch_t0: 1_779_900_000,
         // 14,156 base rigs + 125 referred rigs.

@@ -78,11 +78,10 @@ pub mod sol_rigs {
 
     /// Buy `count` whole rigs. 1 rig = 1 hashpower.
     ///
-    /// Remaining accounts: `[identity, referrer_miner]`, both optional by
-    /// position — `identity` is the buyer's `.skr` / SNS name record (the
-    /// `sneaks.skr` record for the founder activation); `referrer_miner` is
-    /// required iff `referrer` is `Some`. Pass the system program as a
-    /// placeholder identity when none is needed.
+    /// Remaining accounts: `[identity…, referrer_miner?]`. Identity is the
+    /// buyer's `.skr` / `.sns` proof — `[name]` for a direct domain,
+    /// `[name, nft_record, token_account]` for a wrapped / tokenized one — or
+    /// nothing at all. `referrer_miner` comes last, iff `referrer` is `Some`.
     pub fn buy_rigs<'info>(
         ctx: Context<'_, '_, 'info, 'info, BuyRigs<'info>>,
         count: u64,

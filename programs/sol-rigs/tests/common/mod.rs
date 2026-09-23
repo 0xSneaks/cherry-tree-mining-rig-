@@ -37,18 +37,7 @@ pub fn fee_recipient() -> Pubkey {
     Pubkey::from_str(FEE_RECIPIENT).expect("FEE_RECIPIENT is not a valid base58 pubkey")
 }
 
-/// Kinds of name record a test can plant for a wallet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NameKind {
-    /// The pinned `sneaks.skr` record (FOUNDER_NAME_ACCOUNT).
-    FounderSkr,
-    /// Any other `.skr` record.
-    Skr,
-    /// A top-level SNS record.
-    Sns,
-}
-
-/// Raw bytes of an ANS name record header owned by `owner` under `parent`.
+/// Raw bytes of an ANS (AllDomains) name record header.
 pub fn ans_record(parent: &Pubkey, owner: &Pubkey, expires_at: u64) -> Vec<u8> {
     let mut d = vec![0u8; 200 + 32];
     d[..8].copy_from_slice(&ANS_NAME_RECORD_DISCRIMINATOR);
@@ -58,11 +47,40 @@ pub fn ans_record(parent: &Pubkey, owner: &Pubkey, expires_at: u64) -> Vec<u8> {
     d
 }
 
-/// Raw bytes of an SNS name record header owned by `owner` under `parent`.
+/// Raw bytes of an SNS name record header.
 pub fn sns_record(parent: &Pubkey, owner: &Pubkey) -> Vec<u8> {
     let mut d = vec![0u8; 96 + 32];
     d[..32].copy_from_slice(parent.as_ref());
     d[32..64].copy_from_slice(owner.as_ref());
+    d
+}
+
+/// AllDomains Name House `NftRecord` bytes.
+pub fn ans_nft_record(tag: u8, name: &Pubkey, mint: &Pubkey) -> Vec<u8> {
+    let mut d = vec![0u8; 8 + 1 + 1 + 32 * 4];
+    d[..8].copy_from_slice(&ANS_NFT_RECORD_DISCRIMINATOR);
+    d[8] = tag;
+    d[10..42].copy_from_slice(name.as_ref());
+    d[74..106].copy_from_slice(mint.as_ref());
+    d
+}
+
+/// SNS tokenizer `NftRecord` bytes.
+pub fn sns_nft_record(tag: u8, name: &Pubkey, mint: &Pubkey) -> Vec<u8> {
+    let mut d = vec![0u8; 1 + 1 + 32 * 3];
+    d[0] = tag;
+    d[2..34].copy_from_slice(name.as_ref());
+    d[66..98].copy_from_slice(mint.as_ref());
+    d
+}
+
+/// SPL token account bytes (165).
+pub fn token_account(mint: &Pubkey, owner: &Pubkey, amount: u64, state: u8) -> Vec<u8> {
+    let mut d = vec![0u8; 165];
+    d[..32].copy_from_slice(mint.as_ref());
+    d[32..64].copy_from_slice(owner.as_ref());
+    d[64..72].copy_from_slice(&amount.to_le_bytes());
+    d[108] = state;
     d
 }
 
@@ -75,21 +93,99 @@ pub fn program_owned(owner_program: Pubkey, data: Vec<u8>) -> Account {
     }
 }
 
+/// The ways a test wallet can hold (or not hold) a domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Domain {
+    SkrDirect,
+    SkrWrapped,
+    SnsDirect,
+    SnsTokenized,
+}
+
+pub fn skr_wrapped_record_key(name: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"nft_record", SKR_NAME_HOUSE.as_ref(), name.as_ref()],
+        &ANS_NAME_HOUSE_PROGRAM_ID,
+    )
+    .0
+}
+
+pub fn sns_tokenized_record_key(name: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"nft_record", name.as_ref()], &SNS_NAME_TOKENIZER_ID).0
+}
+
+/// Plant a domain for `wallet`; returns the identity accounts to pass.
+pub fn plant_domain(pt: &mut ProgramTest, wallet: &Pubkey, kind: Domain) -> Vec<Pubkey> {
+    let name = Pubkey::new_unique();
+    match kind {
+        Domain::SkrDirect => {
+            pt.add_account(
+                name,
+                program_owned(ANS_PROGRAM_ID, ans_record(&SKR_TLD_PARENT, wallet, 0)),
+            );
+            vec![name]
+        }
+        Domain::SnsDirect => {
+            pt.add_account(
+                name,
+                program_owned(SNS_NAME_PROGRAM_ID, sns_record(&SNS_TLD_ROOT, wallet)),
+            );
+            vec![name]
+        }
+        Domain::SkrWrapped => {
+            let record = skr_wrapped_record_key(&name);
+            let (mint, token) = (Pubkey::new_unique(), Pubkey::new_unique());
+            pt.add_account(
+                name,
+                program_owned(ANS_PROGRAM_ID, ans_record(&SKR_TLD_PARENT, &record, 0)),
+            );
+            pt.add_account(
+                record,
+                program_owned(ANS_NAME_HOUSE_PROGRAM_ID, ans_nft_record(1, &name, &mint)),
+            );
+            pt.add_account(
+                token,
+                program_owned(SPL_TOKEN_PROGRAM_ID, token_account(&mint, wallet, 1, 1)),
+            );
+            vec![name, record, token]
+        }
+        Domain::SnsTokenized => {
+            let record = sns_tokenized_record_key(&name);
+            let (mint, token) = (Pubkey::new_unique(), Pubkey::new_unique());
+            pt.add_account(
+                name,
+                program_owned(SNS_NAME_PROGRAM_ID, sns_record(&SNS_TLD_ROOT, &record)),
+            );
+            pt.add_account(
+                record,
+                program_owned(SNS_NAME_TOKENIZER_ID, sns_nft_record(2, &name, &mint)),
+            );
+            pt.add_account(
+                token,
+                program_owned(SPL_TOKEN_PROGRAM_ID, token_account(&mint, wallet, 1, 1)),
+            );
+            vec![name, record, token]
+        }
+    }
+}
+
 pub struct Env {
     pub ctx: ProgramTestContext,
     pub authority: Keypair,
-    /// Pinned as `config.founder`, and the owner of the planted `sneaks.skr`
-    /// record. Alias of `alice`, so every legacy test's first buy is the
-    /// activation.
+    /// Pinned as `config.founder`. Alias of `alice`, so every legacy test's
+    /// first buy is the activation. Also holds a direct `.skr`, so her later
+    /// purchases pass the genesis gate like any `.skr` holder's.
     pub founder: Keypair,
-    /// Holds a planted `.skr` record.
+    /// bob: wrapped `.skr` (AllDomains NFT). carol: direct `.skr`.
     pub carol: Keypair,
-    /// Holds a planted SNS record only.
+    /// Tokenized `.sns` only.
     pub dave: Keypair,
-    /// Holds no name at all.
+    /// Holds no domain at all.
     pub erin: Keypair,
-    /// wallet → name record account passed as its identity.
-    pub identities: std::collections::HashMap<Pubkey, Pubkey>,
+    /// Direct `.sns` only.
+    pub frank: Keypair,
+    /// wallet → identity accounts passed with its purchases.
+    pub identities: std::collections::HashMap<Pubkey, Vec<Pubkey>>,
     /// Where fees are configured to land. Not a signer — see [`FEE_RECIPIENT`].
     pub fee_recipient: Pubkey,
     pub funder: Keypair,
@@ -141,13 +237,11 @@ fn funded(pt: &mut ProgramTest, lamports: u64) -> Keypair {
 
 impl Env {
     pub async fn new() -> Env {
-        Env::with_names(|_, _| false).await
+        Env::with(|_| {}).await
     }
 
     /// Build an environment, letting a test plant extra accounts first.
-    /// `extra` returns `true` if it planted its own account at
-    /// `FOUNDER_NAME_ACCOUNT` (to test a spoofed or transferred name).
-    pub async fn with_names(extra: impl FnOnce(&mut ProgramTest, &Keypair) -> bool) -> Env {
+    pub async fn with(extra: impl FnOnce(&mut ProgramTest)) -> Env {
         let mut pt = ProgramTest::new("sol_rigs", sol_rigs::ID, processor!(entry_shim));
         pt.set_compute_max_units(400_000);
 
@@ -158,41 +252,19 @@ impl Env {
         let carol = funded(&mut pt, 10_000 * SOL);
         let dave = funded(&mut pt, 10_000 * SOL);
         let erin = funded(&mut pt, 10_000 * SOL);
+        let frank = funded(&mut pt, 10_000 * SOL);
 
         let mut identities = std::collections::HashMap::new();
-        let plant = |pt: &mut ProgramTest, key: Pubkey, acct: Account| {
-            pt.add_account(key, acct);
-        };
-        // alice = founder, owning sneaks.skr — unless the test replaces it.
-        if !extra(&mut pt, &alice) {
-            plant(
-                &mut pt,
-                FOUNDER_NAME_ACCOUNT,
-                program_owned(
-                    ANS_PROGRAM_ID,
-                    ans_record(&SKR_TLD_PARENT, &alice.pubkey(), 0),
-                ),
-            );
-        }
-        identities.insert(alice.pubkey(), FOUNDER_NAME_ACCOUNT);
         for (who, kind) in [
-            (&bob, NameKind::Skr),
-            (&carol, NameKind::Skr),
-            (&dave, NameKind::Sns),
+            (&alice, Domain::SkrDirect),
+            (&bob, Domain::SkrWrapped),
+            (&carol, Domain::SkrDirect),
+            (&dave, Domain::SnsTokenized),
+            (&frank, Domain::SnsDirect),
         ] {
-            let key = Pubkey::new_unique();
-            let acct = match kind {
-                NameKind::Sns => {
-                    program_owned(SNS_NAME_PROGRAM_ID, sns_record(&SNS_ROOT, &who.pubkey()))
-                }
-                _ => program_owned(
-                    ANS_PROGRAM_ID,
-                    ans_record(&SKR_TLD_PARENT, &who.pubkey(), 0),
-                ),
-            };
-            plant(&mut pt, key, acct);
-            identities.insert(who.pubkey(), key);
+            identities.insert(who.pubkey(), plant_domain(&mut pt, &who.pubkey(), kind));
         }
+        extra(&mut pt);
 
         // Give the recipient an existing account so a withdrawal is a plain
         // credit, the way it will be on devnet.
@@ -216,6 +288,7 @@ impl Env {
             carol,
             dave,
             erin,
+            frank,
             identities,
         }
     }
@@ -333,31 +406,27 @@ impl Env {
         self.send(ix, &[&f]).await
     }
 
-    /// `buy_rigs` with the buyer's planted identity (or the system program as
-    /// a placeholder) and no referrer.
+    /// `buy_rigs` with the buyer's planted identity (none for erin) and no
+    /// referrer.
     pub fn buy_ix(&self, owner: &Pubkey, count: u64) -> Instruction {
-        let identity = self
-            .identities
-            .get(owner)
-            .copied()
-            .unwrap_or(solana_sdk::system_program::ID);
-        self.buy_ix_with(owner, count, Some(identity), None)
+        let identity = self.identities.get(owner).cloned().unwrap_or_default();
+        self.buy_ix_with(owner, count, identity, None)
     }
 
-    /// `buy_rigs` with explicit remaining accounts.
+    /// `buy_rigs` with explicit remaining accounts: identity accounts, then
+    /// `(referrer, referrer_miner)` if given.
     pub fn buy_ix_with(
         &self,
         owner: &Pubkey,
         count: u64,
-        identity: Option<Pubkey>,
+        identity: Vec<Pubkey>,
         referrer: Option<(Pubkey, Pubkey)>,
     ) -> Instruction {
         let mut ix = self.buy_ix_raw(owner, count, referrer.map(|r| r.0));
         use solana_sdk::instruction::AccountMeta;
-        ix.accounts.push(AccountMeta::new_readonly(
-            identity.unwrap_or(solana_sdk::system_program::ID),
-            false,
-        ));
+        for key in identity {
+            ix.accounts.push(AccountMeta::new_readonly(key, false));
+        }
         if let Some((_, referrer_miner)) = referrer {
             ix.accounts
                 .push(AccountMeta::new_readonly(referrer_miner, false));

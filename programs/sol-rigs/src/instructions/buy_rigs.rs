@@ -69,9 +69,8 @@ pub struct BuyRigs<'info> {
 ///
 /// Launch gate, decided by `rigs_engine::gate_purchase` before anything moves:
 ///
-/// * `launch_t0 == 0`: only the ACTIVATION is possible — the pinned founder,
-///   proving in this instruction that it owns `sneaks.skr`, with an active
-///   funded schedule. On success `launch_t0 := Clock` in this same
+/// * `launch_t0 == 0`: only the ACTIVATION is possible — a purchase signed by
+///   the founder wallet pinned in config, with an active funded schedule. On success `launch_t0 := Clock` in this same
 ///   instruction, so a failed purchase can never leave T0 behind.
 /// * afterwards: the access phase (from T0 and the clock only) decides which
 ///   proven identity may buy.
@@ -82,7 +81,14 @@ pub fn handle_buy_rigs<'info>(
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let owner_key = ctx.accounts.owner.key();
-    let identity_account = ctx.remaining_accounts.first();
+    // Remaining accounts: identity accounts first (1 for a direct domain, 3
+    // for a wrapped / tokenized one), then the referrer's miner iff named.
+    let remaining = ctx.remaining_accounts;
+    let n_ref = usize::from(referrer.is_some());
+    if remaining.len() < n_ref {
+        return err!(RigsError::MissingReferrerAccount);
+    }
+    let (identity_accounts, referrer_accounts) = remaining.split_at(remaining.len() - n_ref);
 
     // --- launch gate ---
     let gate = {
@@ -91,11 +97,8 @@ pub fn handle_buy_rigs<'info>(
             launch_t0: config.launch_t0,
             now,
             is_founder: owner_key == config.founder,
-            owns_founder_name: identity_account
-                .map(|a| identity::owns_founder_name(a, &owner_key, now))
-                .unwrap_or(false),
             schedule_active: config.reward_rate > 0 && now < config.reward_period_finish,
-            identity: identity::prove(identity_account, &owner_key, now),
+            identity: identity::prove(identity_accounts, &owner_key, now),
         })
         .anchor()?
     };
@@ -115,9 +118,8 @@ pub fn handle_buy_rigs<'info>(
     let referrer_check = match referrer {
         None => None,
         Some(r) => {
-            let acct = ctx
-                .remaining_accounts
-                .get(1)
+            let acct = referrer_accounts
+                .first()
                 .ok_or(error!(RigsError::MissingReferrerAccount))?;
             let (expected, _) =
                 Pubkey::find_program_address(&[MINER_SEED, r.as_ref()], ctx.program_id);

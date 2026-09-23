@@ -32,10 +32,11 @@ function ix(
  * `buy_rigs(count, referrer)` — see `instructions/buy_rigs.rs`.
  *
  * Args: `u64 count` then Borsh `Option<Pubkey>` (`0` | `1 ‖ 32 bytes`).
- * Remaining accounts: `[identity, referrer_miner?]` — the buyer's `.skr` / SNS
- * name record (the system program when there is none), then the referrer's
- * miner PDA iff a referrer is named. The program verifies both itself; the
- * client choosing them grants nothing.
+ * Remaining accounts: `[identity…, referrer_miner?]` — the buyer's `.skr` /
+ * `.sns` proof (`[name]` direct, `[name, nft_record, token_account]` wrapped
+ * or tokenized, or nothing), then the referrer's miner PDA iff a referrer is
+ * named. The program verifies all of it; the client choosing them grants
+ * nothing.
  */
 export function buyRigsInstruction(
   owner: Address,
@@ -43,7 +44,7 @@ export function buyRigsInstruction(
   pdas: ProgramAddresses,
   count: bigint,
   opts: {
-    identity?: Address | null;
+    identity?: readonly Address[];
     referrer?: { wallet: Address; miner: Address } | null;
   } = {},
 ): Instruction {
@@ -65,7 +66,7 @@ export function buyRigsInstruction(
       { address: pdas.rewardVault, role: AccountRole.READONLY },
       { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
       // remaining accounts
-      { address: opts.identity ?? SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+      ...(opts.identity ?? []).map((address) => ({ address, role: AccountRole.READONLY })),
       ...(referrer ? [{ address: referrer.miner, role: AccountRole.READONLY }] : []),
     ],
     args,

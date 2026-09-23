@@ -66,7 +66,7 @@ async function main() {
     row('PREFLIGHT', 'PASS');
     console.log(
       `\n  Nothing was sent. To activate, the founder opens the app with the\n` +
-        `  sneaks.skr wallet, enters ${seeds} seeds, re-runs the preflight there and\n` +
+        `  founder wallet, enters ${seeds} seeds, re-runs the preflight there and\n` +
         `  types "${confirmationPhrase(seeds)}". The app simulates once more, then\n` +
         `  submits ONE transaction.\n`,
     );

@@ -1,15 +1,14 @@
 //! Launch activation and access phases.
 //!
 //! One event flips THE CHERRY TREE from pre-launch to live: the first
-//! successful purchase by the founder wallet, which must also prove on-chain
-//! that it owns the founder `.skr` name at that moment. That purchase's chain
-//! timestamp is T0. Every access phase is a pure function of T0 and the chain
+//! successful purchase signed by the founder wallet pinned in config. That
+//! purchase's chain timestamp is T0. Every access phase is a pure function of T0 and the chain
 //! clock — nothing else, and nobody, moves it.
 //!
 //! ```text
 //! now < T0 (or T0 unset)      PreLaunch    founder activation only
 //! T0 ≤ now < T0 + 24h         SkrGenesis   .skr holders
-//! T0 + 24h ≤ now < T0 + 48h   SkrSnsEarly  .skr or SNS holders
+//! T0 + 24h ≤ now < T0 + 48h   SkrSnsEarly  .skr or .sns holders
 //! T0 + 48h ≤ now              Public       everyone, permanently
 //! ```
 
@@ -46,9 +45,9 @@ impl AccessPhase {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProvenIdentity {
     None,
-    /// Owns a `.skr` (AllDomains) name record.
+    /// Owns a `.skr` domain (AllDomains), directly or wrapped.
     Skr,
-    /// Owns a top-level SNS name record (SPL Name Service root).
+    /// Owns a `.sns` domain (SNS), directly or tokenized.
     Sns,
 }
 
@@ -95,10 +94,8 @@ pub fn purchase_allowed(phase: AccessPhase, identity: ProvenIdentity) -> bool {
 pub struct PurchaseContext {
     pub launch_t0: i64,
     pub now: i64,
-    /// Signer is the pinned founder wallet.
+    /// Signer is the founder wallet pinned in config.
     pub is_founder: bool,
-    /// Signer proved, in this instruction, that it owns the founder name.
-    pub owns_founder_name: bool,
     /// `reward_rate > 0 && now < reward_period_finish`.
     pub schedule_active: bool,
     pub identity: ProvenIdentity,
@@ -116,7 +113,7 @@ pub enum PurchaseGate {
 /// Decide a purchase. Activation is possible exactly while T0 is unset.
 pub fn gate_purchase(ctx: &PurchaseContext) -> EngineResult<PurchaseGate> {
     if ctx.launch_t0 <= NOT_ACTIVATED {
-        if !(ctx.is_founder && ctx.owns_founder_name) {
+        if !ctx.is_founder {
             return Err(EngineError::AccessDenied);
         }
         if !ctx.schedule_active {

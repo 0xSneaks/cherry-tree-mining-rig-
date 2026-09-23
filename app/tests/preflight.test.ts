@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { address, getAddressEncoder, type Address } from '@solana/kit';
+import { address } from '@solana/kit';
 import { describe, expect, it } from 'vitest';
 
 import type { Config } from '../src/lib/program/accounts';
@@ -28,15 +28,6 @@ const PDAS: ProgramAddresses = {
 const MINER = address('11111111111111111111111111111116');
 const NOW = 1_790_000_000n;
 const SOL = 1_000_000_000n;
-
-function nameRecord(owner: Address, parent: Address = id.SKR_TLD_PARENT, expires = 0n): Uint8Array {
-  const d = new Uint8Array(232);
-  d.set([68, 72, 88, 44, 15, 167, 103, 243], 0);
-  d.set(getAddressEncoder().encode(parent), 8);
-  d.set(getAddressEncoder().encode(owner), 40);
-  new DataView(d.buffer).setBigUint64(104, expires, true);
-  return d;
-}
 
 function config(over: Partial<Config> = {}): Config {
   return {
@@ -84,20 +75,13 @@ function input(over: Partial<PreflightInput> = {}): PreflightInput {
     pdas: PDAS,
     founderWallet: EXPECTED_FOUNDER,
     founderMinerExists: false,
-    founderNameAccount: {
-      address: id.FOUNDER_NAME_ACCOUNT,
-      owner: id.ANS_PROGRAM_ID,
-      data: nameRecord(EXPECTED_FOUNDER),
-    },
     rewardVaultDistributable: 30n * SOL,
     chainTime: NOW,
     founderLamports: 2n * SOL,
     rigCount: 10n,
     networkFeeLamports: 5_000n,
     minerRentLamports: 2_000_000n,
-    instruction: buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, 10n, {
-      identity: id.FOUNDER_NAME_ACCOUNT,
-    }),
+    instruction: buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, 10n),
     simulation: { ok: true, error: null, logs: [] },
     ...over,
   };
@@ -118,37 +102,6 @@ describe('first-buy preflight', () => {
     ['devnet rehearsal', { intendedCluster: 'devnet', actualCluster: 'devnet' }],
     ['program missing', { programAccount: null }],
     ['wrong wallet', { founderWallet: address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM') }],
-    ['name record missing', { founderNameAccount: null }],
-    [
-      'name record owned by another wallet',
-      {
-        founderNameAccount: {
-          address: id.FOUNDER_NAME_ACCOUNT,
-          owner: id.ANS_PROGRAM_ID,
-          data: nameRecord(address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM')),
-        },
-      },
-    ],
-    [
-      'name record not ANS-owned',
-      {
-        founderNameAccount: {
-          address: id.FOUNDER_NAME_ACCOUNT,
-          owner: address('11111111111111111111111111111111'),
-          data: nameRecord(EXPECTED_FOUNDER),
-        },
-      },
-    ],
-    [
-      'name record expired',
-      {
-        founderNameAccount: {
-          address: id.FOUNDER_NAME_ACCOUNT,
-          owner: id.ANS_PROGRAM_ID,
-          data: nameRecord(EXPECTED_FOUNDER, id.SKR_TLD_PARENT, NOW - 1n),
-        },
-      },
-    ],
     ['not initialised', { config: null }],
     ['already activated', { config: config({ launchT0: NOW - 5n }) }],
     ['paused', { config: config({ paused: true }) }],
@@ -164,16 +117,15 @@ describe('first-buy preflight', () => {
       'instruction carries a referrer',
       {
         instruction: buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, 10n, {
-          identity: id.FOUNDER_NAME_ACCOUNT,
           referrer: { wallet: EXPECTED_FEE_RECIPIENT, miner: MINER },
         }),
       },
     ],
     [
-      'instruction uses a different identity',
+      'instruction carries extra accounts',
       {
         instruction: buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, 10n, {
-          identity: address('11111111111111111111111111111117'),
+          identity: [address('11111111111111111111111111111117')],
         }),
       },
     ],
@@ -196,14 +148,26 @@ describe('identity constants match the program', () => {
     join(import.meta.dirname, '..', '..', 'programs', 'sol-rigs', 'src', 'constants.rs'),
     'utf8',
   );
-  const pinned = (name: string) => rust.match(new RegExp(`${name}: Pubkey = pubkey!\\("(\\w+)"\\)`))?.[1];
+  const pinned = (name: string) =>
+    rust.match(new RegExp(`${name}: Pubkey =\\s*pubkey!\\("(\\w+)"\\)`))?.[1];
 
-  it('pins the same ANS / .skr / sneaks.skr / SNS accounts', () => {
-    expect(pinned('ANS_PROGRAM_ID')).toBe(id.ANS_PROGRAM_ID);
-    expect(pinned('SKR_TLD_PARENT')).toBe(id.SKR_TLD_PARENT);
-    expect(pinned('FOUNDER_NAME_ACCOUNT')).toBe(id.FOUNDER_NAME_ACCOUNT);
-    expect(pinned('SNS_NAME_PROGRAM_ID')).toBe(id.SNS_NAME_PROGRAM_ID);
-    expect(pinned('SNS_ROOT')).toBe(id.SNS_ROOT);
+  it('pins the same .skr (AllDomains) and .sns (SNS) registry accounts', () => {
+    for (const name of [
+      'ANS_PROGRAM_ID',
+      'SKR_TLD_PARENT',
+      'ANS_NAME_HOUSE_PROGRAM_ID',
+      'SKR_NAME_HOUSE',
+      'SNS_NAME_PROGRAM_ID',
+      'SNS_TLD_ROOT',
+      'SNS_NAME_TOKENIZER_ID',
+      'SPL_TOKEN_PROGRAM_ID',
+    ] as const) {
+      expect(pinned(name), name).toBe(id[name]);
+    }
+  });
+
+  it('carries no founder name anywhere in the program', () => {
+    expect(rust).not.toMatch(/FOUNDER_NAME/);
   });
 });
 

@@ -24,40 +24,46 @@ pub enum VaultKind {
     Fee = 2,
 }
 
-// --- identity: official name services, pinned (see `identity.rs`) ---
+// --- identity: official name registries, pinned (see `identity.rs`) ---
 
 use anchor_lang::prelude::Pubkey;
 use anchor_lang::pubkey;
 
-/// AllDomains Alternative Name Service program — the registry `.skr` names
-/// (Seeker ID) live in. Source: `@onsol/tldparser` `ANS_PROGRAM_ID`, and
-/// docs.solanamobile.com (".skr domains are built on AllDomains").
+// .skr — AllDomains (Seeker ID). docs.solanamobile.com: ".skr domains are
+// built on AllDomains"; resolver SDK `@onsol/tldparser`.
+
+/// AllDomains Alternative Name Service program (`ANS_PROGRAM_ID`).
 pub const ANS_PROGRAM_ID: Pubkey = pubkey!("ALTNSZ46uaAUU7XUV6awvdorLGqAsPwa9shm7h4uP2FK");
-
-/// ANS origin ("ANS") name account. `@onsol/tldparser` `ROOT_ANS_PUBLIC_KEY`.
+/// ANS origin name account (`ROOT_ANS_PUBLIC_KEY`).
 pub const ANS_ORIGIN: Pubkey = pubkey!("3mX9b4AZaQehNoQGfckVcmgmA6bkBoFcbLj9RMmMyNcU");
-
-/// The `.skr` TLD name account: the parent of every `.skr` name record.
-/// PDA([sha256("ALT Name Service" ‖ ".skr"), [0;32], ANS_ORIGIN], ANS) —
-/// recomputed from first principles in `tests/identity.rs`.
+/// The `.skr` TLD name account — parent of every `.skr` name record.
+/// PDA([sha256("ALT Name Service" ‖ ".skr"), [0;32], ANS_ORIGIN], ANS);
+/// re-derived in `tests/launch.rs`.
 pub const SKR_TLD_PARENT: Pubkey = pubkey!("F3A8kuikEiu6k2399oSJ1PWfcJYDHqpwoQ2e8psSDNuF");
-
-/// The founder's name, without its TLD: `sneaks.skr`.
-pub const FOUNDER_NAME: &str = "sneaks";
-
-/// The `sneaks.skr` name record account.
-/// PDA([sha256("ALT Name Service" ‖ "sneaks"), [0;32], SKR_TLD_PARENT], ANS) —
-/// recomputed in `tests/identity.rs`. The program only ever accepts THIS
-/// account as proof of the founder name; a look-alike cannot stand in.
-pub const FOUNDER_NAME_ACCOUNT: Pubkey = pubkey!("H4ZaQQaESb69EPFnMLGFde1stMPbb5s15YBnzyDEHxZH");
-
 /// ANS `NameRecordHeader` account discriminator.
 pub const ANS_NAME_RECORD_DISCRIMINATOR: [u8; 8] = [68, 72, 88, 44, 15, 167, 103, 243];
+/// AllDomains Name House program: holds the record of a name wrapped as an
+/// NFT (`NAME_HOUSE_PROGRAM_ID`).
+pub const ANS_NAME_HOUSE_PROGRAM_ID: Pubkey =
+    pubkey!("NH3uX6FtVE2fNREAioP7hm5RaozotZxeL6khU1EHx51");
+/// The `.skr` name house: PDA(["name_house", PDA(["tld_house", ".skr"],
+/// TLD House)], Name House); re-derived in `tests/launch.rs`.
+pub const SKR_NAME_HOUSE: Pubkey = pubkey!("CPD3hKJE51VuiDE5u5Nosx1u7MXWwKGPff8HFJTtpX4V");
+/// AllDomains TLD House program (only used to re-derive SKR_NAME_HOUSE).
+pub const ANS_TLD_HOUSE_PROGRAM_ID: Pubkey = pubkey!("TLDHkysf5pCnKsVA4gXpNvmy7psXLPEu4LAdDJthT9S");
+/// AllDomains `NftRecord` account discriminator.
+pub const ANS_NFT_RECORD_DISCRIMINATOR: [u8; 8] = [174, 190, 114, 100, 177, 14, 90, 254];
 
-/// SPL Name Service program (SNS). `@bonfida/spl-name-service` `NAME_PROGRAM_ID`.
+// .sns — SNS (sns.id). dev.sns.id: `SNS_ROOT_DOMAIN_ACCOUNT` — "The `.sns`
+// TLD"; `getSnsDomainKeysForOwner` — "top-level `.sns` domain accounts owned
+// by a wallet"; `getSnsNftsForOwner` — "tokenized `.sns` domains".
+
+/// SPL Name Service program (`NAME_PROGRAM_ID`).
 pub const SNS_NAME_PROGRAM_ID: Pubkey = pubkey!("namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX");
+/// The `.sns` TLD root (`SNS_ROOT_DOMAIN_ACCOUNT`).
+pub const SNS_TLD_ROOT: Pubkey = pubkey!("58PwtjSDuFHuUkYjH9BYnnQKHfwo9reZhC2zMJv9JPkx");
+/// SNS name tokenizer program (`NAME_TOKENIZER_ID`).
+pub const SNS_NAME_TOKENIZER_ID: Pubkey = pubkey!("nftD3vbNkNqfj2Sd3HZwbpw4BxxKWr4AjGb9X38JeZk");
 
-/// SNS root: the parent of every top-level SNS name (shown as `.sns`, formerly
-/// `.sol`, since SNS's 2026 migration). `@bonfida/spl-name-service`
-/// `SNS_ROOT_DOMAIN_ACCOUNT`.
-pub const SNS_ROOT: Pubkey = pubkey!("58PwtjSDuFHuUkYjH9BYnnQKHfwo9reZhC2zMJv9JPkx");
+/// SPL Token program: both registries mint their name NFTs here.
+pub const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");

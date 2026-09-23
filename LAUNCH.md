@@ -1,107 +1,116 @@
-# Launch: sneaks.skr's first planting activates THE CHERRY TREE
+# Launch: the founder's first planting activates THE CHERRY TREE
 
-One event flips the grove from pre-launch to live: **the first successful,
-confirmed purchase by the verified `sneaks.skr` wallet.** That purchase's
-chain time is **T0**. Every access phase after it is a pure function of T0
-and the chain clock. There is no manual launch time, no toggle, and no
+One event flips the grove from pre-launch to live: **the first successful
+purchase signed by the founder activation wallet.** That purchase's chain time
+is **T0**. Every access phase after it is a pure function of T0 and the chain
+clock. There is no manual launch time, no Day-2 or Day-3 toggle, and no
 redeploy between stages.
 
 | When | Phase | Who may plant |
 |---|---|---|
 | before T0 | PRE-LAUNCH | nobody (the founder activation only) |
-| T0 → T0 + 24h | .SKR GENESIS ACCESS | `.skr` holders |
-| T0 + 24h → T0 + 48h | .SKR + SNS EARLY ACCESS | `.skr` or SNS holders |
+| T0 → T0 + 24h | .SKR GENESIS ACCESS | `.skr` domain holders |
+| T0 + 24h → T0 + 48h | .SKR + .SNS EARLY ACCESS | `.skr` or `.sns` domain holders |
 | T0 + 48h onward | PUBLIC | everyone, permanently |
 
-## Founder identity
+## Founder activation wallet
 
-- **Registry.** `.skr` names (Seeker ID) are AllDomains names. Solana Mobile's
-  docs: "SKR domains are built on AllDomains". The program is ANS
-  `ALTNSZ46uaAUU7XUV6awvdorLGqAsPwa9shm7h4uP2FK` (`@onsol/tldparser`).
-- **Derived accounts.** Both are derived with the official scheme and
-  re-derived from first principles in `programs/sol-rigs/tests/launch.rs`:
-  - `.skr` TLD parent: `F3A8kuikEiu6k2399oSJ1PWfcJYDHqpwoQ2e8psSDNuF`
-  - `sneaks.skr` name record: `H4ZaQQaESb69EPFnMLGFde1stMPbb5s15YBnzyDEHxZH`
-- **Resolved wallet.** `FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp`.
-  - Source 1: AllDomains' own resolver (`alldomains.id/api/domain-owner/sneaks.skr`).
-  - Source 2: the Seeker fee-receiving wallet already pinned as `fee_recipient`.
-  - **Neither is an on-chain read from this environment**, which had no
-    mainnet RPC access. So the text "sneaks.skr" is never trusted. Instead:
-    1. `initialize(…, founder)` pins the wallet in `config.founder`. There is
-       no setter.
-    2. The activation purchase must be **signed by `config.founder`**, and it
-       must pass the `sneaks.skr` record, which the program checks in the same
-       instruction. The record must be owned by ANS, carry the ANS
-       discriminator, have the `.skr` parent, be unexpired, and have
-       **owner == signer**.
-    3. The first-buy preflight reads that record from chain and fails closed
-       if the owner differs.
-- **Not accepted (fails closed).** An NFT-wrapped `sneaks.skr`: its header
-  owner is an escrow, not the wallet. If the preflight reports that, unwrap it
-  first.
+`FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp` is the founder activation
+authority.
+
+- It is pinned on-chain as `config.founder` by `initialize(…, founder)`.
+- There is no setter.
+- The ops scripts refuse any other value.
+- The preflight fails closed if `config.founder` differs.
+
+Activation depends on the wallet only. No domain name is resolved at runtime.
 
 ## Activation (on-chain, atomic)
 
-`buy_rigs` runs `rigs_engine::gate_purchase` before anything moves. While
-`launch_t0 == 0` it permits only the activation. All of the following must
-hold:
+`buy_rigs` decides through `rigs_engine::gate_purchase` before anything moves.
+While `launch_t0 == 0`, the only purchase allowed is the activation. It needs:
 
-1. The signer equals `config.founder`.
-2. The signer proves it owns the `sneaks.skr` record at that moment.
-3. The reward schedule is active: `reward_rate > 0 && now < reward_period_finish`.
+- a signer equal to `config.founder`, and
+- an active, funded reward schedule (`reward_rate > 0 && now < reward_period_finish`).
 
 The purchase then runs and the fully-funded check passes. Only after that is
 `launch_t0 := Clock::unix_timestamp` written, in the same instruction, and
-`LaunchActivated` is emitted. A failed, reverted or simulated transaction
-writes nothing. Initialising, funding and connecting never touch T0.
+`LaunchActivated` emitted.
 
-- **T0 is immutable.** `t0_after_success` writes only while T0 is unset. No
-  instruction resets it, re-initialisation is impossible, and a second
-  founder purchase is an ordinary purchase.
-- **Concurrency and replay.** The runtime serialises writes to Config, so
-  concurrent attempts produce exactly one T0. A byte-identical replay is
-  de-duplicated by signature.
-- **Restarts and redeploys.** T0 lives in the Config account. A server
-  restart, frontend redeploy or program upgrade cannot change it.
+- **Nothing else activates.** A failed, reverted or simulated transaction
+  writes nothing. Initialising, funding and connecting never touch T0.
+- **T0 is immutable.** It is written only while unset. No instruction resets
+  it, re-initialisation is impossible, and a second founder purchase is an
+  ordinary purchase.
+- **Concurrency and replay.** Writes to Config are serialised, so concurrent
+  attempts produce exactly one T0. A byte-identical replay is de-duplicated by
+  signature.
+- **Restarts and redeploys.** T0 lives in the Config account, so neither can
+  change it.
 
 ## Access gate
 
-This is enforced inside `buy_rigs`, not in the UI. The phase comes from
-`launch_t0` and the chain clock, so browser time, a direct RPC call, the
-Vercel URL or Cherry-embedded vs standalone mode make no difference.
+Enforced inside `buy_rigs`, not in the UI. The phase comes from `launch_t0`
+and the chain clock, so browser time, direct RPC calls, the Vercel URL, and
+standalone vs Cherry-embedded mode make no difference.
 
-Buyers prove identity by passing their name record as the first remaining
-account:
+The buyer passes its domain proof as remaining accounts:
 
-- **`.skr`:** an ANS record under `F3A8…`, unexpired, with owner == signer.
-- **SNS:** a Name Service (`namesLPne…`) record with parent == SNS root
-  `58Pwt…` and owner == signer. This is the same test as the official SDK's
-  `getSnsDomainKeysForOwner`. Since SNS's 2026 migration these names display
-  as **`.sns`** (formerly `.sol`).
+- `[name]` for a directly owned domain;
+- `[name, nft_record, token_account]` for a wrapped or tokenized one.
 
-These are not verifiable yet, so they are not accepted (they fail closed):
+### `.skr` — AllDomains
 
-- tokenized (NFT) SNS names;
-- the **new SRS-based `.sol`** names. No official SDK resolves them yet; SNS
-  targets Q4 2026–Q1 2027.
+`.skr` domains (Seeker ID) are issued on AllDomains. Solana Mobile's docs
+say "SKR domains are built on AllDomains", and resolution uses AllDomains'
+official SDK, `@onsol/tldparser`.
+
+| | |
+|---|---|
+| Registry program | ANS `ALTNSZ46uaAUU7XUV6awvdorLGqAsPwa9shm7h4uP2FK` |
+| `.skr` TLD parent | `F3A8kuikEiu6k2399oSJ1PWfcJYDHqpwoQ2e8psSDNuF` |
+| **Direct** | ANS name record with the ANS discriminator, parent = `.skr`, unexpired, header owner = wallet |
+| **Wrapped (NFT)** | the name record's owner is its Name House `NftRecord` PDA (`["nft_record", .skr name house, name]`, program `NH3uX6…`) |
+| | that record is Active and points at the name |
+| | the wallet's SPL token account holds exactly 1 of the record's mint |
+
+This is the SDK's own resolution path (`getNameOwner` → `getMintOwner`).
+The `.skr` TLD parent and name house are re-derived from first principles
+in the program tests.
+
+### `.sns` — SNS
+
+`.sns` domains are issued by SNS (sns.id) on the SPL Name Service. SNS's
+developer docs (dev.sns.id) define:
+
+- `SNS_ROOT_DOMAIN_ACCOUNT` — "The `.sns` TLD";
+- `getSnsDomainKeysForOwner` — "top-level `.sns` domain accounts owned by a wallet";
+- `getSnsNftsForOwner` — "tokenized `.sns` domains".
+
+| | |
+|---|---|
+| Registry program | SPL Name Service `namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX` |
+| `.sns` TLD root | `58PwtjSDuFHuUkYjH9BYnnQKHfwo9reZhC2zMJv9JPkx` |
+| **Direct** | Name Service record with parent = `.sns` root and header owner = wallet (exactly `getSnsDomainKeysForOwner`) |
+| **Tokenized (NFT)** | the name record's owner is its tokenizer `NftRecord` PDA (`["nft_record", name]`, program `nftD3v…`) |
+| | that record is Active and points at the name |
+| | the wallet's SPL token account holds exactly 1 of the record's mint (the `getSnsNftsForOwner` path) |
+
+Subdomains are not top-level domains, so they are rejected by the parent
+check.
 
 ## Referral V1
 
 - **Weight.** A validly referred wallet plants at **1.05× reward weight**.
   Emission is split by `Σ rigs × weight`: 100 for a base rig, 105 for a
-  referred rig. That redistributes the **same funded emission**, so
-  `paid + owed ≤ funded` is untouched. It is not "+5% APR". The referred APR
-  shown is computed from state, and exactly 1.05× the base rate.
+  referred rig. That redistributes the same funded emission, so
+  `paid + owed ≤ funded` is untouched. It is not "+5% APR".
 - **Binding.** One wallet has one immutable referrer, bound at its first
   purchase to an existing planter.
 - **Rejected:** self-referral, a non-planter referrer, a forged referrer
-  account, and any referrer on a later purchase (replacement, stacking).
+  account, and any referrer on a later purchase.
 - **No payouts.** There is no referrer payout and there are no levels.
-- **Cycles.** Cycles are impossible: a referrer must exist before the referred
-  position does.
-- **Limit.** This does not prove distinct humans. One person with two wallets
-  can refer themselves. The gain is bounded at 5% extra share for that
-  wallet, paid out of other planters' shares, never by new emission.
+- **Limit.** This does not prove distinct humans.
 
 ## First buy — the one live transaction
 
@@ -113,16 +122,15 @@ These are not verifiable yet, so they are not accepted (they fail closed):
    ```
 
    Every check must PASS. The preflight covers:
-   - cluster, program id, founder wallet, `sneaks.skr` on chain, and the
-     fee wallet;
+   - cluster, program id, founder wallet and fee wallet;
    - initialised, not paused, never activated;
    - funded, schedule active, solvent;
    - explicit amount, balance, fee, seeds, APR now and after;
-   - exact instruction shape;
+   - exact instruction shape (one `buy_rigs`, no extra accounts);
    - simulation.
-2. **Activation in the app.** Open the app with the sneaks.skr Seed Vault
-   wallet. The Founder activation panel appears only for `config.founder`
-   while pre-launch.
+2. **Activation in the app.** Open the app with the founder wallet. The
+   founder activation panel appears only for `config.founder` while
+   pre-launch.
    - Enter the count (there is no default) and run the preflight.
    - Type `ACTIVATE <count>`.
    - The app re-runs the preflight and simulation on fresh state and sends
@@ -136,5 +144,5 @@ These are not verifiable yet, so they are not accepted (they fail closed):
 
    It checks the founder signer, T0 against the block time, exact SOL
    movement and fee, seeds credited, account ownership, reward accounting and
-   solvency, APR, no referral, phase = .SKR GENESIS and about 24h to SNS.
-   Then it stops.
+   solvency, APR, no referral, phase = .SKR GENESIS and about 24h to `.sns`
+   access. Then it stops.

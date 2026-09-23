@@ -8,7 +8,6 @@ import {
   compileTransaction,
   createTransactionMessage,
   getBase64Decoder,
-  getBase64Encoder,
   getTransactionEncoder,
   pipe,
   setTransactionMessageFeePayer,
@@ -21,7 +20,6 @@ import {
 
 import { fetchSnapshot, type RigsRpc } from '../chain';
 import { ACCOUNT_SIZE, PROGRAM_ID } from '../program/constants';
-import { FOUNDER_NAME_ACCOUNT } from '../program/identity';
 import { buyRigsInstruction } from '../program/instructions';
 import { minerPda, programAddresses } from '../program/pdas';
 import { clusterFromGenesis, type Cluster } from './expected';
@@ -70,23 +68,20 @@ export async function gatherPreflight(
   rigCount: bigint | null,
   intendedCluster: Cluster | null,
 ): Promise<{ input: PreflightInput; founderMiner: Address }> {
-  const [genesis, programInfo, snapshot, pdas, founderMiner, nameInfo, balance, rent] =
+  const [genesis, programInfo, snapshot, pdas, founderMiner, balance, rent] =
     await Promise.all([
       rpc.getGenesisHash().send(),
       rpc.getAccountInfo(PROGRAM_ID, { encoding: 'base64' }).send(),
       fetchSnapshot(founder, rpc),
       programAddresses(),
       minerPda(founder),
-      rpc.getAccountInfo(FOUNDER_NAME_ACCOUNT, { encoding: 'base64' }).send(),
       rpc.getBalance(founder).send(),
       rpc.getMinimumBalanceForRentExemption(BigInt(ACCOUNT_SIZE.miner)).send(),
     ]);
 
   const ix =
     rigCount !== null && rigCount > 0n
-      ? buyRigsInstruction(founder, founderMiner, pdas, rigCount, {
-          identity: FOUNDER_NAME_ACCOUNT,
-        })
+      ? buyRigsInstruction(founder, founderMiner, pdas, rigCount)
       : null;
 
   let networkFee = 5_000n;
@@ -98,7 +93,6 @@ export async function gatherPreflight(
     simulation = await simulateActivation(rpc, founder, ix);
   }
 
-  const name = nameInfo.value;
   return {
     founderMiner,
     input: {
@@ -109,13 +103,6 @@ export async function gatherPreflight(
       pdas,
       founderWallet: founder,
       founderMinerExists: snapshot?.miner != null,
-      founderNameAccount: name
-        ? {
-            address: FOUNDER_NAME_ACCOUNT,
-            owner: name.owner,
-            data: new Uint8Array(getBase64Encoder().encode(name.data[0])),
-          }
-        : null,
       rewardVaultDistributable: snapshot?.rewardVaultDistributable ?? 0n,
       chainTime: snapshot?.chainTimeSeconds ?? 0n,
       founderLamports: BigInt(balance.value),

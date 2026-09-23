@@ -13,9 +13,9 @@
  *   4. submitting re-runs the whole preflight and simulation, and sends ONE
  *      transaction only if that fresh preflight passes too.
  *
- * The program is still the authority: it re-verifies the founder, the live
- * `sneaks.skr` ownership and the funded schedule inside the purchase, and
- * writes T0 only if the purchase succeeds.
+ * The program is still the authority: it re-verifies the founder wallet and
+ * the funded schedule inside the purchase, and writes T0 only if the purchase
+ * succeeds.
  */
 import { useRef, useState } from 'react';
 import type { Address } from '@solana/kit';
@@ -105,8 +105,9 @@ export function FounderActivation({
     <section className="panel founder" data-testid="founder-activation">
       <h2 className="section-title">Founder activation</h2>
       <p className="note">
-        One deliberate first planting by sneaks.skr activates the grove. T0 is
-        that transaction&apos;s chain time and never changes.
+        Founder wallet connected. One deliberate first planting activates the
+        grove. T0 is established when the founder activation transaction
+        confirms, and never changes.
       </p>
 
       {stage !== 'sent' && stage !== 'failed' ? (

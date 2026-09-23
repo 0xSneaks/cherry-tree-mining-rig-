@@ -69,7 +69,7 @@ async function main(): Promise<void> {
   }
   if (founder !== EXPECTED_FOUNDER && process.env.CHERRY_TREE_ALLOW_OTHER_FOUNDER !== '1') {
     fail(
-      `CHERRY_TREE_FOUNDER ${founder} is not the verified sneaks.skr wallet ` +
+      `CHERRY_TREE_FOUNDER ${founder} is not the founder activation wallet ` +
         `${EXPECTED_FOUNDER}. The founder is pinned forever at initialize. ` +
         'Set CHERRY_TREE_ALLOW_OTHER_FOUNDER=1 only for a devnet rehearsal wallet.',
     );

@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { Config, Miner } from '../src/lib/program/accounts';
 import { PROGRAM_ID } from '../src/lib/program/constants';
-import { FOUNDER_NAME_ACCOUNT } from '../src/lib/program/identity';
 import { buyRigsInstruction } from '../src/lib/program/instructions';
 import { EXPECTED_FOUNDER } from '../src/lib/launch/expected';
 import {
@@ -32,7 +31,7 @@ const FEE = 3_000_000n;
 const NET = 5_000n;
 const RENT = 2_025_000n;
 
-const ix = buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, SEEDS, { identity: FOUNDER_NAME_ACCOUNT });
+const ix = buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, SEEDS);
 
 function tx(over: Partial<FirstBuyTx> = {}): FirstBuyTx {
   const keys: Address[] = [EXPECTED_FOUNDER, PDAS.config, MINER, PDAS.capitalVault, PDAS.feeVault, PDAS.rewardVault];

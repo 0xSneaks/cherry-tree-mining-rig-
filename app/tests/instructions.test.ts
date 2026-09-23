@@ -49,14 +49,20 @@ describe('buy_rigs', () => {
   it('encodes a referrer as Option::Some and appends its miner account', () => {
     const REF = address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM');
     const REF_MINER = address('11111111111111111111111111111116');
-    const IDENTITY = address('11111111111111111111111111111117');
+    // A wrapped / tokenized domain proof is three accounts; the referrer's
+    // miner always comes last.
+    const ID = [
+      address('11111111111111111111111111111117'),
+      address('11111111111111111111111111111118'),
+      address('11111111111111111111111111111119'),
+    ];
     const r = buyRigsInstruction(OWNER, MINER, PDAS, 1n, {
-      identity: IDENTITY,
+      identity: ID,
       referrer: { wallet: REF, miner: REF_MINER },
     });
     expect(r.data!.length).toBe(8 + 8 + 1 + 32);
     expect(r.data![16]).toBe(1);
-    expect(r.accounts!.slice(7).map((a) => a.address)).toEqual([IDENTITY, REF_MINER]);
+    expect(r.accounts!.slice(7).map((a) => a.address)).toEqual([...ID, REF_MINER]);
     expect(r.accounts!.slice(7).every((a) => a.role === AccountRole.READONLY)).toBe(true);
   });
 
@@ -68,8 +74,6 @@ describe('buy_rigs', () => {
       PDAS.capitalVault,
       PDAS.feeVault,
       PDAS.rewardVault,
-      SYSTEM_PROGRAM_ID,
-      // remaining: identity placeholder
       SYSTEM_PROGRAM_ID,
     ]);
   });

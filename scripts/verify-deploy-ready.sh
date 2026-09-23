@@ -124,9 +124,11 @@ echo "--> no personal wallet hardcoded"
 # Allowed besides the program ID: the official name-registry constants the
 # identity checks must pin on-chain (an admin-settable registry would be a
 # hole). None is a wallet; the founder WALLET lives in config, not source.
-#   ANS program · ANS origin · .skr TLD parent · sneaks.skr name record ·
-#   SNS name program · SNS root
-REGISTRY_ALLOW='ALTNSZ46uaAUU7XUV6awvdorLGqAsPwa9shm7h4uP2FK|3mX9b4AZaQehNoQGfckVcmgmA6bkBoFcbLj9RMmMyNcU|F3A8kuikEiu6k2399oSJ1PWfcJYDHqpwoQ2e8psSDNuF|H4ZaQQaESb69EPFnMLGFde1stMPbb5s15YBnzyDEHxZH|namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX|58PwtjSDuFHuUkYjH9BYnnQKHfwo9reZhC2zMJv9JPkx'
+#   .skr (AllDomains): ANS program · ANS origin · .skr TLD parent ·
+#     Name House program · .skr name house · TLD House program
+#   .sns (SNS): name program · .sns TLD root · name tokenizer
+#   SPL Token program
+REGISTRY_ALLOW='ALTNSZ46uaAUU7XUV6awvdorLGqAsPwa9shm7h4uP2FK|3mX9b4AZaQehNoQGfckVcmgmA6bkBoFcbLj9RMmMyNcU|F3A8kuikEiu6k2399oSJ1PWfcJYDHqpwoQ2e8psSDNuF|NH3uX6FtVE2fNREAioP7hm5RaozotZxeL6khU1EHx51|CPD3hKJE51VuiDE5u5Nosx1u7MXWwKGPff8HFJTtpX4V|TLDHkysf5pCnKsVA4gXpNvmy7psXLPEu4LAdDJthT9S|namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX|58PwtjSDuFHuUkYjH9BYnnQKHfwo9reZhC2zMJv9JPkx|nftD3vbNkNqfj2Sd3HZwbpw4BxxKWr4AjGb9X38JeZk|TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 HARDCODED=$(grep -rnE "\"[1-9A-HJ-NP-Za-km-z]{43,44}\"" \
   programs/*/src crates/*/src 2>/dev/null \
   | grep -v "By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH" \

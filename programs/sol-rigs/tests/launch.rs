@@ -1,7 +1,7 @@
 //! Launch activation, access phases and referral — through real instructions
-//! on a real runtime. Alice is the pinned founder and owns the planted
-//! `sneaks.skr` record; bob and carol own `.skr` records; dave owns only an
-//! SNS record; erin owns nothing.
+//! on a real runtime. Alice is the founder wallet pinned in config (and holds
+//! a direct `.skr`); bob holds a wrapped `.skr`, carol a direct `.skr`; dave a
+//! tokenized `.sns`, frank a direct `.sns`; erin holds no domain.
 
 mod common;
 
@@ -34,26 +34,31 @@ async fn activate(env: &mut Env) -> i64 {
 
 // ------------------------------------------------ the pinned identity itself
 
-/// The pinned constants are re-derived here from first principles, exactly as
-/// `@onsol/tldparser` derives them: PDA([sha256("ALT Name Service" ‖ name),
-/// [0;32] class, parent], ANS).
+// ------------------------------------------------ the pinned registry accounts
+
+/// Re-derive the pinned `.skr` accounts from first principles, exactly as
+/// `@onsol/tldparser` does.
 #[test]
 fn pinned_skr_accounts_derive_from_the_official_scheme() {
     use solana_sdk::hash::hashv;
     let hashed = |name: &str| hashv(&[b"ALT Name Service", name.as_bytes()]).to_bytes();
-    let pda = |name: &str, parent: &APubkey| {
-        APubkey::find_program_address(
-            &[&hashed(name), &[0u8; 32], parent.as_ref()],
-            &ANS_PROGRAM_ID,
-        )
-        .0
-    };
     let origin =
         APubkey::find_program_address(&[&hashed("ANS"), &[0u8; 32], &[0u8; 32]], &ANS_PROGRAM_ID).0;
     assert_eq!(origin, ANS_ORIGIN);
-    assert_eq!(pda(".skr", &ANS_ORIGIN), SKR_TLD_PARENT);
-    assert_eq!(pda(FOUNDER_NAME, &SKR_TLD_PARENT), FOUNDER_NAME_ACCOUNT);
-    assert_eq!(FOUNDER_NAME, "sneaks");
+    let skr = APubkey::find_program_address(
+        &[&hashed(".skr"), &[0u8; 32], ANS_ORIGIN.as_ref()],
+        &ANS_PROGRAM_ID,
+    )
+    .0;
+    assert_eq!(skr, SKR_TLD_PARENT);
+    let tld_house =
+        APubkey::find_program_address(&[b"tld_house", b".skr"], &ANS_TLD_HOUSE_PROGRAM_ID).0;
+    let name_house = APubkey::find_program_address(
+        &[b"name_house", tld_house.as_ref()],
+        &ANS_NAME_HOUSE_PROGRAM_ID,
+    )
+    .0;
+    assert_eq!(name_house, SKR_NAME_HOUSE);
 }
 
 // ------------------------------------------------------ what never activates
@@ -87,87 +92,29 @@ async fn simulation_does_not_activate() {
 }
 
 #[tokio::test]
-async fn wrong_wallet_does_not_activate_even_with_a_skr_name() {
+async fn only_the_founder_wallet_activates_domain_holders_do_not() {
     let mut env = funded_env().await;
-    let bob = env.bob.insecure_clone();
-    let err = env.buy(&bob, 10).await.unwrap_err();
-    assert_rigs_error(err, RigsError::AccessDenied);
-    // Bob passing the real sneaks.skr record (owned by alice) changes nothing.
-    let ix = env.buy_ix_with(&bob.pubkey(), 10, Some(FOUNDER_NAME_ACCOUNT), None);
-    assert_rigs_error(
-        env.send(ix, &[&bob]).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
+    for who in [
+        env.bob.insecure_clone(),
+        env.carol.insecure_clone(),
+        env.dave.insecure_clone(),
+        env.frank.insecure_clone(),
+        env.erin.insecure_clone(),
+    ] {
+        let err = env.buy(&who, 10).await.unwrap_err();
+        assert_rigs_error(err, RigsError::AccessDenied);
+    }
     assert_eq!(t0(&mut env).await, 0);
 }
 
+/// The founder wallet is the authority on its own: no domain proof needed.
 #[tokio::test]
-async fn founder_without_the_name_proof_does_not_activate() {
+async fn founder_wallet_activates_without_any_domain_proof() {
     let mut env = funded_env().await;
     let f = env.founder.insecure_clone();
-    // No identity account.
-    let ix = env.buy_ix_with(&f.pubkey(), 10, None, None);
-    assert_rigs_error(
-        env.send(ix, &[&f]).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
-    // Some other .skr (bob's) is not sneaks.skr.
-    let bobs = env.identities[&env.bob.pubkey()];
-    let ix = env.buy_ix_with(&f.pubkey(), 10, Some(bobs), None);
-    assert_rigs_error(
-        env.send(ix, &[&f]).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
-    assert_eq!(t0(&mut env).await, 0);
-}
-
-/// Spoofs of `sneaks.skr`: every one fails closed.
-#[tokio::test]
-async fn spoofed_founder_names_do_not_activate() {
-    type Plant = fn(&APubkey) -> solana_sdk::account::Account;
-    let spoofs: [(&str, Plant); 5] = [
-        // Right bytes, wrong owner program: anyone can create this.
-        ("not owned by ANS", |f| {
-            program_owned(
-                solana_sdk::system_program::ID,
-                ans_record(&SKR_TLD_PARENT, f, 0),
-            )
-        }),
-        // Real ANS record, but the name belongs to someone else.
-        ("owned by another wallet", |_| {
-            program_owned(
-                ANS_PROGRAM_ID,
-                ans_record(&SKR_TLD_PARENT, &APubkey::new_unique(), 0),
-            )
-        }),
-        // A name under some other TLD.
-        ("wrong parent", |f| {
-            program_owned(ANS_PROGRAM_ID, ans_record(&APubkey::new_unique(), f, 0))
-        }),
-        // Expired.
-        ("expired", |f| {
-            program_owned(ANS_PROGRAM_ID, ans_record(&SKR_TLD_PARENT, f, 1_000))
-        }),
-        // Wrong discriminator.
-        ("bad discriminator", |f| {
-            let mut d = ans_record(&SKR_TLD_PARENT, f, 0);
-            d[0] ^= 0xff;
-            program_owned(ANS_PROGRAM_ID, d)
-        }),
-    ];
-    for (label, make) in spoofs {
-        let mut env = Env::with_names(|pt, alice| {
-            pt.add_account(FOUNDER_NAME_ACCOUNT, make(&alice.pubkey()));
-            true
-        })
-        .await;
-        env.initialize().await.unwrap();
-        env.fund_rewards(10 * SOL, 30 * DAY as u64).await.unwrap();
-        let f = env.founder.insecure_clone();
-        let err = env.buy(&f, 10).await.unwrap_err();
-        assert_rigs_error(err, RigsError::AccessDenied);
-        assert_eq!(t0(&mut env).await, 0, "{label}");
-    }
+    let ix = env.buy_ix_with(&f.pubkey(), 10, vec![], None);
+    env.send(ix, &[&f]).await.unwrap();
+    assert!(t0(&mut env).await > 0);
 }
 
 #[tokio::test]
@@ -210,7 +157,7 @@ async fn unfunded_or_failed_founder_purchases_do_not_activate() {
 // ------------------------------------------------------------ what activates
 
 #[tokio::test]
-async fn verified_founder_purchase_activates_exactly_once() {
+async fn founder_wallet_purchase_activates_exactly_once() {
     let mut env = funded_env().await;
     let now = env.clock().await.unix_timestamp;
     let f = env.founder.insecure_clone();
@@ -291,43 +238,45 @@ async fn no_admin_path_touches_t0() {
 
 // ------------------------------------------------------------ access phases
 
+// ------------------------------------------------------------ access phases
+
 #[tokio::test]
 async fn access_phases_enforced_on_chain_at_exact_boundaries() {
     let mut env = funded_env().await;
     let t = activate(&mut env).await;
-    let (carol, dave, erin) = (
+    let (bob, carol, dave, frank, erin) = (
+        env.bob.insecure_clone(),
         env.carol.insecure_clone(),
         env.dave.insecure_clone(),
+        env.frank.insecure_clone(),
         env.erin.insecure_clone(),
     );
 
-    // Phase 1, first second: .skr yes; SNS-only no; ordinary no.
+    // Day 1, first second: .skr (direct and wrapped) yes; .sns no; none no.
     env.buy(&carol, 1).await.unwrap();
-    assert_rigs_error(
-        env.buy(&dave, 1).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
-    assert_rigs_error(
-        env.buy(&erin, 1).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
+    env.buy(&bob, 1).await.unwrap();
+    for who in [&dave, &frank, &erin] {
+        assert_rigs_error(env.buy(who, 1).await.unwrap_err(), RigsError::AccessDenied);
+    }
 
-    // T0 + 24h − 1: still phase 1.
+    // T0 + 24h − 1: still day 1.
     env.set_time(t + DAY - 1).await;
     assert_rigs_error(
-        env.buy(&dave, 1).await.unwrap_err(),
+        env.buy(&frank, 1).await.unwrap_err(),
         RigsError::AccessDenied,
     );
 
-    // T0 + 24h: phase 2 — SNS yes, ordinary still no.
+    // T0 + 24h: day 2 — .sns (direct and tokenized) join; .skr keeps access.
     env.set_time(t + DAY).await;
+    env.buy(&frank, 1).await.unwrap();
     env.buy(&dave, 1).await.unwrap();
+    env.buy(&carol, 1).await.unwrap();
     assert_rigs_error(
         env.buy(&erin, 1).await.unwrap_err(),
         RigsError::AccessDenied,
     );
 
-    // T0 + 48h − 1: still phase 2.
+    // T0 + 48h − 1: still day 2.
     env.set_time(t + 2 * DAY - 1).await;
     assert_rigs_error(
         env.buy(&erin, 1).await.unwrap_err(),
@@ -345,17 +294,238 @@ async fn access_phases_enforced_on_chain_at_exact_boundaries() {
 }
 
 #[tokio::test]
-async fn an_identity_account_for_someone_else_proves_nothing() {
+async fn someone_elses_domain_proves_nothing() {
     let mut env = funded_env().await;
-    activate(&mut env).await;
+    let t = activate(&mut env).await;
+    env.set_time(t + DAY).await;
     let erin = env.erin.insecure_clone();
-    // Erin passes carol's genuine .skr record.
-    let carols = env.identities[&env.carol.pubkey()];
-    let ix = env.buy_ix_with(&erin.pubkey(), 1, Some(carols), None);
-    assert_rigs_error(
-        env.send(ix, &[&erin]).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
+    for holder in [
+        env.bob.pubkey(),
+        env.carol.pubkey(),
+        env.dave.pubkey(),
+        env.frank.pubkey(),
+    ] {
+        let accounts = env.identities[&holder].clone();
+        let ix = env.buy_ix_with(&erin.pubkey(), 1, accounts, None);
+        assert_rigs_error(
+            env.send(ix, &[&erin]).await.unwrap_err(),
+            RigsError::AccessDenied,
+        );
+    }
+}
+
+type Forged = Vec<(APubkey, solana_sdk::account::Account)>;
+/// (label, is `.sns`, builder of the forged accounts for a wallet)
+type ForgeCase = (&'static str, bool, Box<dyn Fn(&APubkey) -> Forged>);
+
+fn wrapped_skr(
+    w: &APubkey,
+    tag: u8,
+    holder: Option<APubkey>,
+    token_prog: APubkey,
+    pda: bool,
+) -> Forged {
+    let name = APubkey::new_unique();
+    let record = if pda {
+        skr_wrapped_record_key(&name)
+    } else {
+        APubkey::new_unique()
+    };
+    let mint = APubkey::new_unique();
+    vec![
+        (
+            name,
+            program_owned(ANS_PROGRAM_ID, ans_record(&SKR_TLD_PARENT, &record, 0)),
+        ),
+        (
+            record,
+            program_owned(ANS_NAME_HOUSE_PROGRAM_ID, ans_nft_record(tag, &name, &mint)),
+        ),
+        (
+            APubkey::new_unique(),
+            program_owned(
+                token_prog,
+                token_account(&mint, &holder.unwrap_or(*w), 1, 1),
+            ),
+        ),
+    ]
+}
+
+fn tokenized_sns(
+    w: &APubkey,
+    tag: u8,
+    amount: u64,
+    record_prog: APubkey,
+    name_owned_by_record: bool,
+) -> Forged {
+    let name = APubkey::new_unique();
+    let record = sns_tokenized_record_key(&name);
+    let mint = APubkey::new_unique();
+    let header_owner = if name_owned_by_record {
+        record
+    } else {
+        APubkey::new_unique()
+    };
+    vec![
+        (
+            name,
+            program_owned(
+                SNS_NAME_PROGRAM_ID,
+                sns_record(&SNS_TLD_ROOT, &header_owner),
+            ),
+        ),
+        (
+            record,
+            program_owned(record_prog, sns_nft_record(tag, &name, &mint)),
+        ),
+        (
+            APubkey::new_unique(),
+            program_owned(SPL_TOKEN_PROGRAM_ID, token_account(&mint, w, amount, 1)),
+        ),
+    ]
+}
+
+/// Every forgery of a `.skr` / `.sns` proof fails closed — `.skr` shapes on
+/// day 1, `.sns` shapes on day 2 (when a genuine one would pass).
+#[tokio::test]
+async fn forged_domain_proofs_fail_closed() {
+    let sys = solana_sdk::system_program::ID;
+    let cases: Vec<ForgeCase> = vec![
+        (
+            "skr: not owned by ANS",
+            false,
+            Box::new(move |w| {
+                vec![(
+                    APubkey::new_unique(),
+                    program_owned(sys, ans_record(&SKR_TLD_PARENT, w, 0)),
+                )]
+            }),
+        ),
+        (
+            "skr: another TLD",
+            false,
+            Box::new(|w| {
+                vec![(
+                    APubkey::new_unique(),
+                    program_owned(ANS_PROGRAM_ID, ans_record(&APubkey::new_unique(), w, 0)),
+                )]
+            }),
+        ),
+        (
+            "skr: expired",
+            false,
+            Box::new(|w| {
+                vec![(
+                    APubkey::new_unique(),
+                    program_owned(ANS_PROGRAM_ID, ans_record(&SKR_TLD_PARENT, w, 1_000)),
+                )]
+            }),
+        ),
+        (
+            "skr: bad discriminator",
+            false,
+            Box::new(|w| {
+                let mut d = ans_record(&SKR_TLD_PARENT, w, 0);
+                d[0] ^= 0xff;
+                vec![(APubkey::new_unique(), program_owned(ANS_PROGRAM_ID, d))]
+            }),
+        ),
+        (
+            "skr wrapped: record not the name-house PDA",
+            false,
+            Box::new(|w| wrapped_skr(w, 1, None, SPL_TOKEN_PROGRAM_ID, false)),
+        ),
+        (
+            "skr wrapped: inactive record",
+            false,
+            Box::new(|w| wrapped_skr(w, 2, None, SPL_TOKEN_PROGRAM_ID, true)),
+        ),
+        (
+            "skr wrapped: NFT held by someone else",
+            false,
+            Box::new(|w| {
+                wrapped_skr(
+                    w,
+                    1,
+                    Some(APubkey::new_unique()),
+                    SPL_TOKEN_PROGRAM_ID,
+                    true,
+                )
+            }),
+        ),
+        (
+            "skr wrapped: token account not SPL-owned",
+            false,
+            Box::new(move |w| wrapped_skr(w, 1, None, sys, true)),
+        ),
+        (
+            "sns: not owned by the name program",
+            true,
+            Box::new(move |w| {
+                vec![(
+                    APubkey::new_unique(),
+                    program_owned(sys, sns_record(&SNS_TLD_ROOT, w)),
+                )]
+            }),
+        ),
+        (
+            "sns: subdomain (parent is not the .sns root)",
+            true,
+            Box::new(|w| {
+                vec![(
+                    APubkey::new_unique(),
+                    program_owned(SNS_NAME_PROGRAM_ID, sns_record(&APubkey::new_unique(), w)),
+                )]
+            }),
+        ),
+        (
+            "sns tokenized: zero balance",
+            true,
+            Box::new(|w| tokenized_sns(w, 2, 0, SNS_NAME_TOKENIZER_ID, true)),
+        ),
+        (
+            "sns tokenized: inactive record",
+            true,
+            Box::new(|w| tokenized_sns(w, 3, 1, SNS_NAME_TOKENIZER_ID, true)),
+        ),
+        (
+            "sns tokenized: record owned by the wrong program",
+            true,
+            Box::new(|w| tokenized_sns(w, 2, 1, ANS_NAME_HOUSE_PROGRAM_ID, true)),
+        ),
+        (
+            "sns tokenized: name not owned by its record",
+            true,
+            Box::new(|w| tokenized_sns(w, 2, 1, SNS_NAME_TOKENIZER_ID, false)),
+        ),
+    ];
+
+    for (label, is_sns, make) in cases {
+        let forger = solana_sdk::signature::Keypair::new();
+        let fk = forger.pubkey();
+        let accounts = make(&fk);
+        let keys: Vec<APubkey> = accounts.iter().map(|(k, _)| *k).collect();
+        let mut env = Env::with(move |pt| {
+            pt.add_account(
+                fk,
+                solana_sdk::account::Account {
+                    lamports: 100 * SOL,
+                    ..Default::default()
+                },
+            );
+            for (k, a) in accounts {
+                pt.add_account(k, a);
+            }
+        })
+        .await;
+        env.initialize().await.unwrap();
+        env.fund_rewards(10 * SOL, 30 * DAY as u64).await.unwrap();
+        let t = activate(&mut env).await;
+        env.set_time(if is_sns { t + DAY } else { t }).await;
+        let ix = env.buy_ix_with(&fk, 1, keys, None);
+        let err = env.send(ix, &[&forger]).await.expect_err(label);
+        assert_rigs_error(err, RigsError::AccessDenied);
+    }
 }
 
 // ------------------------------------------------------------------ referral
@@ -369,13 +539,13 @@ async fn referral_binds_once_to_an_existing_planter() {
         env.bob.insecure_clone(),
         env.carol.insecure_clone(),
     );
-    let bob_id = env.identities[&bob.pubkey()];
+    let bob_id = env.identities[&bob.pubkey()].clone();
 
     // Self-referral.
     let ix = env.buy_ix_with(
         &bob.pubkey(),
         1,
-        Some(bob_id),
+        bob_id.clone(),
         Some((bob.pubkey(), miner_pda(&bob.pubkey()))),
     );
     assert_rigs_error(
@@ -387,7 +557,7 @@ async fn referral_binds_once_to_an_existing_planter() {
     let ix = env.buy_ix_with(
         &bob.pubkey(),
         1,
-        Some(bob_id),
+        bob_id.clone(),
         Some((carol.pubkey(), miner_pda(&carol.pubkey()))),
     );
     assert_rigs_error(
@@ -395,22 +565,14 @@ async fn referral_binds_once_to_an_existing_planter() {
         RigsError::InvalidReferrer,
     );
 
-    // Referrer named but account missing.
-    let mut ix = env.buy_ix_with(&bob.pubkey(), 1, Some(bob_id), None);
-    ix.data = anchor_lang::InstructionData::data(&sol_rigs::instruction::BuyRigs {
-        count: 1,
-        referrer: Some(alice.pubkey()),
-    });
-    assert_rigs_error(
-        env.send(ix, &[&bob]).await.unwrap_err(),
-        RigsError::MissingReferrerAccount,
-    );
+    // (A referrer named without its account is checked below, in the public
+    // phase, where no identity accounts sit in front of it.)
 
     // A forged referrer account (not the referrer's miner PDA).
     let ix = env.buy_ix_with(
         &bob.pubkey(),
         1,
-        Some(bob_id),
+        bob_id.clone(),
         Some((alice.pubkey(), config_pda())),
     );
     assert_rigs_error(
@@ -422,7 +584,7 @@ async fn referral_binds_once_to_an_existing_planter() {
     let ix = env.buy_ix_with(
         &bob.pubkey(),
         10,
-        Some(bob_id),
+        bob_id.clone(),
         Some((alice.pubkey(), miner_pda(&alice.pubkey()))),
     );
     env.send(ix, &[&bob]).await.unwrap();
@@ -435,7 +597,7 @@ async fn referral_binds_once_to_an_existing_planter() {
     let ix = env.buy_ix_with(
         &bob.pubkey(),
         1,
-        Some(bob_id),
+        bob_id.clone(),
         Some((alice.pubkey(), miner_pda(&alice.pubkey()))),
     );
     assert_rigs_error(
@@ -447,6 +609,20 @@ async fn referral_binds_once_to_an_existing_planter() {
     let m = env.miner(&bob.pubkey()).await;
     assert_eq!((m.rigs, m.weight, m.referrer), (11, 105, alice.pubkey()));
     assert_eq!(env.config().await.total_shares, 10 * 100 + 11 * 105);
+
+    // Referrer named but its account missing: rejected, nothing bound.
+    let t = env.config().await.launch_t0;
+    env.set_time(t + 2 * DAY).await;
+    let erin = env.erin.insecure_clone();
+    let mut ix = env.buy_ix_with(&erin.pubkey(), 1, vec![], None);
+    ix.data = anchor_lang::InstructionData::data(&sol_rigs::instruction::BuyRigs {
+        count: 1,
+        referrer: Some(alice.pubkey()),
+    });
+    assert_rigs_error(
+        env.send(ix, &[&erin]).await.unwrap_err(),
+        RigsError::MissingReferrerAccount,
+    );
 }
 
 /// On-chain solvency with a referred planter: paid + owed ≤ funded, and the
@@ -456,11 +632,11 @@ async fn referral_weight_redistributes_without_new_emission() {
     let mut env = funded_env().await;
     activate(&mut env).await; // alice: 10 base rigs
     let (alice, bob) = (env.alice.insecure_clone(), env.bob.insecure_clone());
-    let bob_id = env.identities[&bob.pubkey()];
+    let bob_id = env.identities[&bob.pubkey()].clone();
     let ix = env.buy_ix_with(
         &bob.pubkey(),
         10,
-        Some(bob_id),
+        bob_id.clone(),
         Some((alice.pubkey(), miner_pda(&alice.pubkey()))),
     );
     env.send(ix, &[&bob]).await.unwrap();

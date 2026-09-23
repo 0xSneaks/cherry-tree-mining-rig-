@@ -23,6 +23,7 @@ import { RigVisual } from './RigVisual';
 import { RoomLeaderboard } from './RoomLeaderboard';
 import { ShareCard, type SharePayload } from './ShareCard';
 import { TransparencyPanel } from './TransparencyPanel';
+import { YieldPanel } from './YieldPanel';
 
 export type CherryRoomInfo = { id: string; title: string; memberCount: number };
 
@@ -199,6 +200,15 @@ export function Game({ host }: { host: Host }) {
         </div>
       ) : (
         <>
+          <YieldPanel
+            config={config}
+            miner={miner}
+            claimable={claimable}
+            rewardVaultLamports={snap.rewardVaultDistributable}
+            chainTime={chainTime}
+            snapshotTime={snap.chainTimeSeconds}
+          />
+
           <Readout label="My hashpower" value={formatCount(rigs)} unit="RIGS" rigs />
           <Readout
             label="Current output"
@@ -252,6 +262,7 @@ export function Game({ host }: { host: Host }) {
 
           <BuyPanel
             config={config}
+            chainTime={chainTime}
             walletLamports={walletLamports}
             disabled={!canAct}
             busy={busy === 'buy'}

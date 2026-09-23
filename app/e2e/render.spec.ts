@@ -5,16 +5,35 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { stubCherryHost, stubCherryInlineHost, stubRpc, WALLET } from './fixtures';
+import { decodeConfig } from '../src/lib/program/accounts';
+import {
+  PHASE_LABEL,
+  aprBps,
+  formatAprBps,
+  phaseFromAprBps,
+  yieldInputs,
+} from '../src/lib/program/yield';
+import {
+  configBytes,
+  stubCherryHost,
+  stubCherryInlineHost,
+  stubRpc,
+  WALLET,
+} from './fixtures';
 
-/** Spec §10: banned copy. None of this may appear anywhere on the screen. */
+/**
+ * Spec §10: banned copy. None of this may appear anywhere on the screen.
+ *
+ * APR / APY were on this list until the genesis yield panel. They are now
+ * allowed only as a rate computed from program state and only beside the
+ * variable-rate disclosure — asserted wherever this list is checked. Promise
+ * language stays banned.
+ */
 const BANNED = [
   /guaranteed\s+(daily|apy|apr|return)/i,
   /\bguaranteed\b/i,
   /\bfixed returns?\b/i,
   /\bROI\b/,
-  /\bAPY\b/i,
-  /\bAPR\b/i,
   /\bevery day\b/i,
   /risk[- ]free/i,
 ];
@@ -115,6 +134,12 @@ test.describe('embedded path', () => {
 
     for (const pattern of BANNED) {
       expect(text, `banned copy matched ${pattern}`).not.toMatch(pattern);
+    }
+    if (/\bAP[RY]\b/.test(text)) {
+      expect(text, 'a rate is shown without the variable-rate disclosure').toMatch(
+        /Variable rate/,
+      );
+      expect(text).toMatch(/not a promise of future returns/i);
     }
     // Deposit language is banned outright.
     expect(text).not.toMatch(/\bwithdraw your (stake|deposit|principal)\b/i);
@@ -464,5 +489,58 @@ test.describe('CSP is survivable', () => {
       page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
     ).toHaveText('42RIGS');
     expect(await collect()).toEqual([]);
+  });
+});
+
+/**
+ * Genesis yield. The headline rate must be the rate the program state implies,
+ * computed by the same port that is vector-checked against the Rust engine.
+ */
+test.describe('genesis yield', () => {
+  const NOW = 1_780_000_000n;
+
+  test('shows the APR the program state implies, its phase and the disclosures', async ({
+    page,
+  }) => {
+    await stubRpc(page, { withMiner: true, now: NOW });
+    await stubCherryHost(page);
+    await page.goto('/');
+    const panel = page.getByTestId('yield-panel');
+    await expect(panel).toBeVisible();
+
+    const config = decodeConfig(configBytes({ now: NOW }));
+    const apr = aprBps(yieldInputs(config, NOW));
+    await expect(page.getByTestId('yield-apr')).toContainText(formatAprBps(apr));
+    await expect(panel).toContainText(`${PHASE_LABEL[phaseFromAprBps(apr)]} yield`);
+    for (const label of [
+      'Next decay',
+      'Reward pool',
+      'Your accrued',
+      'Your effective rate',
+    ]) {
+      await expect(panel.getByText(label)).toBeVisible();
+    }
+    await expect(panel).toContainText('Variable rate');
+    await expect(panel).toContainText("Genesis yields start absurd. They don't stay absurd.");
+  });
+
+  test('an exhausted pool reads 0% and Dormant, never a stale rate', async ({ page }) => {
+    await stubRpc(page, { withMiner: true, now: NOW, runwaySeconds: 0n });
+    await stubCherryHost(page);
+    await page.goto('/');
+    await expect(page.getByTestId('yield-apr')).toContainText('0.0%');
+    await expect(page.getByTestId('yield-panel')).toContainText('Dormant yield');
+    await expect(page.getByTestId('yield-panel')).toContainText('Awaiting new funding');
+  });
+
+  test('fits a phone without horizontal scroll', async ({ page }) => {
+    await stubRpc(page, { withMiner: true, now: NOW });
+    await stubCherryHost(page);
+    await page.goto('/');
+    await expect(page.getByTestId('yield-panel')).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(overflow).toBe(0);
   });
 });

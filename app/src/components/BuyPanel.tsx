@@ -14,18 +14,21 @@ import { formatSol } from '../lib/format';
 import type { Config } from '../lib/program/accounts';
 import { MAX_RIGS_PER_PURCHASE } from '../lib/program/constants';
 import { quotePurchase, rigsAffordable } from '../lib/program/pricing';
+import { aprBps, formatAprBps, yieldInputs } from '../lib/program/yield';
 import { Readout } from './Readout';
 
 const QUICK = [1n, 5n, 10n, 25n];
 
 export function BuyPanel({
   config,
+  chainTime,
   walletLamports,
   disabled,
   busy,
   onBuy,
 }: {
   config: Config;
+  chainTime: bigint;
   /** Spendable wallet balance, used only for the MAX button. */
   walletLamports: bigint | null;
   disabled: boolean;
@@ -123,6 +126,11 @@ export function BuyPanel({
             <span className="unit">SOL</span>
           </span>
         </div>
+        {/* The rate these rigs would earn, after the dilution they cause. */}
+        <Readout
+          label="APR after planting"
+          value={quote ? formatAprBps(aprBps(yieldInputs(config, chainTime), quote.count)) : '—'}
+        />
       </div>
 
       <button

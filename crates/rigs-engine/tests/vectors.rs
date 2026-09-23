@@ -151,3 +151,127 @@ fn emit_accrual_vectors() {
     }
     println!("---END---");
 }
+
+/// Emits yield vectors consumed by `app/tests/yield.test.ts`.
+///
+/// The yield panel must show the rate the accumulator pays. The TypeScript
+/// port is checked against these rows: APR, phase, decay threshold,
+/// compounding projection and effective rate.
+#[test]
+fn emit_yield_vectors() {
+    use rigs_engine::{
+        apr_bps, current_phase, effective_rate_bps, next_threshold, project_compounding,
+        MinerPosition, NextThreshold, RewardGlobals, YieldInputs,
+    };
+
+    println!("---APR---");
+    let rates = [0u64, 1, 2, 11_574, 1_000_000, 1_000_000_000_000];
+    let totals = [0u64, 1, 37, 1_000, 5_000, 503_600, 1_000_000_000_000];
+    let prices = [1u64, 10_000_000, 3_333_333, 18_000_000_000_000_000_000];
+    let fees = [0u16, 300, 1_000];
+    for &rate in &rates {
+        for &total in &totals {
+            for &price in &prices {
+                for &fee in &fees {
+                    for &(now, finish) in &[(0i64, 86_400i64), (86_400, 86_400)] {
+                        for &extra in &[0u64, 1, 1_000] {
+                            let i = YieldInputs {
+                                reward_rate: rate,
+                                reward_period_finish: finish,
+                                total_rigs: total,
+                                rig_price_lamports: price,
+                                purchase_fee_bps: fee,
+                                now,
+                            };
+                            let apr = apr_bps(&i, extra).unwrap();
+                            let phase = current_phase(&i).unwrap().code();
+                            let (kind, value) = match next_threshold(&i).unwrap() {
+                                NextThreshold::Rigs { at_total_rigs, .. } => {
+                                    (0, at_total_rigs as i128)
+                                }
+                                NextThreshold::WindowEnds { at } => (1, at as i128),
+                                NextThreshold::None => (2, 0),
+                            };
+                            println!(
+                                "{rate},{finish},{total},{price},{fee},{now},{extra},{apr},{phase},{kind},{value}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    println!("---PROJECTION---");
+    let day = 86_400i64;
+    for &(total, rate, finish, stored) in &[
+        (1_000u64, 6_430u64, 180 * day, 0u128),
+        (5_000, 57_870, 7 * day, 123_456_789),
+        (37, 1_000_000_000, 30 * day, 0),
+        (100_000, 11_574, 365 * day, 999_999_999_999),
+    ] {
+        for &(rigs, pending) in &[(1u64, 0u64), (100, 5_000_000), (1_000, 0)] {
+            if rigs > total {
+                continue;
+            }
+            for &now in &[0i64, 3 * day] {
+                for &interval in &[0u64, 3_600, 86_400, 7 * 86_400] {
+                    for &horizon in &[86_400u64, 30 * 86_400, 365 * 86_400] {
+                        let g = RewardGlobals {
+                            total_rigs: total,
+                            reward_rate: rate,
+                            reward_period_finish: finish,
+                            reward_last_update: 0,
+                            reward_per_rig_stored: stored,
+                            undistributed_dust: 0,
+                        };
+                        let pos = MinerPosition {
+                            rigs,
+                            reward_per_rig_paid: stored,
+                            pending_rewards: pending,
+                            ..Default::default()
+                        };
+                        let Ok(p) =
+                            project_compounding(&g, &pos, now, 10_000_000, 300, interval, horizon)
+                        else {
+                            continue;
+                        };
+                        println!(
+                            "{total},{rate},{finish},{stored},{rigs},{pending},{now},{interval},{horizon},{},{},{},{},{},{}",
+                            p.horizon_seconds,
+                            p.start_rigs,
+                            p.end_rigs,
+                            p.reward_lamports,
+                            p.cost_basis_lamports,
+                            p.yield_bps
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    println!("---EFFECTIVE---");
+    for &(spent, claimed, compounded, claimable, age) in &[
+        (0u64, 0u64, 0u64, 0u64, 10_000i64),
+        (1_000_000_000, 0, 0, 0, 3_599),
+        (1_000_000_000, 0, 0, 5, 3_600),
+        (10_000_000_000, 1_000_000_000, 0, 0, 15_768_000),
+        (10_000_000_000, 1_000_000_000, 2_000_000_000, 333, 86_400),
+    ] {
+        let pos = MinerPosition {
+            lifetime_sol_spent: spent,
+            lifetime_sol_claimed: claimed,
+            lifetime_sol_compounded: compounded,
+            ..Default::default()
+        };
+        let r = effective_rate_bps(&pos, claimable, 1_000, 1_000 + age)
+            .map(|v| v as i128)
+            .unwrap_or(-1);
+        println!(
+            "{spent},{claimed},{compounded},{claimable},1000,{},{r}",
+            1_000 + age
+        );
+    }
+    println!("---END---");
+}

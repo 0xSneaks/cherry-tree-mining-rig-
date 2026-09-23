@@ -328,6 +328,88 @@ button.primary:disabled {
 }
 
 /*
+ * GENESIS YIELD. The one place the glow is allowed past the wordmark: the
+ * rate is the product's headline. Number in off-white, phase in blossom,
+ * the panel itself stays navy.
+ */
+.yield {
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--blossom);
+  border-radius: 3px;
+  padding: 14px 14px 12px;
+  margin-bottom: 16px;
+}
+
+.yield-phase {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--blossom);
+}
+
+.yield-apr {
+  margin: 4px 0 0;
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-shadow: 0 0 22px var(--blossom-glow);
+  overflow-wrap: anywhere;
+}
+
+.yield-apr .unit {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--blossom-soft);
+  text-shadow: none;
+}
+
+.yield-tagline {
+  margin: 6px 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--blossom-soft);
+}
+
+/* Fading phases lose the glow before they lose the pink. */
+.yield--growth .yield-apr,
+.yield--mature .yield-apr {
+  text-shadow: none;
+}
+
+.yield--dormant {
+  border-top-color: var(--rule-strong);
+}
+.yield--dormant .yield-phase,
+.yield--dormant .yield-tagline {
+  color: var(--text-dim);
+}
+.yield--dormant .yield-apr {
+  color: var(--text-dim);
+  text-shadow: none;
+}
+.yield--dormant .yield-apr .unit {
+  color: var(--text-dim);
+}
+
+.yield-readouts .readout-value {
+  font-size: 13px;
+}
+
+.yield-kicker {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/*
  * The chat mounts after the game's own .shell, so it takes the same column:
  * the shell's max width and 16px gutters, and the shell's bottom inset.
  */

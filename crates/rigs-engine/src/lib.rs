@@ -23,6 +23,7 @@ pub mod accumulator;
 pub mod error;
 pub mod position;
 pub mod pricing;
+pub mod yield_curve;
 
 pub use accumulator::{
     assert_fully_funded, RewardGlobals, RewardLedger, MAX_REWARD_DURATION_SECONDS,
@@ -35,6 +36,12 @@ pub use position::{
 pub use pricing::{
     quote_purchase, rigs_affordable, validate_pricing, PurchaseQuote, BPS_DENOMINATOR,
     MAX_PURCHASE_FEE_BPS, MAX_RIGS_PER_PURCHASE, MAX_TOTAL_RIGS,
+};
+
+pub use yield_curve::{
+    apr_bps, current_phase, effective_rate_bps, next_threshold, project_compounding,
+    required_annual_emission, NextThreshold, Projection, YieldInputs, YieldPhase,
+    MAX_PROJECTION_STEPS, SECONDS_PER_YEAR,
 };
 
 /// Lamports per SOL. Display helper only.

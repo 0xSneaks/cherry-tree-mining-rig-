@@ -30,6 +30,9 @@ RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
 RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
   --exact emit_accrual_vectors --nocapture 2>/dev/null \
   | sed -n '/---ACCRUAL---/,/---END---/p' > app/tests/fixtures/accrual-vectors.txt
+RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
+  --exact emit_yield_vectors --nocapture 2>/dev/null \
+  | sed -n '/---APR---/,/---END---/p' > app/tests/fixtures/yield-vectors.txt
 git diff --quiet app/tests/fixtures || {
   echo "!! fixtures drifted — the TypeScript port is out of step with the engine"
   exit 1

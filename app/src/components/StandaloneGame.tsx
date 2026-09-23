@@ -19,6 +19,7 @@ import { useWalletAccountTransactionSendingSigner } from '@solana/react';
 
 import { CLUSTER } from '../lib/env';
 import { walletStandardSigner } from '../lib/signer';
+import { CommunityChat } from './CommunityChat';
 import { Game, type Host } from './Game';
 
 const CHAIN = (CLUSTER === 'mainnet-beta'
@@ -73,7 +74,12 @@ function ConnectedGame({ account }: { account: UiWalletAccount }) {
     [account.address, sendingSigner],
   );
 
-  return <Game host={host} />;
+  return (
+    <>
+      <Game host={host} />
+      <CommunityChat />
+    </>
+  );
 }
 
 export function StandaloneGame() {
@@ -108,5 +114,10 @@ export function StandaloneGame() {
     ),
   };
 
-  return <Game host={host} />;
+  return (
+    <>
+      <Game host={host} />
+      <CommunityChat />
+    </>
+  );
 }

@@ -18,6 +18,8 @@
  * exfiltrate to anywhere, which matters more here than in most apps because
  * the page holds a live wallet session.
  */
+import { CHERRY_EMBED_ORIGIN, cherryChatEnabled } from './cherryChat';
+
 export const CHERRY_HOST = 'https://chat.cherry.fun';
 
 /** Origin of a URL, or null when it is unset or unparseable. */
@@ -79,8 +81,10 @@ export function buildCsp({ dev }: { dev: boolean }): string {
     "font-src 'self' data:",
     `connect-src ${connectSrc().join(' ')}`,
     `frame-ancestors 'self' ${CHERRY_HOST}`,
-    // Nothing in this app embeds a frame, loads a plugin, or posts a form.
-    "frame-src 'none'",
+    // The Cherry Chat embed is the only frame this app ever loads, and only
+    // when it is configured. Unconfigured, this stays `'none'` — the embed is
+    // opt-in at the policy level too, not just in the component tree.
+    `frame-src ${cherryChatEnabled() ? CHERRY_EMBED_ORIGIN : "'none'"}`,
     "object-src 'none'",
     "form-action 'none'",
     "base-uri 'self'",

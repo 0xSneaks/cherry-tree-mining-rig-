@@ -150,7 +150,9 @@ if grep -q "unsafe-eval" "$CSP_SRC" && ! grep -q "dev ? \[\"'unsafe-eval'\"\]" "
 else
   pass "'unsafe-eval' is dev-only"
 fi
-for d in "object-src 'none'" "frame-src 'none'" "base-uri 'self'"; do
+# `frame-src` is deliberately absent here: it is now conditional on the Cherry
+# Chat embed being configured, and is asserted in the chat-embed section above.
+for d in "object-src 'none'" "base-uri 'self'"; do
   grep -q "$d" "$CSP_SRC" && pass "CSP sets $d" || bad "CSP is missing $d"
 done
 # frame-ancestors is what lets Cherry web frame the app, and X-Frame-Options
@@ -172,6 +174,48 @@ if [[ -f app/scripts/emit-static-headers.ts ]]; then
 else
   bad "app/scripts/emit-static-headers.ts is missing — a static host would send no CSP"
 fi
+
+# --------------------------------------------------------- chat embed
+echo
+echo "--> Cherry Chat embed (second Cherry surface)"
+
+# The mini app must survive the embed's existence. These two are the surfaces
+# pointing in opposite directions; neither may absorb the other.
+grep -q "@cherrydotfun/miniapp-sdk" app/package.json \
+  && pass "the mini-app SDK is still a dependency" \
+  || bad "the mini-app SDK is GONE — the Cherry mini app was replaced, not extended"
+grep -q "@cherrydotfun/chat-embed-sdk" app/package.json \
+  && pass "the chat-embed SDK is a dependency" \
+  || bad "the chat-embed SDK is missing"
+
+# `wallet-only` needs no backend token, so no signing key should exist at all.
+if grep -rqE "CHERRY_APP_SECRET|appSecret" app/src app/scripts .env.example 2>/dev/null; then
+  bad "an app secret is referenced somewhere — wallet-only mode needs none"
+else
+  pass "no Cherry app secret anywhere (auth mode is wallet-only)"
+fi
+
+# A secret must never be reachable from the browser bundle.
+if grep -rqE "NEXT_PUBLIC_[A-Z_]*SECRET" app/src app/scripts .env.example 2>/dev/null; then
+  bad "a NEXT_PUBLIC_ variable names a secret — it would ship in the bundle"
+else
+  pass "no NEXT_PUBLIC_ variable names a secret"
+fi
+
+# frame-src must stay opt-in, and must never widen beyond the embed origin.
+if grep -q "cherryChatEnabled() ? CHERRY_EMBED_ORIGIN" app/src/lib/csp.ts; then
+  pass "frame-src is 'none' unless the embed is configured"
+else
+  bad "frame-src is not gated on the embed being configured"
+fi
+grep -q "CHERRY_EMBED_ORIGIN = 'https://embed.cherry.fun'" app/src/lib/cherryChat.ts \
+  && pass "the embed origin is one exact https origin" \
+  || bad "the embed origin is missing or not pinned"
+
+# The embed must not render inside the Cherry mini app.
+grep -q "useCherryEnvironment" app/src/components/CommunityChat.tsx \
+  && pass "the embed checks for Cherry before mounting" \
+  || bad "the embed does not check for Cherry — it could mount inside the mini app"
 
 # ------------------------------------------------------- fee recipient
 echo

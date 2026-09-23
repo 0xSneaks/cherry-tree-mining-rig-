@@ -299,6 +299,41 @@ test.describe('blink snapshot from the Cherry host', () => {
   });
 });
 
+/**
+ * The Cherry Chat embed is a second, opposite-facing Cherry surface: Cherry
+ * chat inside THE CHERRY TREE, rather than THE CHERRY TREE inside Cherry.
+ *
+ * This build configures no embed, which is the point of these: unconfigured,
+ * the app must load no frame at all and must look exactly as it did before the
+ * embed existed. The enabled path's decisions (config gating, the exact
+ * `frame-src`, the palette) are covered in `tests/cherryChat.test.ts` and
+ * `tests/csp.test.ts`, because the ids are inlined at build time and cannot be
+ * varied per test here.
+ */
+test.describe('Cherry Chat embed', () => {
+  test('renders nothing, and frames nothing, when unconfigured', async ({ page }) => {
+    await stubRpc(page, { withMiner: false });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'THE CHERRY TREE' })).toBeVisible();
+
+    await expect(page.getByTestId('community-chat')).toHaveCount(0);
+    await expect(page.locator('iframe')).toHaveCount(0);
+  });
+
+  /** The mini-app path must be entirely unaffected by the embed's existence. */
+  test('never appears inside the Cherry mini app', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    await expect(page.getByText('My hashpower')).toBeVisible();
+
+    // Inside Cherry the user is already in the room; framing Cherry here
+    // would be recursive.
+    await expect(page.getByTestId('community-chat')).toHaveCount(0);
+    await expect(page.locator('iframe')).toHaveCount(0);
+  });
+});
+
 test.describe('hosting requirements', () => {
   /** §12.26 — the app must be framable by Cherry web. */
   test('sends frame-ancestors for chat.cherry.fun and no X-Frame-Options', async ({

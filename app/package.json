@@ -1,7 +1,7 @@
 {
   "name": "cherry-tree-app",
   "version": "0.1.0",
-  "description": "THE CHERRY TREE \u2014 Solana-native mining simulation, as a Cherry mini-app.",
+  "description": "THE CHERRY TREE — Solana-native mining simulation, as a Cherry mini-app.",
   "private": true,
   "license": "BUSL-1.1",
   "author": "PhantomCapAI",
@@ -17,6 +17,7 @@
     "emit:headers": "tsx scripts/emit-static-headers.ts"
   },
   "dependencies": {
+    "@cherrydotfun/chat-embed-sdk": "^0.1.7",
     "@cherrydotfun/miniapp-sdk": "^0.1.21",
     "@solana/kit": "^8.3.0",
     "@solana/react": "^8.3.0",

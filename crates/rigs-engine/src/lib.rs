@@ -22,6 +22,7 @@
 pub mod accumulator;
 pub mod error;
 pub mod launch;
+pub mod penalty;
 pub mod position;
 pub mod pricing;
 pub mod referral;
@@ -37,8 +38,10 @@ pub use launch::{
     AccessPhase, ProvenIdentity, PurchaseContext, PurchaseGate, ACCESS_WINDOW_SECONDS,
     NOT_ACTIVATED,
 };
+pub use penalty::{claim_penalty_bps, penalty_amount, PENALTY_WINDOW_SECONDS};
 pub use position::{
-    buy_rigs, claim, compound, estimated_output_per_second, CompoundOutcome, MinerPosition,
+    buy_rigs, claim, compound, estimated_output_per_second, ClaimOutcome, CompoundOutcome,
+    MinerPosition,
 };
 pub use pricing::{
     quote_purchase, rigs_affordable, validate_pricing, PurchaseQuote, BPS_DENOMINATOR,

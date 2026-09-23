@@ -12,6 +12,7 @@ import { PRODUCT_NAME, PRODUCT_NAME_SHORT } from '../lib/brand';
 import { rpc } from '../lib/chain';
 import { formatCount, formatSol } from '../lib/format';
 import { estimatedOutputPerDay } from '../lib/program/accrual';
+import { quoteClaim } from '../lib/program/penalty';
 import { rigsAffordable } from '../lib/program/pricing';
 import { discoverIdentity } from '../lib/program/identity';
 import { accessPhase, purchaseAllowed, type Identity } from '../lib/program/launch';
@@ -56,6 +57,12 @@ export type Host = {
   /** Rendered only when `mode === 'standalone'`. Never in the embed. */
   connectSlot?: React.ReactNode;
 };
+
+function formatHours(seconds: bigint): string {
+  const h = seconds / 3_600n;
+  const m = (seconds % 3_600n) / 60n;
+  return h > 0n ? `${h}h ${m}m` : `${m}m`;
+}
 
 /** A claim worth offering to share, rather than nagging on every dust claim. */
 const LARGE_CLAIM_LAMPORTS = 50_000_000n; // 0.05 SOL
@@ -133,6 +140,7 @@ export function Game({ host }: { host: Host }) {
   const phase = config ? accessPhase(config.launchT0, chainTime) : 'preLaunch';
   const plantOpen = phase !== 'preLaunch' && purchaseAllowed(phase, identity ?? 'none');
   const referrer = !miner ? referrerFromUrl(host.address) : null;
+  const claimQuote = miner ? quoteClaim(claimable, miner.lastPlantedAt, chainTime) : null;
 
   const compoundPreview = useMemo(() => {
     if (!config) return 0n;
@@ -170,7 +178,7 @@ export function Game({ host }: { host: Host }) {
 
   const onClaim = () =>
     void run('claim', async () => {
-      const amount = claimable;
+      const amount = claimQuote?.net ?? 0n;
       await claim(host.signer!);
       if (host.share && amount >= LARGE_CLAIM_LAMPORTS) {
         setSharePayload({ kind: 'claim', rigs: rigs.toString(), claimed: amount.toString() });
@@ -271,6 +279,18 @@ export function Game({ host }: { host: Host }) {
             unit="SOL / DAY"
           />
           <OreBin lamports={claimable} />
+
+          {claimQuote && claimQuote.gross > 0n ? (
+            <p className="note" data-testid="claim-penalty">
+              Claim penalty now: {claimQuote.penaltyBps / 100}% ·{' '}
+              you receive {formatSol(claimQuote.net, 6)} SOL
+              {claimQuote.secondsToNextStep !== null
+                ? ` · drops in ${formatHours(claimQuote.secondsToNextStep)}`
+                : ''}
+              . The penalty stays in the reward pool for other planters.
+              Replanting has no penalty.
+            </p>
+          ) : null}
 
           <p className="note">
             Based on the current funded reward schedule and seeds planted.

@@ -70,6 +70,15 @@ test.describe('embedded path', () => {
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeVisible();
   });
 
+  /** Claim penalty from the chain clock and `Miner.last_planted_at` (30h → 15%). */
+  test('shows the claim penalty and the net before claiming', async ({ page }) => {
+    await page.goto('/');
+    const note = page.getByTestId('claim-penalty');
+    await expect(note).toContainText('Claim penalty now: 15%');
+    await expect(note).toContainText(/drops in 1[78]h/);
+    await expect(note).toContainText('Replanting has no penalty.');
+  });
+
   /** §12.21 — zero connect-wallet UI in the embed. */
   test('renders no connect-wallet UI at all', async ({ page }) => {
     await page.goto('/');

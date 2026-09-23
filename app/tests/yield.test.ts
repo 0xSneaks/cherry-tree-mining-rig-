@@ -68,6 +68,7 @@ function config(over: Partial<Config>): Config {
     founder: 'x' as never,
     launchT0: 0n,
     totalShares: 0n,
+    totalClaimPenalties: 0n,
     ...over,
   } as Config;
 }

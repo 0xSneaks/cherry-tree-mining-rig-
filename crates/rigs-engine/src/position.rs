@@ -2,6 +2,7 @@
 
 use crate::accumulator::{RewardGlobals, RewardLedger, PRECISION, WEIGHT_BASE};
 use crate::error::{EngineError, EngineResult};
+use crate::penalty::{claim_penalty_bps, penalty_amount};
 use crate::pricing::{quote_purchase, rigs_affordable, PurchaseQuote};
 
 /// Per-user position. Lives inside the MINER POSITION PDA on-chain.
@@ -22,6 +23,21 @@ pub struct MinerPosition {
     /// the position is created. `0` (a default-constructed position) is read
     /// as [`WEIGHT_BASE`].
     pub weight: u64,
+    /// Chain time of the most recent purchase — the claim-penalty anchor.
+    /// See [`crate::penalty`].
+    pub last_planted_at: i64,
+}
+
+/// What a `claim` did. Every field is exact lamports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimOutcome {
+    /// Everything settled in the ore bin.
+    pub gross: u64,
+    pub penalty_bps: u64,
+    /// Forfeited and re-credited to every share; stays in the reward vault.
+    pub penalty: u64,
+    /// Paid to the planter: `gross − penalty`.
+    pub net: u64,
 }
 
 /// What a `compound` actually did. Every field is exact lamports.
@@ -116,6 +132,8 @@ pub fn buy_rigs(
         .rigs
         .checked_add(count)
         .ok_or(EngineError::MathOverflow)?;
+    // Claim-penalty reset: new capital restarts the clock for the position.
+    position.last_planted_at = now;
     position.lifetime_rigs_bought = position
         .lifetime_rigs_bought
         .checked_add(count)
@@ -132,30 +150,46 @@ pub fn buy_rigs(
 ///
 /// Zeroes `pending_rewards` *before* the caller performs the external
 /// transfer, so a replay finds nothing left to pay. Rigs are untouched.
+///
+/// Applies the claim penalty ([`crate::penalty`]): the caller transfers
+/// `net` only; `penalty` never leaves the reward vault and is re-credited to
+/// every other planter's shares here — then the claimer's watermark is moved
+/// past it, so the claimer recovers none of it.
 pub fn claim(
     globals: &mut RewardGlobals,
     position: &mut MinerPosition,
     ledger: &mut RewardLedger,
     now: i64,
-) -> EngineResult<u64> {
+) -> EngineResult<ClaimOutcome> {
     position.settle(globals, now)?;
 
-    let amount = position.pending_rewards;
-    if amount == 0 {
+    let gross = position.pending_rewards;
+    if gross == 0 {
         return Err(EngineError::NothingToClaim);
     }
+    let penalty_bps = claim_penalty_bps(position.last_planted_at, now);
+    let penalty = penalty_amount(gross, penalty_bps)?;
+    let net = gross - penalty;
 
     position.pending_rewards = 0;
+    globals.redistribute_excluding(penalty, position.shares()?)?;
+    position.reward_per_rig_paid = globals.reward_per_rig_stored;
+
     position.lifetime_sol_claimed = position
         .lifetime_sol_claimed
-        .checked_add(amount)
+        .checked_add(net)
         .ok_or(EngineError::MathOverflow)?;
     ledger.total_reward_claimed = ledger
         .total_reward_claimed
-        .checked_add(amount)
+        .checked_add(net)
         .ok_or(EngineError::MathOverflow)?;
 
-    Ok(amount)
+    Ok(ClaimOutcome {
+        gross,
+        penalty_bps,
+        penalty,
+        net,
+    })
 }
 
 /// `compound` — state side.

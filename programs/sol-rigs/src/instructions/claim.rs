@@ -52,7 +52,11 @@ pub fn handle_claim(ctx: Context<ClaimRewards>) -> Result<()> {
     let mut ledger = config.ledger();
     let mut position = miner.position();
 
-    let amount = rigs_engine::claim(&mut globals, &mut position, &mut ledger, now).anchor()?;
+    // Only `net` leaves the reward vault. The penalty stays in it, already
+    // re-credited to the other planters by the engine; the fee and capital
+    // vaults are not even accounts of this instruction.
+    let outcome = rigs_engine::claim(&mut globals, &mut position, &mut ledger, now).anchor()?;
+    let amount = outcome.net;
 
     let reward_vault_ai = ctx.accounts.reward_vault.to_account_info();
     move_lamports(
@@ -60,6 +64,10 @@ pub fn handle_claim(ctx: Context<ClaimRewards>) -> Result<()> {
         &ctx.accounts.owner.to_account_info(),
         amount,
     )?;
+    config.total_claim_penalties = config
+        .total_claim_penalties
+        .checked_add(outcome.penalty)
+        .ok_or(error!(RigsError::MathOverflow))?;
 
     assert_fully_funded(distributable(&reward_vault_ai)?, &ledger).anchor()?;
 
@@ -71,6 +79,9 @@ pub fn handle_claim(ctx: Context<ClaimRewards>) -> Result<()> {
     emit!(Claim {
         owner: ctx.accounts.owner.key(),
         amount,
+        gross: outcome.gross,
+        penalty: outcome.penalty,
+        penalty_bps: outcome.penalty_bps as u16,
         user_rigs: miner.rigs,
         total_reward_claimed: ledger.total_reward_claimed,
     });

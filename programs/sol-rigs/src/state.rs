@@ -67,6 +67,11 @@ pub struct Config {
     pub launch_t0: i64,
     /// `Σ rigs × weight` (mirrors `RewardGlobals::total_shares`).
     pub total_shares: u64,
+
+    // --- claim penalty (appended) ---
+    /// Lamports forfeited by early claims, all still in the reward vault and
+    /// re-credited to other planters (or dust). Never fee revenue.
+    pub total_claim_penalties: u64,
 }
 
 impl Config {
@@ -130,6 +135,11 @@ pub struct Miner {
     pub weight: u16,
     /// Immutable referrer, or `Pubkey::default()` for none.
     pub referrer: Pubkey,
+
+    // --- claim penalty (appended) ---
+    /// Chain time of this position's most recent purchase: the claim-penalty
+    /// anchor. Claims and replants never move it.
+    pub last_planted_at: i64,
 }
 
 impl Miner {
@@ -144,6 +154,7 @@ impl Miner {
             lifetime_sol_compounded: self.lifetime_sol_compounded,
             lifetime_sol_claimed: self.lifetime_sol_claimed,
             weight: self.weight as u64,
+            last_planted_at: self.last_planted_at,
         }
     }
 
@@ -156,6 +167,7 @@ impl Miner {
         self.lifetime_sol_spent = p.lifetime_sol_spent;
         self.lifetime_sol_compounded = p.lifetime_sol_compounded;
         self.lifetime_sol_claimed = p.lifetime_sol_claimed;
+        self.last_planted_at = p.last_planted_at;
     }
 }
 

@@ -95,21 +95,33 @@ impl World {
         Ok(quote)
     }
 
-    /// `claim`: reward vault -> user wallet.
+    /// `claim`: reward vault -> user wallet, `net` only. The penalty stays in
+    /// the reward vault, re-credited to every share. Returns `net`.
     pub fn claim(&mut self, who: usize) -> EngineResult<u64> {
-        let amount = claim(
+        Ok(self.claim_outcome(who)?.net)
+    }
+
+    pub fn claim_outcome(&mut self, who: usize) -> EngineResult<ClaimOutcome> {
+        let (fee_before, cap_before) = (self.fee_vault, self.capital_vault);
+        let outcome = claim(
             &mut self.globals,
             &mut self.miners[who],
             &mut self.ledger,
             self.now,
         )?;
+        assert_eq!(outcome.gross, outcome.net + outcome.penalty);
         self.reward_vault = self
             .reward_vault
-            .checked_sub(amount)
+            .checked_sub(outcome.net)
             .expect("reward vault underflow — fully-funded invariant broken");
-        self.wallets[who] += amount;
+        self.wallets[who] += outcome.net;
+        assert_eq!(
+            (self.fee_vault, self.capital_vault),
+            (fee_before, cap_before),
+            "a claim penalty must never reach the fee or capital vault"
+        );
         self.check_invariants();
-        Ok(amount)
+        Ok(outcome)
     }
 
     /// `compound`: reward vault -> capital vault + fee vault.

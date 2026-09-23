@@ -62,6 +62,7 @@ function baseConfig(over: Partial<Config>): Config {
     founder: 'x' as never,
     launchT0: 0n,
     totalShares: 0n,
+    totalClaimPenalties: 0n,
     ...over,
   };
 }
@@ -82,6 +83,7 @@ function baseMiner(over: Partial<Miner>): Miner {
     bump: 255,
     weight: 0,
     referrer: 'x' as never,
+    lastPlantedAt: 0n,
     ...over,
   };
 }

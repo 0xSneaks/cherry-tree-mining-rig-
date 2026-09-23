@@ -377,16 +377,24 @@ fn exploit_claim_plus_compound_cannot_duplicate() {
         w.buy(0, 10).unwrap();
         w.warp(3_600);
         let earned = w.earned(0);
+        let mut forfeited = 0;
         let out = if order == 0 {
             let c = w.compound(0).unwrap().total_lamports;
-            c + w.claim(0).unwrap_or(0)
+            let cl = w
+                .claim_outcome(0)
+                .map(|o| (o.net, o.penalty))
+                .unwrap_or((0, 0));
+            forfeited += cl.1;
+            c + cl.0
         } else {
-            let c = w.claim(0).unwrap();
-            c + w.compound(0).map(|o| o.total_lamports).unwrap_or(0)
+            let cl = w.claim_outcome(0).unwrap();
+            forfeited += cl.penalty;
+            cl.net + w.compound(0).map(|o| o.total_lamports).unwrap_or(0)
         };
         assert_eq!(
-            out, earned,
-            "order {order}: paid out exactly what was earned"
+            out + forfeited,
+            earned,
+            "order {order}: paid out + penalty is exactly what was earned"
         );
         assert_eq!(w.earned(0), 0);
     }

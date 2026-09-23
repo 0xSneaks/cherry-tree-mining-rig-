@@ -52,6 +52,8 @@ export type Config = {
   launchT0: bigint;
   /** `Σ rigs × weight`; emission is divided by this. */
   totalShares: bigint;
+  /** Lamports forfeited by early claims and re-credited to other planters. */
+  totalClaimPenalties: bigint;
 };
 
 export type Miner = {
@@ -71,6 +73,8 @@ export type Miner = {
   weight: number;
   /** Immutable referrer; the all-ones-zero address when none. */
   referrer: Address;
+  /** Chain time of the wallet's latest purchase; anchors the claim penalty. */
+  lastPlantedAt: bigint;
 };
 
 const configDecoder = getStructDecoder([
@@ -102,6 +106,7 @@ const configDecoder = getStructDecoder([
   ['founder', getAddressDecoder()],
   ['launchT0', getI64Decoder()],
   ['totalShares', getU64Decoder()],
+  ['totalClaimPenalties', getU64Decoder()],
 ]);
 
 const minerDecoder = getStructDecoder([
@@ -119,6 +124,7 @@ const minerDecoder = getStructDecoder([
   ['bump', getU8Decoder()],
   ['weight', getU16Decoder()],
   ['referrer', getAddressDecoder()],
+  ['lastPlantedAt', getI64Decoder()],
 ]);
 
 export class AccountDecodeError extends Error {}

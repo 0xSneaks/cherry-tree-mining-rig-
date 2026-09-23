@@ -44,7 +44,13 @@ pub struct RigsPurchased {
 #[event]
 pub struct Claim {
     pub owner: Pubkey,
+    /// Net lamports paid to the owner.
     pub amount: u64,
+    /// Settled ore bin before the penalty.
+    pub gross: u64,
+    /// Forfeited, kept in the reward vault for the other planters.
+    pub penalty: u64,
+    pub penalty_bps: u16,
     pub user_rigs: u64,
     pub total_reward_claimed: u64,
 }

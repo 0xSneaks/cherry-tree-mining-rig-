@@ -119,6 +119,7 @@ pub fn handle_initialize(
         // Initialising does not activate launch.
         launch_t0: rigs_engine::NOT_ACTIVATED,
         total_shares: 0,
+        total_claim_penalties: 0,
     });
 
     emit!(Initialized {

@@ -69,6 +69,8 @@ fn t03_claim_transfers_exactly_earned() {
     w.fund(100 * SOL, 1_000).unwrap();
     w.buy(0, 25).unwrap();
     w.warp(400);
+    // Past the claim-penalty window, so the claim pays everything earned.
+    w.warp(3 * 86_400);
 
     let expected = w.earned(0);
     let rigs_before = w.miners[0].rigs;
@@ -93,6 +95,8 @@ fn t04_double_claim_in_same_slot_pays_nothing() {
     w.buy(0, 10).unwrap();
     w.warp(300);
 
+    // Inside the penalty window, as a sole planter: the penalty goes to dust,
+    // never back to the claimer, so the second claim still finds nothing.
     let first = w.claim(0).unwrap();
     assert!(first > 0);
 
@@ -246,8 +250,9 @@ fn t07_t08_interleaved_actions_never_break_funding_invariants() {
         }
     }
 
-    // Drain everything and confirm the books close.
-    w.warp(100_000);
+    // Drain everything (past the claim-penalty window) and confirm the books
+    // close.
+    w.warp(4 * 86_400);
     for i in 0..4 {
         let _ = w.claim(i);
     }
@@ -354,7 +359,7 @@ fn t12_zero_rig_window_credits_dust_and_attributes_nothing() {
     w.warp(600);
     assert_eq!(w.earned(0), 600);
 
-    w.warp(100_000);
+    w.warp(300_000); // past the 72h claim-penalty window
     assert_eq!(w.earned(0), 600);
     let claimed = w.claim(0).unwrap();
     assert_eq!(claimed, 600);

@@ -109,6 +109,33 @@ Read the table this way:
   - a 100 SOL pool spent over 180 days holds Genesis (≥ 1,200%) up to ~17 SOL planted;
   - the same pool holds Mature (≥ 60%) up to ~338 SOL planted.
 
+## Claim penalty
+
+A claim pays `gross − penalty`, where the rate depends on chain time since the
+wallet's latest purchase (`Miner.last_planted_at`):
+
+| Age of latest purchase | Penalty |
+|---|---|
+| 0 – 24h | 25% |
+| 24h – 48h | 15% |
+| 48h – 72h | 5% |
+| 72h onward | 0% |
+
+- **Clock.** `Clock::unix_timestamp` only. A clock behind the anchor counts as
+  age 0 (25%). Band edges are exact to the second.
+- **Reset.** Every purchase (`buy_rigs`) sets the anchor to that purchase's
+  chain time, for the whole position. Claims and replants never move it.
+- **Replant** is never penalised.
+- **Where it goes.** The penalty never leaves the reward vault and never
+  reaches the fee vault, the capital vault, or the founder. It is re-credited
+  by shares to the *other* planters (the claimer is excluded, so repeated
+  claims cannot recover it). A sole planter's penalty goes to undistributed
+  dust. `Config.total_claim_penalties` records the running total.
+- **Rounding.** `ceil(gross × bps / 10 000)`, so splitting a claim never
+  lowers the total penalty.
+- **Solvency.** No new emission: `paid + owed ≤ funded` holds after every
+  action (engine proptests and program tests).
+
 ## Simulation results
 
 `cargo test -p rigs-engine --test yield_sim -- --nocapture --test-threads=1`

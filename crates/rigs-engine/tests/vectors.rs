@@ -353,3 +353,48 @@ fn emit_launch_vectors() {
     }
     println!("---END---");
 }
+
+#[test]
+fn emit_penalty_vectors() {
+    use rigs_engine::{claim_penalty_bps, penalty_amount, PENALTY_WINDOW_SECONDS};
+    let d = PENALTY_WINDOW_SECONDS;
+    let planted = 1_790_000_000i64;
+    let ages = [
+        -1_000_000i64,
+        -1,
+        0,
+        1,
+        d - 1,
+        d,
+        d + 1,
+        2 * d - 1,
+        2 * d,
+        2 * d + 1,
+        3 * d - 1,
+        3 * d,
+        3 * d + 1,
+        10 * 365 * 86_400,
+    ];
+    let grosses = [
+        0u64,
+        1,
+        3,
+        4,
+        5,
+        19,
+        999,
+        18_291_000,
+        1_000_000_007,
+        u64::MAX,
+    ];
+    println!("---PENALTY---");
+    for &age in &ages {
+        let now = planted + age;
+        let bps = claim_penalty_bps(planted, now);
+        for &g in &grosses {
+            let p = penalty_amount(g, bps).unwrap();
+            println!("{planted},{now},{bps},{g},{p}");
+        }
+    }
+    println!("---END---");
+}

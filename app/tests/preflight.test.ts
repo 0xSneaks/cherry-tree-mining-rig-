@@ -59,6 +59,7 @@ function config(over: Partial<Config> = {}): Config {
     founder: EXPECTED_FOUNDER,
     launchT0: 0n,
     totalShares: 0n,
+    totalClaimPenalties: 0n,
     ...over,
   };
 }

@@ -228,13 +228,11 @@ describe('theme is honest seeds, not a hand-tuned palette', () => {
     expect(CHERRY_CHAT_THEME.accentColor).toBe(token('blossom-soft'));
   });
 
-  it("uses Cherry's stored primary verbatim", () => {
-    // The portal holds #FF5BA8 for this embed and the brief named it. The repo
-    // token `--blossom` is #ff5fa2 — three hex digits away, a 1.0132 contrast
-    // ratio, the same pink. Cherry's value is passed through rather than
-    // silently substituted; aligning them means editing --blossom.
-    expect(CHERRY_CHAT_THEME.primaryColor).toBe('#FF5BA8');
-    expect(contrast(CHERRY_CHAT_THEME.primaryColor, token('blossom'))).toBeLessThan(1.05);
+  it('takes the primary from the canonical --blossom token, exactly', () => {
+    // One brand pink. Cherry's portal holds #FF5BA8 (1.013:1 from --blossom,
+    // the same pink); the app token wins so chat and app cannot drift apart.
+    expect(CHERRY_CHAT_THEME.primaryColor).toBe(token('blossom'));
+    expect(contrast('#FF5BA8', token('blossom'))).toBeLessThan(1.05);
   });
 
   it('omits incomingBubbleColor, because the panel fill does not separate', () => {

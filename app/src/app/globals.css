@@ -1,10 +1,15 @@
 /*
  * THE CHERRY TREE — machine room.
  *
- * Industrial, underground, terminal-adjacent. Deliberately NOT a casino, not a
- * glowing-card crypto dashboard, not a Cherry screen: Cherry's own chrome is
- * dark navy with hot pink, so this sits beside it in iron and amber rather
- * than copying it.
+ * Midnight navy ground, one cherry-blossom pink, off-white type. Taken from
+ * the shipped UI, the banner and the logo: dark base, luminous blossom, a
+ * glow only where it is the brand (the wordmark). Terminal-adjacent, not a
+ * casino and not a glowing-card dashboard.
+ *
+ * Every colour lives in :root below. Rules reference tokens; derived states
+ * (washes, glow) are mixed from `--blossom` rather than restated as rgba, so
+ * the brand pink has exactly one definition. `tests/tokens.test.ts` holds
+ * that line.
  */
 
 :root {
@@ -12,6 +17,8 @@
   --bg: #080c16;
   --bg-panel: #0f1526;
   --bg-inset: #0b101d;
+  /* Button hover: one step up from the panel, still navy — never grey. */
+  --bg-raised: #151d33;
   --rule: #1c2740;
   --rule-strong: #2b3a5c;
 
@@ -19,15 +26,32 @@
   --text-dim: #8e9ab8;
   --text-faint: #5c6885;
 
-  /* Cherry blossom. The primary accent: live production, claimable value. */
+  /*
+   * Cherry blossom — THE canonical brand pink. The primary accent: live
+   * production, claimable value, the wordmark.
+   *
+   * #ff5fa2 is what the product has shipped with and what the banner/logo
+   * read as. Cherry's portal stores #FF5BA8 for the chat embed; the two sit
+   * at a 1.013 contrast ratio (indistinguishable), and the embed is themed
+   * from THIS token (`lib/cherryChat.ts`), so the app and its chat are the
+   * same pink by construction rather than by coincidence.
+   */
   --blossom: #ff5fa2;
   --blossom-soft: #ff8fbf;
   --blossom-dim: #8c3560;
+  /* Derived from --blossom. Washes stay faint; the glow is for the wordmark. */
+  --blossom-wash: color-mix(in srgb, var(--blossom) 8%, transparent);
+  --blossom-wash-strong: color-mix(in srgb, var(--blossom) 16%, transparent);
+  --blossom-glow: color-mix(in srgb, var(--blossom) 35%, transparent);
   /* Kept as an alias so existing rules and any stray usage stay valid. */
   --amber: var(--blossom);
   --amber-dim: var(--blossom-dim);
 
-  /* Supporting hues, lifted from the ecosystem diagram. */
+  /*
+   * Semantic hues only — status, not brand. They come from the ecosystem
+   * diagrams and stay confined to state (live dot, alerts); they never become
+   * a surface, a CTA or body text.
+   */
   --leaf: #6ee7b7;
   --sky: #7dd3fc;
   --steel: #7d8bb0;
@@ -83,7 +107,7 @@ body {
   letter-spacing: 0.16em;
   margin: 0;
   color: var(--blossom);
-  text-shadow: 0 0 18px rgba(255, 95, 162, 0.35);
+  text-shadow: 0 0 18px var(--blossom-glow);
 }
 
 .subhead {
@@ -217,12 +241,12 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: #1b1e21;
+  background: var(--bg-raised);
   border-color: var(--steel);
 }
 
 button:active:not(:disabled) {
-  background: #101214;
+  background: var(--bg-inset);
 }
 
 button:disabled {
@@ -234,11 +258,11 @@ button:disabled {
 button.primary {
   border-color: var(--blossom-dim);
   color: var(--blossom);
-  background: linear-gradient(180deg, rgba(255, 95, 162, 0.08), transparent);
+  background: linear-gradient(180deg, var(--blossom-wash), transparent);
 }
 button.primary:hover:not(:disabled) {
   border-color: var(--blossom);
-  background: linear-gradient(180deg, rgba(255, 95, 162, 0.16), transparent);
+  background: linear-gradient(180deg, var(--blossom-wash-strong), transparent);
 }
 button.primary:disabled {
   color: var(--text-faint);
@@ -301,6 +325,16 @@ button.primary:disabled {
   border: 1px solid var(--rule);
   border-radius: 3px;
   padding: 12px 14px;
+}
+
+/*
+ * The chat mounts after the game's own .shell, so it takes the same column:
+ * the shell's max width and 16px gutters, and the shell's bottom inset.
+ */
+.community {
+  width: calc(100% - 32px);
+  max-width: calc(420px - 32px);
+  margin: 0 auto calc(var(--safe-bottom) + 28px);
 }
 
 .quote {

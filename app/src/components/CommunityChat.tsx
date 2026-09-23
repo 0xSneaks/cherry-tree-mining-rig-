@@ -197,7 +197,7 @@ function ChatEmbed({
   if (!config) return null;
 
   return (
-    <section className="panel" style={{ marginTop: 18 }} data-testid="community-chat">
+    <section className="panel community" data-testid="community-chat">
       <p className="section-title" style={{ marginBottom: 10 }}>
         Community
       </p>

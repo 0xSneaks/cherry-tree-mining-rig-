@@ -76,19 +76,19 @@ export function cherryChatEnabled(): boolean {
  * Measured against the floors the theming guide sets:
  *   body text on background   16.55:1  (need 4.5)
  *   accent on background       9.24:1  (need 4.5)
- *   send glyph on primary      6.81:1  (need 3)
+ *   send glyph on primary      6.90:1  (need 3)
  */
 export const CHERRY_CHAT_THEME = {
   mode: 'dark',
   /**
-   * The value Cherry holds for this embed, and what the brief specified.
+   * `--blossom`: the canonical brand pink, the same value the app renders.
    *
-   * `globals.css` carries `--blossom: #ff5fa2`, three hex digits away; the two
-   * sit at a 1.0132 contrast ratio, which is to say they are the same pink.
-   * Cherry's stored value is used verbatim rather than silently substituted.
-   * To make them literally identical, change `--blossom` — not this.
+   * Cherry's portal stores #FF5BA8 for this embed — a 1.013 contrast ratio
+   * from #ff5fa2, i.e. the same pink. Passing the app token instead of the
+   * portal value means the chat's bubble and send button match the wordmark
+   * and CTAs exactly; `tests/cherryChat.test.ts` fails if they drift.
    */
-  primaryColor: '#FF5BA8',
+  primaryColor: '#ff5fa2',
   /** `--bg`: the content surface the mine renders on. */
   backgroundColor: '#080c16',
   /** `--blossom-soft`: the app's secondary highlight. */

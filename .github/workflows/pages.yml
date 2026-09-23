@@ -1,20 +1,24 @@
 name: Deploy to GitHub Pages
 
-# Hosting that needs no external account and no dashboard toggle.
+# Builds the static export and publishes it by pushing to the `gh-pages`
+# branch, which GitHub serves directly.
 #
-# The game itself is entirely client-side: every figure on screen is read from
-# Solana in the browser, and buy / claim / compound are signed by the user's
-# own wallet. So a static host serves the whole mining loop.
+# It does NOT use the Pages API (actions/configure-pages + deploy-pages):
+# this repository's Actions token cannot be granted `pages: write`, so the
+# API route fails with "Resource not accessible by integration". Pushing the
+# branch needs only `contents: write` and works today.
 #
-# What a static host cannot serve is the launch-token backend (`/api/*`) and
-# the server-rendered blink (`/inline`), which are dropped below. Both already
-# require a CHERRY_APP_ID from Cherry registration, so nothing that works
-# today is lost.
+# Why a static host is enough: the game is entirely client-side. Every figure
+# on screen is read from Solana in the browser and every action is signed by
+# the user's own wallet. What a static host cannot serve is the launch-token
+# backend (`/api/*`) and the server-rendered blink (`/inline`), which are
+# dropped below — both already require a CHERRY_APP_ID that does not exist
+# yet, so nothing that works today is lost.
 #
 # Known limit: a static host cannot send headers, and `frame-ancestors` is
-# ignored in a <meta> tag. Cherry's mobile WebView does not need it; Cherry
-# *web* embeds in an iframe and does. This deployment therefore covers Seeker
-# and standalone browsers, and Cherry web needs a header-capable host.
+# ignored in a <meta> tag. Cherry's mobile WebView (the Seeker target) does
+# not need it; Cherry *web* embeds in an iframe and does. So this covers
+# Seeker and standalone browsers, and Cherry web wants a header-capable host.
 
 on:
   push:
@@ -22,16 +26,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,21 +44,14 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
 
-      # `enablement: true` turns Pages on via the API, so this needs no
-      # repository setting to be flipped by hand first.
-      - id: pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
       - name: Install
         working-directory: app
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm ci
 
-      # Guard the honesty rules and the Rust/TypeScript agreement before
-      # anything ships, rather than deploying whatever happens to compile.
+      # Gate the deploy on the honesty rules and the Rust/TypeScript
+      # fixture agreement, rather than shipping whatever compiles.
       - name: Unit tests
         working-directory: app
         run: npx vitest run
@@ -69,23 +64,22 @@ jobs:
         working-directory: app
         env:
           STATIC_EXPORT: '1'
-          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          # Project Pages serve from /<repo>, so assets need the subpath.
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
         run: npm run build
 
-      # Pages runs Jekyll otherwise, which eats the _next directory.
+      # Pages runs Jekyll otherwise, which strips the _next directory.
       - name: Disable Jekyll
         run: touch app/out/.nojekyll
 
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: app/out
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to gh-pages
+        run: |
+          cd app/out
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "deploy: static build of ${GITHUB_SHA::7}"
+          git push -q --force \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" \
+            HEAD:gh-pages

@@ -94,8 +94,16 @@ async fn penalty_is_owed_to_the_other_planter_not_to_fees() {
     // emission plus the share of Erin's penalty re-credited to him.
     let (_, penalty) = claim_at(&mut env, &erin, t + 3_600).await;
     assert!(penalty > 0);
-    // Erin can't recover her own penalty with a second claim in the same second.
-    assert!(env.claim(&erin).await.is_err());
+    // Erin's watermark is set after her penalty was re-credited, so none of
+    // it is owed back to her (clock-independent; the same-second repeat
+    // claim is covered in the engine suite).
+    let m = env.miner(&erin.pubkey()).await;
+    assert_eq!(m.pending_rewards, 0);
+    assert_eq!(
+        m.reward_per_rig_paid,
+        env.config().await.reward_per_rig_stored,
+        "claimer's watermark includes its own penalty"
+    );
     // Bob's ore bin now holds his emission plus the share of Erin's penalty
     // re-credited to him; claiming it pays out of the reward vault only.
     let (bob_net, bob_penalty) = claim_at(&mut env, &bob, t + 3_600).await;

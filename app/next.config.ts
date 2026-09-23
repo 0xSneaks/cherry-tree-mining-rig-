@@ -1,5 +1,6 @@
 import type { NextConfig } from 'next';
 
+import { cherryChatEnabled } from './src/lib/cherryChat';
 import { securityHeaders } from './src/lib/csp';
 
 /**
@@ -22,6 +23,25 @@ import { securityHeaders } from './src/lib/csp';
  * WebView and for a standalone browser, and not enough for Cherry web.
  */
 const STATIC_EXPORT = process.env.STATIC_EXPORT === '1';
+
+/**
+ * The chat embed authenticates with `app-trusted+wallet`, which needs
+ * `/api/cherry-embed-nonce` and `/api/cherry-embed-token` — and a static
+ * export has no server to run them on (the Pages workflow deletes
+ * `src/app/api` outright). Configuring the embed into a static build would
+ * ship a chat whose every sign-in attempt 404s.
+ *
+ * Fail the build instead of discovering it in production.
+ */
+if (STATIC_EXPORT && cherryChatEnabled()) {
+  throw new Error(
+    'The Cherry Chat embed is configured (NEXT_PUBLIC_CHERRY_CHAT_APP_ID / ' +
+      '_ROOM_ID) but STATIC_EXPORT=1. Its auth mode is app-trusted+wallet, ' +
+      'which needs the /api/cherry-embed-* routes, and a static export has no ' +
+      'server to serve them. Either deploy to a host that runs Node, or leave ' +
+      'the chat ids unset for the static build.',
+  );
+}
 
 /** Repo-name subpath, e.g. "/cherry-tree-mining-rig-" on GitHub Pages. */
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';

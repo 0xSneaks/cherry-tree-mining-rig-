@@ -8,8 +8,8 @@ the other.
 |---|---|---|
 | What | THE CHERRY TREE running **inside Cherry** | Cherry chat running **inside THE CHERRY TREE** |
 | SDK | `@cherrydotfun/miniapp-sdk` 0.1.21 | `@cherrydotfun/chat-embed-sdk` 0.1.7 |
-| Auth | launch token (RS256/JWKS), Cherry wallet bridge | `wallet-only` — the iframe owns wallet UX |
-| Secret | none | none |
+| Auth | launch token (RS256/JWKS), Cherry wallet bridge | `app-trusted+wallet` — backend token + wallet signature |
+| Secret | none | `CHERRY_APP_SECRET`, server-side only |
 | Identifier | `CHERRY_APP_ID` (blocked, not yet issued) | `NEXT_PUBLIC_CHERRY_CHAT_APP_ID` (issued) |
 | Renders when | `isInsideCherry({ strict: true })` | **not** inside Cherry, and configured |
 
@@ -200,73 +200,124 @@ of the Pages one.
 ## 5. Chat embed (`@cherrydotfun/chat-embed-sdk` 0.1.7)
 
 Cherry chat, embedded in the standalone app. Path **A (web)** per Cherry's own
-`cherry-embed-integration` skill — this is a Next.js browser frontend, with no
-`react-native` dependency and no `pubspec.yaml`.
+`cherry-embed-integration` skill — a Next.js browser frontend, no
+`react-native` dependency, no `pubspec.yaml`.
 
 | | |
 |---|---|
 | App id | `ee009264-9c63-47cc-b346-46a44b25ff29` |
 | Room id | `934ad16c-61b7-4cdb-b015-cd61dd217df4` |
-| Auth mode | `wallet-only` |
-| Position | `inline`, in a fixed-height container |
-| Frame origin | `https://embed.cherry.fun` |
+| Auth mode | `app-trusted+wallet` |
+| Mode / position | `single` / `inline` |
+| Frame origin | `https://embed.cherry.fun` (`embedUrl`; no `apiUrl` — the iframe calls Cherry from its own origin) |
 
-### Why `wallet-only`
+### Auth: two independent proofs
 
-`app-trusted+wallet` needs an HS256 token signed with `CHERRY_APP_SECRET`.
-This deployment is a static export with no server to keep such a key in, and
-inventing one was explicitly out of scope — so there is **no app secret in
-this project at all**. The iframe runs its own wallet connect and signing.
+Cherry trusts a session only when both hold:
 
-`appId` and `roomId` are public identifiers; the SDK takes them in browser
-code by design, so they are `NEXT_PUBLIC_*` and appear in the bundle. That is
-correct, not a leak. If this ever moves to `app-trusted+wallet`, the signing
-key stays server-side and never becomes a `NEXT_PUBLIC_` anything.
+1. **This backend vouches for it** — an HS256 JWT with exactly `sub` and
+   `app_id` (not `walletAddress`/`appId`), 5-minute expiry, a fresh `jti`,
+   signed with `CHERRY_APP_SECRET`. `src/lib/server/embedToken.ts`, checked
+   against the RFC 7515 A.1 vector.
+2. **The user holds the wallet** — a live signature through
+   `signChallengeHandler`, registered in the constructor, never after
+   `mount()` (that races the iframe's first request).
+
+### Why the token route takes three fields, not one
+
+Cherry's example posts `{ walletAddress }`, alongside the rule that the route
+must authenticate the caller first and never take `sub` from the request body
+— room access, bans and rate limits are all enforced against that `sub`, so an
+unproven one lets a client inherit another wallet's identity.
+
+THE CHERRY TREE has no accounts: identity *is* the wallet. So the login step is
+an ownership proof, and the body is `{ walletAddress, nonce, signature }` —
+the extra two fields are what make the first one trustworthy.
+
+```
+POST /api/cherry-embed-nonce   ->  { nonce, message }      server-issued, HMAC-stamped, 2-minute TTL
+   wallet signs `message`
+POST /api/cherry-embed-token   ->  { token }               verifies Ed25519 over the nonce, then mints
+```
+
+Stateless by construction: the nonce carries its own timestamp and MAC, so
+nothing is remembered between the two calls and it works unchanged across
+serverless instances. The MAC key is derived from the app secret with a domain
+separator, so there is no second secret to configure and the app secret is
+never itself the MAC key.
+
+`tests/embedToken.test.ts` exercises this against real crypto — including the
+case that matters: Alice signs, Bob's address is claimed, request refused.
+
+### The secret
+
+`CHERRY_APP_SECRET` is an HMAC key, read only under `src/lib/server/`, never
+prefixed `NEXT_PUBLIC_`, never returned in a response, never logged. Unset,
+both routes answer `503` and the chat stays in read-only preview — it does not
+fall back to a weaker mode. Verified by tests, by the readiness script, and by
+grepping the built client bundle.
+
+`appId` and `roomId` are different in kind: public identifiers the SDK takes
+in browser code, so they are `NEXT_PUBLIC_` and ship in the bundle by design.
+
+### This needs a server
+
+`app-trusted+wallet` needs the two `/api/cherry-embed-*` routes, and the
+static export has none — the Pages workflow deletes `src/app/api` outright.
+`next.config.ts` therefore **fails the build** when `STATIC_EXPORT=1` and the
+chat ids are set, rather than shipping a chat whose every sign-in 404s.
+
+So: GitHub Pages can serve the mine, but not the chat. The chat needs a host
+that runs Node — which is the same host §3 already wants for Cherry web's
+`frame-ancestors` header.
 
 ### The embed is opt-in twice over
 
-With `NEXT_PUBLIC_CHERRY_CHAT_APP_ID` / `..._ROOM_ID` unset:
+With the ids unset: `CommunityChat` renders nothing, the SDK is never imported
+(it is behind a dynamic `import()`), and the CSP keeps `frame-src 'none'`.
+Set them and `frame-src` widens by exactly one origin. Nothing else in the
+policy moves; `frame-ancestors` still names `chat.cherry.fun`.
 
-- `CommunityChat` renders nothing — no placeholder, no layout shift — and the
-  SDK is never even imported (it is behind a dynamic `import()`);
-- the CSP keeps `frame-src 'none'`.
+### Theme — seeds, not a palette
 
-Set them, and `frame-src` widens by exactly one origin. Nothing else in the
-policy moves; `frame-ancestors` still names `chat.cherry.fun` so Cherry web
-can still frame the mini app.
+The embed runs a calibrated derivation engine: give it 2–4 honest brand
+colours and it derives ~60 variables with contrast floors baked in.
+Hand-tuning the granular variables fights that engine and lands on a
+tint-over-default look, so there are exactly three seeds plus `mode`:
 
-### Theme
+| Seed | Value | Role | From |
+|---|---|---|---|
+| `mode` | `dark` | the app's real content surface | — |
+| `primaryColor` | `#FF5BA8` | CTA → own bubble + send button | Cherry's stored value |
+| `backgroundColor` | `#080c16` | content surface | `--bg` |
+| `accentColor` | `#ff8fbf` | links + mentions | `--blossom-soft` |
 
-Exact colours, read from `globals.css` rather than invented. The embed's
-defaults are Cherry's own chrome — including a purple `#4a1d56` incoming
-bubble and a gradient send button — so every one is overridden and
-`gradients` is pinned `'off'`. `tests/cherryChat.test.ts` parses
-`globals.css` and asserts the theme against the live token values, so editing
-a token and forgetting the chat fails the suite.
+`incomingBubbleColor` is deliberately **omitted**. It is worth passing only
+when a soft tinted brand fill genuinely separates from the page ground; ours
+(`--bg-panel` `#0f1526`) sits at **1.075** against `--bg` — a near-identical
+neutral navy, not a second brand colour — so the engine derives a better
+bubble than we would.
 
-| Token | Value | Used for |
+Measured against the guide's floors:
+
+| Check | Ratio | Floor |
 |---|---|---|
-| `--bg` | `#080c16` | page / chat area |
-| `--bg-panel` | `#0f1526` | surface, incoming bubbles |
-| `--bg-inset` | `#0b101d` | header, input |
-| `--rule` | `#1c2740` | borders |
-| `--text` | `#e9ecf5` | body text |
-| `--text-dim` | `#8e9ab8` | secondary text |
-| `--blossom` | `#ff5fa2` | primary / CTA / send |
-| `--blossom-soft` | `#ff8fbf` | accent, links |
-| `--blossom-dim` | `#8c3560` | own bubble fill |
-| `--alert` | `#ff6b81` | destructive |
+| body text on background | 16.55:1 | 4.5 |
+| accent on background | 9.24:1 | 4.5 |
+| send glyph on primary | 6.81:1 | 3 |
 
-Note: the brief named `#FF5BA8` as the primary. The repository's actual token
-is `#ff5fa2`, and the instruction was to take exact values from the existing
-design rather than invent them, so `#ff5fa2` is what ships. Changing the token
-in `globals.css` moves both the app and the chat together.
+**On `#FF5BA8` vs `--blossom` `#ff5fa2`:** three hex digits apart, a 1.0132
+contrast ratio — the same pink. Cherry's stored value is passed through
+verbatim rather than silently substituted. To make them literally identical,
+change `--blossom` in `globals.css`; that moves the app and the chat together.
 
 ### Allowed origins
 
-The deployment origin must be listed in the embed's **Allowed origins** at
+The deployment origin must be in the embed's **Allowed origins** at
 portal.cherry.fun, or the iframe fails with an origin mismatch. Because that
 is not yet confirmed, `pages.yml` reads the ids from repository *variables*
-(`CHERRY_CHAT_APP_ID`, `CHERRY_CHAT_ROOM_ID`) and ships with them unset —
-enabling the embed before the origin is allow-listed would deploy a chat that
-cannot load. Setting both variables turns it on with no code change.
+(`CHERRY_CHAT_APP_ID`, `CHERRY_CHAT_ROOM_ID`) and ships with them unset.
+
+Note the static-export guard above: setting those variables on the Pages
+workflow will now **fail the build** rather than deploy a broken chat. That is
+deliberate — it is the signal to move the deployment to a Node host first.

@@ -77,7 +77,10 @@ function ConnectedGame({ account }: { account: UiWalletAccount }) {
   return (
     <>
       <Game host={host} />
-      <CommunityChat />
+      {/* The connected account is handed down so the chat can prove wallet
+          ownership to the token route. It signs a message for chat identity
+          only — never a transaction, and never the mining signer. */}
+      <CommunityChat account={account} />
     </>
   );
 }

@@ -179,7 +179,7 @@ fi
 echo
 echo "--> Cherry Chat embed (second Cherry surface)"
 
-# The mini app must survive the embed's existence. These two are the surfaces
+# The mini app must survive the embed's existence. These are the two surfaces
 # pointing in opposite directions; neither may absorb the other.
 grep -q "@cherrydotfun/miniapp-sdk" app/package.json \
   && pass "the mini-app SDK is still a dependency" \
@@ -188,21 +188,58 @@ grep -q "@cherrydotfun/chat-embed-sdk" app/package.json \
   && pass "the chat-embed SDK is a dependency" \
   || bad "the chat-embed SDK is missing"
 
-# `wallet-only` needs no backend token, so no signing key should exist at all.
-if grep -rqE "CHERRY_APP_SECRET|appSecret" app/src app/scripts .env.example 2>/dev/null; then
-  bad "an app secret is referenced somewhere — wallet-only mode needs none"
+# --- the app secret must be server-side only ---
+# Cherry's own verification step: these greps must find nothing in client
+# source or in the build output. `src/lib/server/` is excluded because that is
+# exactly where the secret is SUPPOSED to be read.
+# Matches an actual READ (`process.env.CHERRY_APP_SECRET`) rather than the
+# bare name, which the source comments legitimately mention when explaining
+# why the key is server-side.
+CLIENT_DIRS=(app/src/app app/src/components app/src/hooks app/src/lib)
+LEAKS=$(grep -rln 'process\.env\.CHERRY_APP_SECRET' "${CLIENT_DIRS[@]}" 2>/dev/null \
+          | grep -v '^app/src/lib/server/' || true)
+if [[ -n "$LEAKS" ]]; then
+  bad "CHERRY_APP_SECRET is read outside app/src/lib/server: $LEAKS"
 else
-  pass "no Cherry app secret anywhere (auth mode is wallet-only)"
+  pass "CHERRY_APP_SECRET is read only under app/src/lib/server"
 fi
 
-# A secret must never be reachable from the browser bundle.
+# A NEXT_PUBLIC_ variable is inlined into the bundle by definition.
 if grep -rqE "NEXT_PUBLIC_[A-Z_]*SECRET" app/src app/scripts .env.example 2>/dev/null; then
   bad "a NEXT_PUBLIC_ variable names a secret — it would ship in the bundle"
 else
   pass "no NEXT_PUBLIC_ variable names a secret"
 fi
 
-# frame-src must stay opt-in, and must never widen beyond the embed origin.
+# The built client bundle is the real proof. Only meaningful once a build
+# exists; a fresh clone has none, so its absence is a note, not a failure.
+if [[ -d app/.next/static ]]; then
+  if grep -rql "CHERRY_APP_SECRET" app/.next/static 2>/dev/null; then
+    bad "CHERRY_APP_SECRET appears in the built client bundle"
+  else
+    pass "the built client bundle contains no reference to the app secret"
+  fi
+else
+  dim "  note  no build output to scan (run: cd app && npx next build)"
+fi
+
+# The routes that mint the token must exist and be server-side.
+for route in app/src/app/api/cherry-embed-token/route.ts app/src/app/api/cherry-embed-nonce/route.ts; do
+  [[ -f "$route" ]] && pass "$(basename "$(dirname "$route")") route present" \
+    || bad "$route is missing — app-trusted+wallet needs it"
+done
+grep -q "server-only" app/src/lib/server/embedToken.ts \
+  && pass "the token minter is marked server-only" \
+  || bad "app/src/lib/server/embedToken.ts is not marked server-only"
+
+# --- the token route must authenticate the caller ---
+# A `sub` taken from the request body lets a client mint a token for any
+# wallet and inherit its room access.
+grep -q "verifyWalletProof" app/src/app/api/cherry-embed-token/route.ts \
+  && pass "the token route proves wallet ownership before minting" \
+  || bad "the token route mints without proving who the caller is"
+
+# --- frame-src stays opt-in and narrow ---
 if grep -q "cherryChatEnabled() ? CHERRY_EMBED_ORIGIN" app/src/lib/csp.ts; then
   pass "frame-src is 'none' unless the embed is configured"
 else
@@ -212,10 +249,13 @@ grep -q "CHERRY_EMBED_ORIGIN = 'https://embed.cherry.fun'" app/src/lib/cherryCha
   && pass "the embed origin is one exact https origin" \
   || bad "the embed origin is missing or not pinned"
 
-# The embed must not render inside the Cherry mini app.
+# --- boundaries ---
 grep -q "useCherryEnvironment" app/src/components/CommunityChat.tsx \
   && pass "the embed checks for Cherry before mounting" \
   || bad "the embed does not check for Cherry — it could mount inside the mini app"
+grep -q "STATIC_EXPORT && cherryChatEnabled()" app/next.config.ts \
+  && pass "a static build refuses to ship a chat whose sign-in routes are absent" \
+  || bad "a static build could ship the chat without its /api routes"
 
 # ------------------------------------------------------- fee recipient
 echo

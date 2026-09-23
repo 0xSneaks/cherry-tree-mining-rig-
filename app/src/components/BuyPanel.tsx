@@ -73,13 +73,13 @@ export function BuyPanel({
 
   return (
     <section>
-      <h2 className="section-title">Buy more hashpower</h2>
+      <h2 className="section-title">Plant seeds</h2>
 
       <div className="stepper">
         <button
           type="button"
           onClick={() => setCount((c) => clamp(c - 1n))}
-          aria-label="One fewer rig"
+          aria-label="One fewer seed"
         >
           –
         </button>
@@ -87,7 +87,7 @@ export function BuyPanel({
           inputMode="numeric"
           pattern="[0-9]*"
           value={count.toString()}
-          aria-label="Number of rigs"
+          aria-label="Number of seeds"
           onChange={(e) => {
             const digits = e.target.value.replace(/\D/g, '');
             setCount(digits ? clamp(BigInt(digits)) : 1n);
@@ -96,7 +96,7 @@ export function BuyPanel({
         <button
           type="button"
           onClick={() => setCount((c) => clamp(c + 1n))}
-          aria-label="One more rig"
+          aria-label="One more seed"
         >
           +
         </button>
@@ -146,7 +146,7 @@ export function BuyPanel({
         disabled={disabled || busy || !quote}
         onClick={() => quote && onBuy(quote.count)}
       >
-        {busy ? 'Hiring…' : `Hire ${count.toString()} rig${count === 1n ? '' : 's'}`}
+        {busy ? 'Planting…' : `Plant ${count.toString()} seed${count === 1n ? '' : 's'}`}
       </button>
 
       {closedReason ? <p className="note">{closedReason}</p> : null}
@@ -159,8 +159,8 @@ export function BuyPanel({
       ) : null}
 
       <p className="note">
-        Rigs are game production capacity, not a deposit. They are
-        non-redeemable — you are buying hashpower, not staking principal you can
+        Seeds are game production capacity, not a deposit. They are
+        non-redeemable — you are planting capacity, not staking principal you can
         withdraw later.
       </p>
     </section>

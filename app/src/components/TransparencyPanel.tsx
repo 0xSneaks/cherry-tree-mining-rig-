@@ -14,7 +14,7 @@ import {
   formatSol,
   formatUtcInstant,
 } from '../lib/format';
-import { SECONDS_PER_DAY, fundedRunwaySeconds } from '../lib/program/accrual';
+import { SECONDS_PER_DAY, fundedRunwaySeconds, minerShares } from '../lib/program/accrual';
 import type { Config, Miner } from '../lib/program/accounts';
 import { Readout } from './Readout';
 
@@ -37,7 +37,7 @@ export function TransparencyPanel({
 
   return (
     <section>
-      <h2 className="section-title">Global mine</h2>
+      <h2 className="section-title">Global grove</h2>
       <div className="panel">
         <Readout label="Reward vault" value={formatSol(rewardVaultLamports, 3)} unit="SOL" />
         <Readout label="Current distribution" value={formatSol(perDay, 3)} unit="SOL / day" />
@@ -46,20 +46,20 @@ export function TransparencyPanel({
           value={live ? formatUtcInstant(config.rewardPeriodFinish) : 'schedule ended'}
         />
         <Readout label="Funded runway" value={formatDuration(runway)} />
-        <Readout label="Global rigs" value={formatCount(config.totalRigs)} />
+        <Readout label="Seeds planted" value={formatCount(config.totalRigs)} />
         <Readout
           label="Your share"
-          value={formatSharePercent(miner?.rigs ?? 0n, config.totalRigs)}
+          value={formatSharePercent(miner ? minerShares(miner) : 0n, config.totalShares)}
         />
         <Readout label="Protocol fee" value={formatBps(config.purchaseFeeBps)} />
-        <Readout label="Miners" value={formatCount(config.minerCount)} />
+        <Readout label="Planters" value={formatCount(config.minerCount)} />
 
         <hr className="rule" style={{ margin: '12px 0' }} />
 
         <Readout label="Total funded" value={formatSol(config.totalRewardFunded, 3)} unit="SOL" />
         <Readout label="Total claimed" value={formatSol(config.totalRewardClaimed, 3)} unit="SOL" />
         <Readout
-          label="Total compounded"
+          label="Total replanted"
           value={formatSol(config.totalRewardCompounded, 3)}
           unit="SOL"
         />

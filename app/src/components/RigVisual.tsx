@@ -19,16 +19,16 @@ export type RigTier = {
 
 export function rigTier(rigs: bigint): RigTier {
   if (rigs >= 500n)
-    return { key: 'facility', label: 'MAJOR MINING FACILITY', levels: 4, perLevel: 6 };
+    return { key: 'facility', label: 'CHERRY GROVE', levels: 4, perLevel: 6 };
   if (rigs >= 100n)
-    return { key: 'multi', label: 'MULTI-RIG SHAFT', levels: 3, perLevel: 4 };
+    return { key: 'multi', label: 'CHERRY TREE', levels: 3, perLevel: 4 };
   if (rigs >= 25n)
-    return { key: 'industrial', label: 'INDUSTRIAL RIG', levels: 2, perLevel: 3 };
+    return { key: 'industrial', label: 'YOUNG TREE', levels: 2, perLevel: 3 };
   if (rigs >= 5n)
-    return { key: 'small', label: 'SMALL MINING MACHINE', levels: 1, perLevel: 2 };
+    return { key: 'small', label: 'SAPLING', levels: 1, perLevel: 2 };
   if (rigs >= 1n)
-    return { key: 'hand', label: 'HAND-OPERATED SHAFT', levels: 1, perLevel: 1 };
-  return { key: 'empty', label: 'SHAFT IDLE', levels: 1, perLevel: 0 };
+    return { key: 'hand', label: 'SEEDLING', levels: 1, perLevel: 1 };
+  return { key: 'empty', label: 'BARE SOIL', levels: 1, perLevel: 0 };
 }
 
 // A narrow viewBox on purpose: the SVG scales to the column width, so fewer
@@ -124,7 +124,7 @@ export function RigVisual({ rigs, running }: { rigs: bigint; running: boolean })
   const shaftBottom = SURFACE_Y + tier.levels * LEVEL_GAP;
 
   return (
-    <figure style={{ margin: '14px 0 0' }} aria-label={`Mine shaft: ${tier.label.toLowerCase()}`}>
+    <figure style={{ margin: '14px 0 0' }} aria-label={`Grove: ${tier.label.toLowerCase()}`}>
       <svg
         viewBox={`0 0 ${WIDTH} ${height}`}
         width="100%"

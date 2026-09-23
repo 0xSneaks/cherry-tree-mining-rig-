@@ -68,7 +68,7 @@ export function RoomLeaderboard({
             color: 'var(--text-dim)',
           }}
         >
-          Top miners in {roomTitle}
+          Top planters in {roomTitle}
         </p>
         {error ? (
           <p className="note">{error}</p>
@@ -76,7 +76,7 @@ export function RoomLeaderboard({
           <p className="note">Reading the chain…</p>
         ) : entries.length === 0 ? (
           <p className="note">
-            No rigs mined from this room yet. Be the first shaft.
+            No seeds planted from this room yet. Be the first root.
           </p>
         ) : (
           <ol className="leaderboard">

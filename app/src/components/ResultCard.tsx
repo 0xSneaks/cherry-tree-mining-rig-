@@ -30,7 +30,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
 
   const headline =
     compounded !== null
-      ? `+${formatCount(compounded)} RIGS`
+      ? `+${formatCount(compounded)} SEEDS REPLANTED`
       : claimed !== null
         ? `${formatSol(claimed, 4)} SOL CLAIMED`
         : PRODUCT_NAME;
@@ -42,7 +42,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
     >
       <div className="panel">
         <p className="section-title" style={{ marginBottom: 6 }}>
-          {PRODUCT_NAME} · MINE REPORT
+          {PRODUCT_NAME} · GROVE REPORT
         </p>
         <p
           style={{
@@ -55,14 +55,14 @@ export function ResultCard({ params }: { params: ResultParams }) {
           {headline}
         </p>
         <div className="readout">
-          <span className="readout-label">Hashpower</span>
+          <span className="readout-label">Grove</span>
           <span className="readout-value">
             {rigs !== null ? formatCount(rigs) : '—'}
-            <span className="unit">RIGS</span>
+            <span className="unit">SEEDS</span>
           </span>
         </div>
         <p className="note" style={{ marginTop: 10 }}>
-          Mining simulation with SOL-denominated rewards paid from a funded
+          Planting simulation with SOL-denominated rewards paid from a funded
           reward vault. Read-only snapshot.
         </p>
       </div>

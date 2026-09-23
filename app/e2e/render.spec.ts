@@ -57,23 +57,23 @@ test.describe('embedded path', () => {
     await stubRpc(page);
   });
 
-  /** §12.21 — first paint shows the user's rigs, with no user action. */
-  test('reaches the mining operation with no interaction', async ({ page }) => {
+  /** §12.21 — first paint shows the user's seeds, with no user action. */
+  test('reaches the grove with no interaction', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByText('My hashpower')).toBeVisible();
-    // 42 rigs, straight out of the Rust-serialised miner fixture.
+    await expect(page.getByText('My grove')).toBeVisible();
+    // 42 seeds, straight out of the Rust-serialised miner fixture.
     await expect(
-      page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
-    await expect(page.getByText('Ore bin · unclaimed SOL')).toBeVisible();
+      page.locator('.readout', { hasText: 'My grove' }).locator('.readout-value'),
+    ).toHaveText('42SEEDS');
+    await expect(page.getByText('Ready to harvest · unclaimed SOL')).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeVisible();
   });
 
   /** §12.21 — zero connect-wallet UI in the embed. */
   test('renders no connect-wallet UI at all', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
 
     const text = (await page.locator('body').innerText()).toLowerCase();
     expect(text).not.toContain('connect wallet');
@@ -88,20 +88,20 @@ test.describe('embedded path', () => {
     // heading — so both are asserted explicitly rather than by substring.
     await expect(page.getByText('Mine Shaft · 412 members')).toBeVisible();
     await expect(page.getByText('This room')).toBeVisible();
-    await expect(page.getByText('Top miners in Mine Shaft')).toBeVisible();
+    await expect(page.getByText('Top planters in Mine Shaft')).toBeVisible();
   });
 
   /** §10 — the buy quote adds up on screen, fee included and disclosed. */
   test('quotes cost, fee and total, and they add up', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Buy more hashpower')).toBeVisible();
+    await expect(page.getByText('Plant seeds')).toBeVisible();
 
     const value = async (label: string) => {
       const row = page.locator('.quote .readout', { hasText: label }).first();
       return (await row.locator('.readout-value').innerText()).replace(/[^\d.]/g, '');
     };
 
-    // Default 10 rigs at 0.01 SOL with a 3.00% fee.
+    // Default 10 seeds at 0.01 SOL with a 3.00% fee.
     expect(await value('Cost')).toBe('0.1000');
     expect(await value('Fee')).toBe('0.0030');
     expect(await value('Total')).toBe('0.1030');
@@ -111,7 +111,7 @@ test.describe('embedded path', () => {
   test('the quick-select buttons change the quote', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Hire 25 rigs/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Plant 25 seeds/i })).toBeVisible();
   });
 
   /** §2, §10 — honesty constraints and banned copy. */
@@ -119,17 +119,17 @@ test.describe('embedded path', () => {
     page,
   }) => {
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
 
     const text = await page.locator('body').innerText();
 
-    expect(text).toMatch(/mining\s+simulation/i);
+    expect(text).toMatch(/planting\s+simulation/i);
     expect(text).toMatch(/not proof-of-work mined/i);
     expect(text).toMatch(/non-redeemable/i);
     expect(text).toMatch(/funded reward vault/i);
     // The mandated sentence under the output estimate.
     expect(text).toMatch(
-      /Based on the current funded reward schedule and total rig count/i,
+      /Based on the current funded reward schedule and seeds planted/i,
     );
 
     for (const pattern of BANNED) {
@@ -141,6 +141,9 @@ test.describe('embedded path', () => {
       );
       expect(text).toMatch(/not a promise of future returns/i);
     }
+    // Terminology guard: the product plants seeds. The program still says
+    // `rig` internally; the screen never does.
+    expect(text, 'mining-rig terminology on screen').not.toMatch(/\brigs?\b|hashpower/i);
     // Deposit language is banned outright.
     expect(text).not.toMatch(/\bwithdraw your (stake|deposit|principal)\b/i);
   });
@@ -149,14 +152,14 @@ test.describe('embedded path', () => {
     page,
   }) => {
     await page.goto('/');
-    await expect(page.getByText('Global mine')).toBeVisible();
+    await expect(page.getByText('Global grove')).toBeVisible();
     const panel = page.locator('.panel').filter({ hasText: 'Reward vault' });
     for (const label of [
       'Reward vault',
       'Current distribution',
       'Funded until',
       'Funded runway',
-      'Global rigs',
+      'Seeds planted',
       'Your share',
       'Protocol fee',
     ]) {
@@ -181,7 +184,7 @@ test.describe('embedded path', () => {
     page,
   }) => {
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeEnabled();
 
     await page.evaluate(() =>
@@ -192,14 +195,14 @@ test.describe('embedded path', () => {
 
     await expect(page.getByText(/Wallet disconnected/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /^Compound/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /Hire /i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Replant/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
 
     // Read-only state survives: the position is still rendered, not unmounted.
     await expect(
-      page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
-    await expect(page.getByText('Global mine')).toBeVisible();
+      page.locator('.readout', { hasText: 'My grove' }).locator('.readout-value'),
+    ).toHaveText('42SEEDS');
+    await expect(page.getByText('Global grove')).toBeVisible();
     await expect(page.locator('.readout-value--hero')).toBeVisible();
   });
 
@@ -210,10 +213,10 @@ test.describe('embedded path', () => {
 
     await expect(page.getByText(/halted by its authority/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /^Compound/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /Hire /i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Replant/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
     // Read-only state stays on screen.
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
   });
 
   /**
@@ -261,14 +264,14 @@ test.describe('embedded path', () => {
 test.describe('blink result card', () => {
   test('renders purely from its params', async ({ page }) => {
     await page.goto('/result?kind=compound&rigs=54&compounded=12');
-    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    await expect(page.getByText('+12 SEEDS REPLANTED')).toBeVisible();
     await expect(page.getByText('54')).toBeVisible();
     await expect(page.getByText(/read-only snapshot/i)).toBeVisible();
   });
 
   test('ignores junk params rather than rendering them', async ({ page }) => {
     await page.goto('/result?rigs=<script>alert(1)</script>&compounded=NaN');
-    await expect(page.getByText('THE CHERRY TREE · MINE REPORT')).toBeVisible();
+    await expect(page.getByText('THE CHERRY TREE · GROVE REPORT')).toBeVisible();
     const text = await page.locator('body').innerText();
     expect(text).not.toContain('alert(1)');
     expect(text).not.toContain('NaN');
@@ -292,7 +295,7 @@ test.describe('blink snapshot from the Cherry host', () => {
     });
     await page.goto('/result?mode=inline&token=stub');
 
-    await expect(page.getByText('+19 RIGS')).toBeVisible();
+    await expect(page.getByText('+19 SEEDS REPLANTED')).toBeVisible();
     await expect(page.getByText('77')).toBeVisible();
   });
 
@@ -317,7 +320,7 @@ test.describe('blink snapshot from the Cherry host', () => {
     // Everything after `token` is attacker-controlled in a shared URL.
     await page.goto('/result?mode=inline&token=stub&rigs=999999&compounded=888888');
 
-    await expect(page.getByText('+19 RIGS')).toBeVisible();
+    await expect(page.getByText('+19 SEEDS REPLANTED')).toBeVisible();
     const text = await page.locator('body').innerText();
     expect(text).not.toContain('999999');
     expect(text).not.toContain('888888');
@@ -350,7 +353,7 @@ test.describe('Cherry Chat embed', () => {
     await stubCherryHost(page);
     await stubRpc(page);
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
 
     // Inside Cherry the user is already in the room; framing Cherry here
     // would be recursive.
@@ -382,7 +385,7 @@ test.describe('wallet address plumbing', () => {
     await stubCherryHost(page);
     await stubRpc(page);
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
 
     // The miner PDA is derived from the host-supplied wallet, so the wallet
     // itself shows up in the balance lookup.
@@ -454,11 +457,11 @@ test.describe('CSP is survivable', () => {
     await stubRpc(page);
     await page.goto('/');
 
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
     await expect(page.locator('.readout-value--hero')).toBeVisible();
     // A blocked event handler would only surface once something is clicked.
     await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Hire 25 rigs/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Plant 25 seeds/i })).toBeVisible();
 
     expect(await collect()).toEqual([]);
   });
@@ -474,7 +477,7 @@ test.describe('CSP is survivable', () => {
   test('the blink card raises none', async ({ page }) => {
     const collect = await watchViolations(page);
     await page.goto('/result?kind=compound&rigs=54&compounded=12');
-    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    await expect(page.getByText('+12 SEEDS REPLANTED')).toBeVisible();
     expect(await collect()).toEqual([]);
   });
 
@@ -486,8 +489,8 @@ test.describe('CSP is survivable', () => {
     // Reaching first paint with real rig data means the RPC call went out
     // and was not blocked by connect-src.
     await expect(
-      page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
+      page.locator('.readout', { hasText: 'My grove' }).locator('.readout-value'),
+    ).toHaveText('42SEEDS');
     expect(await collect()).toEqual([]);
   });
 });
@@ -561,7 +564,7 @@ test.describe('launch activation and access phases', () => {
     await expect(page.getByTestId('launch-panel')).toContainText('The grove is dormant');
     await expect(page.getByTestId('launch-panel')).toContainText('Founder activation pending.');
     expect(await phaseOf(page)).toBe('preLaunch');
-    await expect(page.getByRole('button', { name: /^Hire/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
     await expect(page.getByTestId('founder-activation')).toHaveCount(0);
   });
 
@@ -573,7 +576,7 @@ test.describe('launch activation and access phases', () => {
     await expect(page.getByTestId('launch-panel')).toContainText('.SKR genesis access');
     await expect(page.getByTestId('launch-countdown')).toContainText('SNS early access in 22:59:');
     // This wallet has no .skr name in the stub: planting stays closed to it.
-    await expect(page.getByRole('button', { name: /^Hire/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
   });
 
   test('SNS early access, then public', async ({ page }) => {

@@ -213,7 +213,7 @@ export function Game({ host }: { host: Host }) {
         {host.mode === 'standalone' ? host.connectSlot : null}
       </header>
       <div className="subhead">
-        <span>Mining status</span>
+        <span>Grove status</span>
         <span className={statusClass}>
           <span className="status-dot" />
           {statusLabel}
@@ -264,23 +264,23 @@ export function Game({ host }: { host: Host }) {
             weight={miner?.weight ?? 0}
           />
 
-          <Readout label="My hashpower" value={formatCount(rigs)} unit="RIGS" rigs />
+          <Readout label="My grove" value={formatCount(rigs)} unit="SEEDS" rigs />
           <Readout
-            label="Current output"
+            label="Current growth"
             value={`≈ ${formatSol(outputPerDay, 5)}`}
             unit="SOL / DAY"
           />
           <OreBin lamports={claimable} />
 
           <p className="note">
-            Based on the current funded reward schedule and total rig count.
-            Changes when hashpower or reward funding changes.
+            Based on the current funded reward schedule and seeds planted.
+            Changes when seeds planted or reward funding changes.
           </p>
 
           {!host.walletConnected ? (
             <div className="banner">
-              Wallet disconnected. Your mine keeps running — reconnect to claim,
-              compound or hire.
+              Wallet disconnected. Your grove keeps growing — reconnect to claim,
+              replant or plant.
             </div>
           ) : null}
           {paused ? (
@@ -296,10 +296,10 @@ export function Game({ host }: { host: Host }) {
           <div className="actions">
             <button type="button" onClick={onCompound} disabled={!canAct || compoundPreview === 0n}>
               {busy === 'compound'
-                ? 'Compounding…'
+                ? 'Replanting…'
                 : compoundPreview > 0n
-                  ? `Compound · ${formatCount(compoundPreview)}`
-                  : 'Compound'}
+                  ? `Replant · ${formatCount(compoundPreview)}`
+                  : 'Replant'}
             </button>
             <button
               type="button"
@@ -356,11 +356,11 @@ export function Game({ host }: { host: Host }) {
           />
 
           <p className="disclosure">
-            {PRODUCT_NAME_SHORT} is a mining <em>simulation</em>. SOL is not proof-of-work
-            mined: rigs do not participate in Solana consensus and do not
+            {PRODUCT_NAME_SHORT} is a planting <em>simulation</em>. SOL is not proof-of-work
+            mined: seeds do not participate in Solana consensus and do not
             cryptographically produce new SOL. Rewards are paid from a funded
-            reward vault, are denominated in SOL, and vary with total hashpower
-            and funding. Rig purchases are non-redeemable.
+            reward vault, are denominated in SOL, and vary with total seeds planted
+            and funding. Seed purchases are non-redeemable.
           </p>
         </>
       )}

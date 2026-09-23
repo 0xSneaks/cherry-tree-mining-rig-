@@ -87,7 +87,7 @@ export function YieldPanel({
   // the return over that window — never annualised past what is funded.
   const horizon = projection?.horizonSeconds ?? 0n;
   const apyLabel = fullYear
-    ? 'Projected APY · daily compound'
+    ? 'Projected APY · daily replant'
     : horizon > 0n
       ? `Projected return · next ${formatDuration(horizon)}`
       : 'Projected return · no funded window';
@@ -99,7 +99,7 @@ export function YieldPanel({
     const atRigs = (threshold.atTotalShares + WEIGHT_BASE - 1n) / WEIGHT_BASE;
     const toGoShares = threshold.atTotalShares - config.totalShares;
     const toGo = (toGoShares + WEIGHT_BASE - 1n) / WEIGHT_BASE;
-    nextLabel = `${PHASE_LABEL[threshold.phase]} at ${formatCount(atRigs)} rigs · ${formatCount(toGo)} to go`;
+    nextLabel = `${PHASE_LABEL[threshold.phase]} at ${formatCount(atRigs)} seeds · ${formatCount(toGo)} to go`;
   } else if (threshold.kind === 'windowEnds') {
     nextLabel = `Window closes ${formatUtcInstant(threshold.at)}`;
   } else {
@@ -136,7 +136,7 @@ export function YieldPanel({
       </div>
 
       <p className="note">
-        Variable rate: funded emission ÷ planted rigs, read from the program.
+        Variable rate: funded emission ÷ seeds planted, read from the program.
         It falls as the grove grows and stops when the funded window ends. Past
         and projected figures are not a promise of future returns.
       </p>

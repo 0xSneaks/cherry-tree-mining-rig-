@@ -82,8 +82,8 @@ export function EmbeddedGame() {
           height: 'medium',
           caption:
             payload.kind === 'compound'
-              ? `+${payload.compounded} rigs`
-              : 'Claimed from the mine',
+              ? `+${payload.compounded} seeds replanted`
+              : 'Claimed from the grove',
           previewable: true,
         });
       },

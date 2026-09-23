@@ -1,0 +1,36 @@
+THE CHERRY TREE
+Copyright (c) 2026 PhantomCapAI. All rights reserved.
+
+This repository is SOURCE-AVAILABLE, not open source. It is licensed under the
+Business Source License 1.1 — see LICENSE.
+
+In plain terms:
+
+  You MAY          read it, audit it, learn from it, run it locally, and
+                   study the reward accounting.
+
+  You MAY NOT      deploy the Solana program (or anything derived from it) to
+                   a public network, or run any service built on this work
+                   that takes value from or pays value to other people,
+                   without a commercial licence from PhantomCapAI.
+
+  On 2030-09-23    this converts automatically to Apache License 2.0.
+
+TRADEMARKS
+
+"THE CHERRY TREE", the Cherry Tree name, wordmark, blossom palette and
+associated branding are trademarks of PhantomCapAI and are NOT licensed by
+the Business Source License. A permitted non-production use of the code does
+not grant any right to use the name or branding.
+
+DEPLOYED PROGRAM
+
+The on-chain program at By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH is
+operated by PhantomCapAI. Nothing in this licence grants authority over that
+deployment, and the licence is not a substitute for controlling the program's
+upgrade authority.
+
+NO WARRANTY
+
+This software moves real value on a public blockchain. It is provided "AS IS",
+without warranty of any kind. See LICENSE.

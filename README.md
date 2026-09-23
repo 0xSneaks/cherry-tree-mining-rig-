@@ -252,3 +252,25 @@ The `inline:render` permission is required for blink sharing.
 epochs), native SOL staking adapter, rig upgrades, an SPL token, a reward-vault
 recovery instruction, a native Android / dApp Store build, and interactive
 blinks with callback buttons.
+
+---
+
+## Licence
+
+**Source-available, not open source.** Licensed under the
+[Business Source License 1.1](LICENSE).
+
+| | |
+|---|---|
+| **You may** | read it, audit it, learn from it, run it locally, study the reward accounting |
+| **You may not** | deploy the program to a public network, or run any service on this work that takes value from or pays value to other people, without a commercial licence |
+| **On 2030-09-23** | it converts automatically to Apache 2.0 |
+
+"THE CHERRY TREE", the wordmark and the blossom palette are trademarks of
+PhantomCapAI and are **not** covered by the code licence — a permitted use of
+the code grants no right to the name or branding. See [NOTICE](NOTICE).
+
+The licence is legal recourse, not a technical control. The thing that
+actually governs the deployed program is its **upgrade authority**, and the
+thing that governs the money is the vault separation — neither is something a
+licence can do for you.

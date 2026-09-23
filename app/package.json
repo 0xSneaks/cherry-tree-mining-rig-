@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "THE CHERRY TREE — Solana-native mining simulation, as a Cherry mini-app.",
   "private": true,
+  "license": "BUSL-1.1",
+  "author": "PhantomCapAI",
   "type": "module",
   "scripts": {
     "dev": "next dev",

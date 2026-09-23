@@ -3,7 +3,7 @@ name = "sol-rigs"
 version = "0.1.0"
 edition = "2021"
 description = "THE CHERRY TREE — fully-funded Solana mining simulation with SOL-denominated rewards"
-license = "MIT"
+license = "BUSL-1.1"
 
 [lib]
 crate-type = ["cdylib", "lib"]

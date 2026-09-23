@@ -121,7 +121,15 @@ describe('embed token', () => {
 
   it('refuses to mint without the app id', () => {
     delete process.env.NEXT_PUBLIC_CHERRY_CHAT_APP_ID;
+    delete process.env.CHERRY_CHAT_APP_ID;
     expect(() => mintEmbedToken('anyone')).toThrow(EmbedTokenError);
+  });
+
+  it('reads the unprefixed CHERRY_CHAT_APP_ID, which is how Vercel holds it', () => {
+    delete process.env.NEXT_PUBLIC_CHERRY_CHAT_APP_ID;
+    process.env.CHERRY_CHAT_APP_ID = APP_ID;
+    const { token } = mintEmbedToken('anyone');
+    expect(decode(token.split('.')[1]!).app_id).toBe(APP_ID);
   });
 });
 

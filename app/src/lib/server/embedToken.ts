@@ -43,10 +43,13 @@ export function appSecret(): string {
 
 /** The embed's app id. Public — it is also in the client bundle. */
 export function embedAppId(): string {
-  const id = process.env.NEXT_PUBLIC_CHERRY_CHAT_APP_ID;
+  // Either name: Vercel holds the unprefixed one, which `next.config.ts`
+  // bridges onto the public name for the client.
+  const id =
+    process.env.NEXT_PUBLIC_CHERRY_CHAT_APP_ID || process.env.CHERRY_CHAT_APP_ID;
   if (!id) {
     throw new EmbedTokenError(
-      'NEXT_PUBLIC_CHERRY_CHAT_APP_ID is not set; refusing to mint an embed token',
+      'CHERRY_CHAT_APP_ID is not set; refusing to mint an embed token',
     );
   }
   return id;

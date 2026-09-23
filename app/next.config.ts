@@ -25,6 +25,32 @@ import { securityHeaders } from './src/lib/csp';
 const STATIC_EXPORT = process.env.STATIC_EXPORT === '1';
 
 /**
+ * The chat ids as Vercel holds them — `CHERRY_CHAT_APP_ID` / `_ROOM_ID`,
+ * unprefixed — bridged onto the `NEXT_PUBLIC_` names the code reads.
+ *
+ * Next only inlines `NEXT_PUBLIC_*` into the browser bundle, so unprefixed ids
+ * left the client config null: no chat, `frame-src 'none'`, and a token route
+ * answering 503. Both ids are public identifiers; only these two are bridged.
+ * `CHERRY_APP_SECRET` is never touched here and stays server-only.
+ *
+ * Assigning `process.env` covers this file's own reads (the CSP and the
+ * static-export guard below); the `env` block inlines the same values into
+ * the client and server bundles.
+ */
+const CHAT_ID_BRIDGE = {
+  NEXT_PUBLIC_CHERRY_CHAT_APP_ID: 'CHERRY_CHAT_APP_ID',
+  NEXT_PUBLIC_CHERRY_CHAT_ROOM_ID: 'CHERRY_CHAT_ROOM_ID',
+} as const;
+const chatEnv: Record<string, string> = {};
+for (const [publicName, serverName] of Object.entries(CHAT_ID_BRIDGE)) {
+  const value = process.env[publicName] || process.env[serverName];
+  if (value) {
+    process.env[publicName] = value;
+    chatEnv[publicName] = value;
+  }
+}
+
+/**
  * The chat embed authenticates with `app-trusted+wallet`, which needs
  * `/api/cherry-embed-nonce` and `/api/cherry-embed-token` — and a static
  * export has no server to run them on (the Pages workflow deletes
@@ -47,6 +73,7 @@ if (STATIC_EXPORT && cherryChatEnabled()) {
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 const nextConfig: NextConfig = {
+  env: chatEnv,
   ...(STATIC_EXPORT
     ? {
         output: 'export' as const,

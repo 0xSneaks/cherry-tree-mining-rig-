@@ -8,24 +8,31 @@
  */
 
 :root {
-  --bg: #0b0c0d;
-  --bg-panel: #131517;
-  --bg-inset: #0e1011;
-  --rule: #24282b;
-  --rule-strong: #34393d;
+  /* Deep navy, the colour the blossom reads against. */
+  --bg: #080c16;
+  --bg-panel: #0f1526;
+  --bg-inset: #0b101d;
+  --rule: #1c2740;
+  --rule-strong: #2b3a5c;
 
-  --text: #e6e8ea;
-  --text-dim: #8b9298;
-  --text-faint: #5b6268;
+  --text: #e9ecf5;
+  --text-dim: #8e9ab8;
+  --text-faint: #5c6885;
 
-  /* Amber = machine status. Used sparingly, never decoratively. */
-  --amber: #f0a020;
-  --amber-dim: #7a5412;
-  /* Steel = structure. */
-  --steel: #6d7d8c;
-  /* Live indicator only. */
-  --live: #4fbf7a;
-  --alert: #d4553f;
+  /* Cherry blossom. The primary accent: live production, claimable value. */
+  --blossom: #ff5fa2;
+  --blossom-soft: #ff8fbf;
+  --blossom-dim: #8c3560;
+  /* Kept as an alias so existing rules and any stray usage stay valid. */
+  --amber: var(--blossom);
+  --amber-dim: var(--blossom-dim);
+
+  /* Supporting hues, lifted from the ecosystem diagram. */
+  --leaf: #6ee7b7;
+  --sky: #7dd3fc;
+  --steel: #7d8bb0;
+  --live: #6ee7b7;
+  --alert: #ff6b81;
 
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
@@ -75,6 +82,8 @@ body {
   font-weight: 700;
   letter-spacing: 0.16em;
   margin: 0;
+  color: var(--blossom);
+  text-shadow: 0 0 18px rgba(255, 95, 162, 0.35);
 }
 
 .subhead {
@@ -156,12 +165,12 @@ body {
 .readout-value--hero {
   font-size: 26px;
   letter-spacing: -0.01em;
-  color: var(--amber);
+  color: var(--blossom);
 }
 
 /* The moving lamport digits: present and real, but not shouting. */
 .lamport-tail {
-  color: var(--amber-dim);
+  color: var(--blossom-dim);
   font-size: 0.62em;
 }
 
@@ -200,7 +209,7 @@ button {
   color: var(--text);
   background: var(--bg-panel);
   border: 1px solid var(--rule-strong);
-  border-radius: 2px;
+  border-radius: 3px;
   padding: 14px 10px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
@@ -223,11 +232,13 @@ button:disabled {
 }
 
 button.primary {
-  border-color: var(--amber-dim);
-  color: var(--amber);
+  border-color: var(--blossom-dim);
+  color: var(--blossom);
+  background: linear-gradient(180deg, rgba(255, 95, 162, 0.08), transparent);
 }
 button.primary:hover:not(:disabled) {
-  border-color: var(--amber);
+  border-color: var(--blossom);
+  background: linear-gradient(180deg, rgba(255, 95, 162, 0.16), transparent);
 }
 button.primary:disabled {
   color: var(--text-faint);
@@ -271,8 +282,8 @@ button.primary:disabled {
 }
 
 .quick button[aria-pressed='true'] {
-  border-color: var(--amber-dim);
-  color: var(--amber);
+  border-color: var(--blossom-dim);
+  color: var(--blossom);
 }
 
 /* --- panels --- */
@@ -288,7 +299,7 @@ button.primary:disabled {
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: 3px;
   padding: 12px 14px;
 }
 
@@ -312,7 +323,7 @@ button.primary:disabled {
 
 .banner {
   border: 1px solid var(--rule-strong);
-  border-left: 2px solid var(--amber);
+  border-left: 2px solid var(--blossom);
   background: var(--bg-panel);
   padding: 10px 12px;
   font-size: 11px;
@@ -365,11 +376,11 @@ button.primary:disabled {
   cursor: pointer;
 }
 .leaderboard .who:hover {
-  color: var(--amber);
+  color: var(--blossom);
   background: none;
 }
 .leaderboard li.is-you .who {
-  color: var(--amber);
+  color: var(--blossom);
 }
 
 .verify {
@@ -384,7 +395,7 @@ button.primary:disabled {
   padding-bottom: 2px;
 }
 .verify:hover {
-  color: var(--amber);
+  color: var(--blossom);
 }
 
 .disclosure {

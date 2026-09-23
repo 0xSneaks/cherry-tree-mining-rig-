@@ -84,21 +84,54 @@ function buildCsp({ dev }: { dev: boolean }): string {
   ].join('; ');
 }
 
+/**
+ * Static-export mode, used by the GitHub Pages workflow.
+ *
+ * A static host serves the game itself completely — every figure on screen is
+ * read from Solana in the browser, and buy / claim / compound are signed by
+ * the user's wallet. What it cannot serve is the launch-token backend
+ * (`/api/*`) and the server-rendered blink (`/inline`); the Pages workflow
+ * drops those routes before building. Both of those already require a
+ * `CHERRY_APP_ID` from Cherry registration, so a static deployment loses
+ * nothing that works without one.
+ *
+ * The caveat that matters: headers cannot be set on a static host, and
+ * `frame-ancestors` is ignored in a <meta> tag. Cherry's mobile WebView does
+ * not need it, but Cherry *web* embeds in an iframe and does. A static
+ * deployment is therefore good for Seeker and for a standalone browser, and
+ * needs a real host for Cherry web.
+ */
+const STATIC_EXPORT = process.env.STATIC_EXPORT === '1';
+
+/** Repo-name subpath, e.g. "/cherry-tree-mining-rig-" on GitHub Pages. */
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+
 const nextConfig: NextConfig = {
-  async headers() {
-    const dev = process.env.NODE_ENV !== 'production';
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          { key: 'Content-Security-Policy', value: buildCsp({ dev }) },
-          { key: 'Referrer-Policy', value: 'no-referrer' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
-        ],
-      },
-    ];
-  },
+  ...(STATIC_EXPORT
+    ? {
+        output: 'export' as const,
+        // Pages serves directories, so /result needs /result/index.html.
+        trailingSlash: true,
+        ...(BASE_PATH ? { basePath: BASE_PATH, assetPrefix: BASE_PATH } : {}),
+        images: { unoptimized: true },
+      }
+    : {
+        // `headers()` has no effect in a static export — the host sends them.
+        async headers() {
+          const dev = process.env.NODE_ENV !== 'production';
+          return [
+            {
+              source: '/(.*)',
+              headers: [
+                { key: 'Content-Security-Policy', value: buildCsp({ dev }) },
+                { key: 'Referrer-Policy', value: 'no-referrer' },
+                { key: 'X-Content-Type-Options', value: 'nosniff' },
+                { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+              ],
+            },
+          ];
+        },
+      }),
 };
 
 export default nextConfig;

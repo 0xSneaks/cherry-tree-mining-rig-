@@ -98,7 +98,7 @@ function Machine({
         y={y - 14}
         width="5"
         height="7"
-        fill={running ? 'var(--amber)' : 'var(--rule-strong)'}
+        fill={running ? 'var(--blossom)' : 'var(--rule-strong)'}
       >
         {running ? (
           <animate

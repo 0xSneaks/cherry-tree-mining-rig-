@@ -34,7 +34,7 @@ export function ShareCard({
   return (
     <div className="banner" role="status" style={{ marginTop: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <strong style={{ color: 'var(--amber)', letterSpacing: '0.08em' }}>
+        <strong style={{ color: 'var(--blossom)', letterSpacing: '0.08em' }}>
           {headline}
         </strong>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>

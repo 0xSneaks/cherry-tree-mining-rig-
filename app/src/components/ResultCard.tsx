@@ -48,7 +48,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
           style={{
             margin: '2px 0 10px',
             fontSize: 28,
-            color: 'var(--amber)',
+            color: 'var(--blossom)',
             letterSpacing: '-0.01em',
           }}
         >

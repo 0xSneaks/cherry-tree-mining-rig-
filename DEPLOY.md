@@ -18,19 +18,48 @@ initialize does not. Funding is always a separate, deliberate command.
 
 ## Roles
 
-Two independent roles. Neither is hardcoded anywhere, and they do **not** have
-to be the same key.
+Three independent identities. None is hardcoded anywhere, and they do **not**
+have to be the same key.
 
 | Role | Supplied as | Used by |
 |---|---|---|
-| **Deployer / program authority** | `ANCHOR_WALLET` — a path to a keypair JSON kept outside this repo | deploy, initialize, `set_paused`, `set_pricing`, `withdraw_fees` |
+| **Deployer / program authority** | `ANCHOR_WALLET` — a path to a keypair JSON kept outside this repo | deploy, initialize, `set_paused`, `set_pricing`, `set_reward_funder`, `set_fee_recipient`, `withdraw_fees` |
 | **Reward funder** | `CHERRY_TREE_REWARD_FUNDER` — a **public key**; the keypair path goes in `CHERRY_TREE_REWARD_FUNDER_KEYPAIR` | `fund_rewards` only |
+| **Fee recipient** | `CHERRY_TREE_FEE_RECIPIENT` — a **public key**, and nothing else. There is no keypair variable for it, by design. | receives `withdraw_fees`; **signs nothing** |
 
 The authority cannot fund rewards unless it is also the reward funder, and the
 reward funder cannot change config. `set_reward_funder` lets the authority
 rotate the funder later; authority handover is two-step
 (`transfer_authority` then `accept_authority`), so a typo cannot brick the
 program.
+
+### The fee recipient is a destination, not a permission
+
+Protocol fees accrue in the FEE vault PDA and are withdrawn by an explicit
+`withdraw_fees` call. The destination is **not** an argument: it is pinned to
+`config.fee_recipient`, and the program rejects a withdrawal to any other
+account.
+
+That splits two powers that are usually one:
+
+- the **authority** decides *whether and when* fees move, and signs — but
+  cannot choose where they land;
+- the **recipient** is where they land — but never signs, is never passed as a
+  signer, and its private key is therefore never needed to collect revenue,
+  on any machine or in CI.
+
+Moving the payout address is `set_fee_recipient`, authority-only, and it emits
+`FeeRecipientUpdated { previous, current }`. It refuses `Pubkey::default()`,
+which would otherwise turn every withdrawal into a burn.
+
+To collect:
+
+```bash
+./scripts/devnet-withdraw-fees.sh 0.25   # or: all
+```
+
+It verifies afterwards that the recipient was credited by exactly the amount
+and that the reward and capital vaults are byte-for-byte unchanged.
 
 **Nothing here ever holds key material.** Wallets are referenced by file path
 or public key. The scripts print public keys only — never secret bytes, and
@@ -239,7 +268,7 @@ The `inline:render` permission is required for blink sharing.
 |---|---|---|
 | CAPITAL | non-fee portion of rig purchases | **nothing** |
 | REWARD | `fund_rewards` only | user claims and compounds only |
-| FEE | disclosed purchase fee | authority, via `withdraw_fees` |
+| FEE | disclosed purchase fee | `config.fee_recipient` only, triggered by the authority via `withdraw_fees` |
 
 The capital vault doing nothing is deliberate. The realized-yield / staking
 adapter is a separate phase that does not begin until a real devnet

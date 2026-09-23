@@ -56,12 +56,14 @@ pub mod sol_rigs {
         rig_price_lamports: u64,
         purchase_fee_bps: u16,
         reward_funder: Pubkey,
+        fee_recipient: Pubkey,
     ) -> Result<()> {
         instructions::initialize::handle_initialize(
             ctx,
             rig_price_lamports,
             purchase_fee_bps,
             reward_funder,
+            fee_recipient,
         )
     }
 
@@ -104,6 +106,11 @@ pub mod sol_rigs {
         instructions::admin::set_reward_funder(ctx, reward_funder)
     }
 
+    /// Move where protocol fees are paid. Authority only.
+    pub fn set_fee_recipient(ctx: Context<AdminOnly>, fee_recipient: Pubkey) -> Result<()> {
+        instructions::admin::set_fee_recipient(ctx, fee_recipient)
+    }
+
     pub fn transfer_authority(ctx: Context<AdminOnly>, new_authority: Pubkey) -> Result<()> {
         instructions::admin::transfer_authority(ctx, new_authority)
     }
@@ -112,7 +119,8 @@ pub mod sol_rigs {
         instructions::admin::accept_authority(ctx)
     }
 
-    /// Withdraw disclosed protocol fees. FEE VAULT ONLY.
+    /// Withdraw disclosed protocol fees. FEE VAULT ONLY, and only to
+    /// `config.fee_recipient`.
     pub fn withdraw_fees(ctx: Context<WithdrawFees>, amount: u64) -> Result<()> {
         instructions::admin::withdraw_fees(ctx, amount)
     }

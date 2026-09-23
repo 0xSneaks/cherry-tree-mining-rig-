@@ -18,6 +18,13 @@ pub struct Config {
     pub pending_authority: Pubkey,
     /// The only signer permitted to call `fund_rewards`.
     pub reward_funder: Pubkey,
+    /// The only account protocol fees may be withdrawn TO.
+    ///
+    /// Deliberately not the same identity as `authority`: the authority can
+    /// trigger a withdrawal but cannot choose where it lands, and this account
+    /// never signs anything, so collecting fees never requires its key. Moving
+    /// it is an authority action and emits an event.
+    pub fee_recipient: Pubkey,
     /// Gates `buy_rigs` / `claim` / `compound`. Funding stays open so backing
     /// can be topped up while user actions are halted.
     pub paused: bool,

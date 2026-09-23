@@ -134,7 +134,9 @@ async fn t14_authority_cannot_withdraw_from_reward_vault() {
 
     let balance_before = env.lamports(reward_vault_pda()).await;
     let auth = env.authority.insecure_clone();
-    let dest = auth.pubkey();
+    // The configured recipient, so the recipient constraint is satisfied and
+    // the seed check is the only thing left that can reject this.
+    let dest = env.fee_recipient;
 
     let ix = env.withdraw_fees_ix(&auth.pubkey(), reward_vault_pda(), dest, SOL);
     let err = env.send(ix, &[&auth]).await.unwrap_err();
@@ -165,7 +167,9 @@ async fn t15_authority_cannot_withdraw_from_capital_vault() {
     assert!(balance_before > 0);
 
     let auth = env.authority.insecure_clone();
-    let dest = auth.pubkey();
+    // As in t14: satisfy the recipient constraint so the seed check is the
+    // only remaining reason this can fail.
+    let dest = env.fee_recipient;
     let ix = env.withdraw_fees_ix(&auth.pubkey(), capital_vault_pda(), dest, 1);
     let err = env.send(ix, &[&auth]).await.unwrap_err();
 
@@ -187,7 +191,8 @@ async fn fee_vault_withdrawal_works_and_is_bounded() {
     env.buy(&alice, 100).await.unwrap();
 
     let fees = 100 * RIG_PRICE * FEE_BPS as u64 / 10_000;
-    let dest = Keypair::new().pubkey();
+    let dest = env.fee_recipient;
+    let before = env.lamports(dest).await;
     let auth = env.authority.insecure_clone();
 
     // Over-withdrawing is rejected.
@@ -195,11 +200,180 @@ async fn fee_vault_withdrawal_works_and_is_bounded() {
     let err = env.send(ix, &[&auth]).await.unwrap_err();
     assert_rigs_error(err, RigsError::InsufficientFeeBalance);
 
-    // The exact accrued amount goes through.
+    // The exact accrued amount goes through, and lands on the recipient.
     let ix = env.withdraw_fees_ix(&auth.pubkey(), fee_vault_pda(), dest, fees);
     env.send(ix, &[&auth]).await.unwrap();
-    assert_eq!(env.lamports(dest).await, fees);
+    assert_eq!(env.lamports(dest).await, before + fees);
     assert_eq!(env.config().await.total_fees_withdrawn, fees);
+}
+
+// ------------------------------------------------------- fee recipient
+
+/// The recipient is pinned in config, and it is exactly the address THE CHERRY
+/// TREE is configured to be paid at.
+#[tokio::test]
+async fn fee_recipient_is_the_configured_address() {
+    let mut env = Env::new().await;
+    env.initialize().await.unwrap();
+
+    let config = env.config().await;
+    assert_eq!(
+        config.fee_recipient.to_string(),
+        FEE_RECIPIENT,
+        "the configured fee recipient is not the Cherry Tree fee wallet"
+    );
+    // The recipient is a payout destination, not a role: it is none of the
+    // three privileged identities.
+    assert_ne!(config.fee_recipient, config.authority);
+    assert_ne!(config.fee_recipient, config.reward_funder);
+    assert_ne!(config.fee_recipient, config.pending_authority);
+}
+
+/// The authority signs the withdrawal but cannot choose where it lands.
+#[tokio::test]
+async fn authority_cannot_redirect_fees_away_from_the_recipient() {
+    let mut env = Env::new().await;
+    env.initialize().await.unwrap();
+
+    let alice = env.alice.insecure_clone();
+    env.buy(&alice, 100).await.unwrap();
+
+    let fees = 100 * RIG_PRICE * FEE_BPS as u64 / 10_000;
+    let vault_before = env.lamports(fee_vault_pda()).await;
+    let auth = env.authority.insecure_clone();
+
+    // Paying itself is the obvious attempt.
+    let ix = env.withdraw_fees_ix(&auth.pubkey(), fee_vault_pda(), auth.pubkey(), fees);
+    let err = env.send(ix, &[&auth]).await.unwrap_err();
+    assert_rigs_error(err, RigsError::FeeRecipientMismatch);
+
+    // So is an unrelated account it controls.
+    let attacker = Keypair::new().pubkey();
+    let ix = env.withdraw_fees_ix(&auth.pubkey(), fee_vault_pda(), attacker, fees);
+    let err = env.send(ix, &[&auth]).await.unwrap_err();
+    assert_rigs_error(err, RigsError::FeeRecipientMismatch);
+
+    assert_eq!(
+        env.lamports(fee_vault_pda()).await,
+        vault_before,
+        "not one lamport may leave the fee vault to the wrong destination"
+    );
+}
+
+/// A non-authority cannot withdraw the fee vault, even to the correct recipient.
+#[tokio::test]
+async fn non_authority_cannot_withdraw_fees() {
+    let mut env = Env::new().await;
+    env.initialize().await.unwrap();
+
+    let alice = env.alice.insecure_clone();
+    env.buy(&alice, 100).await.unwrap();
+
+    let fees = 100 * RIG_PRICE * FEE_BPS as u64 / 10_000;
+    let vault_before = env.lamports(fee_vault_pda()).await;
+
+    // Alice is an ordinary player; the reward funder is privileged elsewhere.
+    for signer in [env.alice.insecure_clone(), env.funder.insecure_clone()] {
+        let ix = env.withdraw_fees_ix(&signer.pubkey(), fee_vault_pda(), env.fee_recipient, fees);
+        let err = env.send(ix, &[&signer]).await.unwrap_err();
+        let s = format!("{err:?}");
+        assert!(
+            s.contains("ConstraintHasOne") || s.contains("2001"),
+            "expected a has_one failure, got: {s}"
+        );
+    }
+
+    assert_eq!(env.lamports(fee_vault_pda()).await, vault_before);
+}
+
+/// Changing the recipient is an authority action, and nobody else's.
+#[tokio::test]
+async fn only_the_authority_may_change_the_fee_recipient() {
+    let mut env = Env::new().await;
+    env.initialize().await.unwrap();
+
+    let replacement = Keypair::new().pubkey();
+
+    // An ordinary player cannot.
+    let alice = env.alice.insecure_clone();
+    let ix = env.set_fee_recipient_ix(&alice.pubkey(), replacement);
+    let err = env.send(ix, &[&alice]).await.unwrap_err();
+    let s = format!("{err:?}");
+    assert!(
+        s.contains("ConstraintHasOne") || s.contains("2001"),
+        "expected a has_one failure, got: {s}"
+    );
+    assert_eq!(env.config().await.fee_recipient.to_string(), FEE_RECIPIENT);
+
+    // The authority can, and the change takes effect.
+    let auth = env.authority.insecure_clone();
+    let ix = env.set_fee_recipient_ix(&auth.pubkey(), replacement);
+    env.send(ix, &[&auth]).await.unwrap();
+    assert_eq!(env.config().await.fee_recipient, replacement);
+
+    // And the withdrawal destination follows it, rather than the old address.
+    let alice2 = env.alice.insecure_clone();
+    env.buy(&alice2, 100).await.unwrap();
+    let fees = 100 * RIG_PRICE * FEE_BPS as u64 / 10_000;
+
+    let stale = env.fee_recipient;
+    let ix = env.withdraw_fees_ix(&auth.pubkey(), fee_vault_pda(), stale, fees);
+    let err = env.send(ix, &[&auth]).await.unwrap_err();
+    assert_rigs_error(err, RigsError::FeeRecipientMismatch);
+
+    let ix = env.withdraw_fees_ix(&auth.pubkey(), fee_vault_pda(), replacement, fees);
+    env.send(ix, &[&auth]).await.unwrap();
+    assert_eq!(env.lamports(replacement).await, fees);
+}
+
+/// The recipient cannot be unset, which would turn every withdrawal into a burn.
+#[tokio::test]
+async fn fee_recipient_cannot_be_the_default_pubkey() {
+    let mut env = Env::new().await;
+    env.initialize().await.unwrap();
+
+    let auth = env.authority.insecure_clone();
+    let ix = env.set_fee_recipient_ix(&auth.pubkey(), Pubkey::default());
+    let err = env.send(ix, &[&auth]).await.unwrap_err();
+    assert_rigs_error(err, RigsError::InvalidConfig);
+
+    assert_eq!(env.config().await.fee_recipient.to_string(), FEE_RECIPIENT);
+}
+
+/// Fees are separate money from rewards and from capital, all the way through
+/// a withdrawal. Paying the recipient must not touch either other vault.
+#[tokio::test]
+async fn withdrawing_fees_leaves_the_reward_and_capital_vaults_untouched() {
+    let mut env = Env::new().await;
+    env.initialize().await.unwrap();
+    env.fund_rewards(50 * SOL, 1_000).await.unwrap();
+
+    let alice = env.alice.insecure_clone();
+    env.buy(&alice, 100).await.unwrap();
+
+    let reward_before = env.lamports(reward_vault_pda()).await;
+    let capital_before = env.lamports(capital_vault_pda()).await;
+
+    let fees = 100 * RIG_PRICE * FEE_BPS as u64 / 10_000;
+    let auth = env.authority.insecure_clone();
+    let ix = env.withdraw_fees_ix(&auth.pubkey(), fee_vault_pda(), env.fee_recipient, fees);
+    env.send(ix, &[&auth]).await.unwrap();
+
+    assert_eq!(
+        env.lamports(reward_vault_pda()).await,
+        reward_before,
+        "a fee withdrawal must not touch the reward vault"
+    );
+    assert_eq!(
+        env.lamports(capital_vault_pda()).await,
+        capital_before,
+        "a fee withdrawal must not touch the capital vault"
+    );
+
+    // And the disclosed fee is exactly what the quote said it would be.
+    let config = env.config().await;
+    assert_eq!(config.total_protocol_fees, fees);
+    assert_eq!(config.total_fees_withdrawn, fees);
 }
 
 // ----------------------------------------------------------------- Test 16

@@ -55,6 +55,10 @@ concurrency:
 env:
   SOLANA_CLUSTER: devnet
   SOLANA_RPC_URL: https://api.devnet.solana.com
+  # Public configuration. The program pins this as the only account
+  # `withdraw_fees` may pay; it never signs, so there is no secret here and
+  # no corresponding keypair anywhere in this workflow.
+  FEE_RECIPIENT: FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp
   ANCHOR_VERSION: 0.31.2
   SOLANA_VERSION: stable
 
@@ -227,6 +231,7 @@ jobs:
           ANCHOR_WALLET=$RUNNER_TEMP/keys/authority.json
           CHERRY_TREE_REWARD_FUNDER=$FUNDER_PUBKEY
           CHERRY_TREE_REWARD_FUNDER_KEYPAIR=$RUNNER_TEMP/keys/funder.json
+          CHERRY_TREE_FEE_RECIPIENT=$FEE_RECIPIENT
           CHERRY_TREE_RIG_PRICE_LAMPORTS=10000000
           CHERRY_TREE_PURCHASE_FEE_BPS=300
           CHERRY_TREE_SMOKE_WALLET_A=$RUNNER_TEMP/keys/smoke-a.json

@@ -7,8 +7,15 @@ use anchor_lang::prelude::*;
 pub struct Initialized {
     pub authority: Pubkey,
     pub reward_funder: Pubkey,
+    pub fee_recipient: Pubkey,
     pub rig_price_lamports: u64,
     pub purchase_fee_bps: u16,
+}
+
+#[event]
+pub struct FeeRecipientUpdated {
+    pub previous: Pubkey,
+    pub current: Pubkey,
 }
 
 #[event]

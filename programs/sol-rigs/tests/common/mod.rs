@@ -5,6 +5,8 @@
 
 #![allow(dead_code)]
 
+use std::str::FromStr;
+
 use anchor_lang::{InstructionData, ToAccountMetas};
 use solana_program_test::{processor, ProgramTest, ProgramTestContext};
 use solana_sdk::{
@@ -24,9 +26,22 @@ pub const SOL: u64 = LAMPORTS_PER_SOL;
 pub const RIG_PRICE: u64 = SOL / 100; // 0.01 SOL — test fixture only
 pub const FEE_BPS: u16 = 300; // 3.00%
 
+/// THE CHERRY TREE protocol fee recipient — the Seeker fee-receiving wallet.
+///
+/// A public address and nothing more: it never signs, holds no role in the
+/// program beyond being the one account `withdraw_fees` may pay, and no
+/// private key for it exists anywhere in this repository or its CI.
+pub const FEE_RECIPIENT: &str = "FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp";
+
+pub fn fee_recipient() -> Pubkey {
+    Pubkey::from_str(FEE_RECIPIENT).expect("FEE_RECIPIENT is not a valid base58 pubkey")
+}
+
 pub struct Env {
     pub ctx: ProgramTestContext,
     pub authority: Keypair,
+    /// Where fees are configured to land. Not a signer — see [`FEE_RECIPIENT`].
+    pub fee_recipient: Pubkey,
     pub funder: Keypair,
     pub alice: Keypair,
     pub bob: Keypair,
@@ -84,10 +99,21 @@ impl Env {
         let alice = funded(&mut pt, 10_000 * SOL);
         let bob = funded(&mut pt, 10_000 * SOL);
 
+        // Give the recipient an existing account so a withdrawal is a plain
+        // credit, the way it will be on devnet.
+        pt.add_account(
+            fee_recipient(),
+            Account {
+                lamports: SOL,
+                ..Account::default()
+            },
+        );
+
         let ctx = pt.start_with_context().await;
         Env {
             ctx,
             authority,
+            fee_recipient: fee_recipient(),
             funder: fundr,
             alice,
             bob,
@@ -172,6 +198,7 @@ impl Env {
                 rig_price_lamports: RIG_PRICE,
                 purchase_fee_bps: FEE_BPS,
                 reward_funder: self.funder.pubkey(),
+                fee_recipient: self.fee_recipient,
             }
             .data(),
         };
@@ -276,6 +303,18 @@ impl Env {
         };
         let a = self.authority.insecure_clone();
         self.send(ix, &[&a]).await
+    }
+
+    pub fn set_fee_recipient_ix(&self, authority: &Pubkey, fee_recipient: Pubkey) -> Instruction {
+        Instruction {
+            program_id: sol_rigs::ID,
+            accounts: sol_rigs::accounts::AdminOnly {
+                authority: *authority,
+                config: config_pda(),
+            }
+            .to_account_metas(None),
+            data: sol_rigs::instruction::SetFeeRecipient { fee_recipient }.data(),
+        }
     }
 
     pub fn withdraw_fees_ix(

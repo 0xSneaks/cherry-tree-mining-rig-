@@ -55,9 +55,13 @@ pub fn handle_initialize(
     rig_price_lamports: u64,
     purchase_fee_bps: u16,
     reward_funder: Pubkey,
+    fee_recipient: Pubkey,
 ) -> Result<()> {
     validate_pricing(rig_price_lamports, purchase_fee_bps).anchor()?;
     require_keys_neq!(reward_funder, Pubkey::default(), RigsError::InvalidConfig);
+    // The system program's own id is the "unset" pubkey. Accepting it would
+    // make every fee withdrawal a burn.
+    require_keys_neq!(fee_recipient, Pubkey::default(), RigsError::InvalidConfig);
 
     let now = Clock::get()?.unix_timestamp;
 
@@ -78,6 +82,7 @@ pub fn handle_initialize(
         authority: ctx.accounts.authority.key(),
         pending_authority: Pubkey::default(),
         reward_funder,
+        fee_recipient,
         paused: false,
 
         rig_price_lamports,
@@ -110,6 +115,7 @@ pub fn handle_initialize(
     emit!(Initialized {
         authority: ctx.accounts.authority.key(),
         reward_funder,
+        fee_recipient,
         rig_price_lamports,
         purchase_fee_bps,
     });

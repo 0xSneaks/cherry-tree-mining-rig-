@@ -56,6 +56,23 @@ pub fn set_reward_funder(ctx: Context<AdminOnly>, reward_funder: Pubkey) -> Resu
     Ok(())
 }
 
+/// Move where protocol fees are paid.
+///
+/// Authority-only, like every other config change. The incoming recipient does
+/// NOT sign: this sets a payout destination, not a permission, and requiring a
+/// signature would mean the recipient's key had to be online to be named.
+pub fn set_fee_recipient(ctx: Context<AdminOnly>, fee_recipient: Pubkey) -> Result<()> {
+    require_keys_neq!(fee_recipient, Pubkey::default(), RigsError::InvalidConfig);
+    let config = &mut ctx.accounts.config;
+    let previous = config.fee_recipient;
+    config.fee_recipient = fee_recipient;
+    emit!(FeeRecipientUpdated {
+        previous,
+        current: fee_recipient,
+    });
+    Ok(())
+}
+
 /// Step one of a two-step handover. A typo cannot brick the program.
 pub fn transfer_authority(ctx: Context<AdminOnly>, new_authority: Pubkey) -> Result<()> {
     ctx.accounts.config.pending_authority = new_authority;
@@ -108,13 +125,23 @@ pub struct WithdrawFees<'info> {
     )]
     pub fee_vault: Account<'info, Vault>,
 
-    /// CHECK: destination for the withdrawal; only its lamport balance is
-    /// touched, and the authority chooses it.
-    #[account(mut)]
+    /// CHECK: only its lamport balance is touched, and it is pinned to
+    /// `config.fee_recipient` by the constraint — the authority chooses
+    /// *whether* fees move, never *where* they go.
+    #[account(
+        mut,
+        constraint = destination.key() == config.fee_recipient
+            @ RigsError::FeeRecipientMismatch,
+    )]
     pub destination: UncheckedAccount<'info>,
 }
 
-/// The one auditable admin money path in V1: FEE VAULT -> destination.
+/// The one auditable admin money path in V1: FEE VAULT -> `config.fee_recipient`.
+///
+/// Two separate identities are involved and neither can do the other's job:
+/// the authority signs but cannot redirect, and the recipient receives but
+/// never signs. Collecting fees therefore never requires the recipient's
+/// private key.
 pub fn withdraw_fees(ctx: Context<WithdrawFees>, amount: u64) -> Result<()> {
     require!(amount > 0, RigsError::ZeroAmount);
 

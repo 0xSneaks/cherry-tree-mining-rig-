@@ -37,6 +37,7 @@ function baseConfig(over: Partial<Config>): Config {
     authority: 'x' as never,
     pendingAuthority: 'x' as never,
     rewardFunder: 'x' as never,
+    feeRecipient: 'x' as never,
     paused: false,
     rigPriceLamports: 10_000_000n,
     purchaseFeeBps: 300,

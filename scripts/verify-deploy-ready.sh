@@ -173,6 +173,42 @@ else
   bad "app/scripts/emit-static-headers.ts is missing — a static host would send no CSP"
 fi
 
+# ------------------------------------------------------- fee recipient
+echo
+echo "--> protocol fee recipient"
+FEE_RECIPIENT="FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp"
+
+grep -q "CHERRY_TREE_FEE_RECIPIENT" .env.example \
+  && pass ".env.example documents CHERRY_TREE_FEE_RECIPIENT" \
+  || bad ".env.example does not document CHERRY_TREE_FEE_RECIPIENT"
+
+# The address is pinned in the Rust test, which is what proves the deployed
+# config carries it — not a comment somewhere.
+grep -q "$FEE_RECIPIENT" programs/sol-rigs/tests/common/mod.rs \
+  && pass "the program tests assert the Cherry Tree fee recipient" \
+  || bad "the program tests do not pin the fee recipient address"
+
+# `withdraw_fees` must not be free to choose a destination.
+if grep -q "destination.key() == config.fee_recipient" programs/sol-rigs/src/instructions/admin.rs; then
+  pass "withdraw_fees is pinned to config.fee_recipient"
+else
+  bad "withdraw_fees does not constrain its destination — fees could be redirected"
+fi
+
+# Changing it must be an authority action.
+if grep -q "pub fn set_fee_recipient(ctx: Context<AdminOnly>" programs/sol-rigs/src/instructions/admin.rs; then
+  pass "set_fee_recipient is authority-gated (AdminOnly)"
+else
+  bad "set_fee_recipient is missing or not authority-gated"
+fi
+
+# The recipient is a payout address, never a signer.
+if grep -qE "fee_recipient:\s*Signer" programs/sol-rigs/src/instructions/*.rs; then
+  bad "the fee recipient is declared as a Signer — collecting fees would need its key"
+else
+  pass "the fee recipient never signs; no key for it is ever required"
+fi
+
 # ---------------------------------------------------------------- SBF
 echo
 echo "--> SBF / Anchor toolchain"

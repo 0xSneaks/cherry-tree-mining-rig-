@@ -47,6 +47,9 @@ export const IX_DISCRIMINATOR = {
   buyRigs: fromHex('0cfa7948abf4e5a3'),
   claim: fromHex('3ec6d6c1d59f6cd2'),
   compound: fromHex('a5d0fb4ef2a08d2f'),
+  // Operator-only; used by app/scripts/ops, never by the browser bundle.
+  setFeeRecipient: fromHex('e312d72aedf69742'),
+  withdrawFees: fromHex('c6d4ab6d90d7ae59'),
 } as const;
 
 export const ACCOUNT_DISCRIMINATOR = {
@@ -57,6 +60,6 @@ export const ACCOUNT_DISCRIMINATOR = {
 
 /** Byte length of each account, discriminator included. */
 export const ACCOUNT_SIZE = {
-  config: 233,
+  config: 265,
   miner: 129,
 } as const;

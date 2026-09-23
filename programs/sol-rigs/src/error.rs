@@ -47,6 +47,8 @@ pub enum RigsError {
     InsufficientFeeBalance,
     #[msg("Withdrawal amount must be non-zero")]
     ZeroAmount,
+    #[msg("Fee withdrawal destination is not the configured fee recipient")]
+    FeeRecipientMismatch,
 }
 
 impl From<EngineError> for RigsError {

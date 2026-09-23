@@ -24,6 +24,7 @@ export type Config = {
   authority: Address;
   pendingAuthority: Address;
   rewardFunder: Address;
+  feeRecipient: Address;
   paused: boolean;
   rigPriceLamports: bigint;
   purchaseFeeBps: number;
@@ -66,6 +67,7 @@ const configDecoder = getStructDecoder([
   ['authority', getAddressDecoder()],
   ['pendingAuthority', getAddressDecoder()],
   ['rewardFunder', getAddressDecoder()],
+  ['feeRecipient', getAddressDecoder()],
   ['paused', getBooleanDecoder()],
   ['rigPriceLamports', getU64Decoder()],
   ['purchaseFeeBps', getU16Decoder()],

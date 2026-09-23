@@ -47,6 +47,11 @@ async function main(): Promise<void> {
     'CHERRY_TREE_REWARD_FUNDER',
     'Set it to the reward funder PUBLIC KEY. It does not have to be the authority.',
   );
+  const feeRecipientRaw = requireEnv(
+    'CHERRY_TREE_FEE_RECIPIENT',
+    'Set it to the protocol fee recipient PUBLIC KEY. It never signs: the ' +
+      'program pins it as the only account withdraw_fees may pay.',
+  );
   const rigPriceLamports = BigInt(
     requireEnv('CHERRY_TREE_RIG_PRICE_LAMPORTS', 'e.g. 10000000 for 0.01 SOL.'),
   );
@@ -59,6 +64,12 @@ async function main(): Promise<void> {
     rewardFunder = address(funderRaw);
   } catch {
     fail(`CHERRY_TREE_REWARD_FUNDER is not a valid public key: ${funderRaw}`);
+  }
+  let feeRecipient: Address;
+  try {
+    feeRecipient = address(feeRecipientRaw);
+  } catch {
+    fail(`CHERRY_TREE_FEE_RECIPIENT is not a valid public key: ${feeRecipientRaw}`);
   }
   if (rigPriceLamports <= 0n) fail('CHERRY_TREE_RIG_PRICE_LAMPORTS must be positive.');
   if (!Number.isInteger(purchaseFeeBps) || purchaseFeeBps < 0 || purchaseFeeBps > 1000) {
@@ -77,6 +88,7 @@ async function main(): Promise<void> {
   row('authority (deployer)', authority.address);
   row('authority balance', `${sol(await lamportsOf(chain, authority.address))} SOL`);
   row('reward funder', rewardFunder);
+  row('fee recipient', feeRecipient);
   row('rig price', `${rigPriceLamports} lamports (${sol(rigPriceLamports)} SOL)`);
   row('purchase fee', `${purchaseFeeBps} bps (${(purchaseFeeBps / 100).toFixed(2)}%)`);
   console.log();
@@ -84,6 +96,14 @@ async function main(): Promise<void> {
   row('CAPITAL VAULT PDA', pdas.capitalVault);
   row('REWARD VAULT PDA', pdas.rewardVault);
   row('FEE VAULT PDA', pdas.feeVault);
+
+  if (authority.address === feeRecipient) {
+    console.log(
+      '\n  note: the authority is also the fee recipient. Allowed, but the\n' +
+        '        program keeps them as separate identities on purpose — the\n' +
+        '        authority triggers a withdrawal, the recipient receives it.',
+    );
+  }
 
   if (authority.address === rewardFunder) {
     console.log(
@@ -108,6 +128,7 @@ async function main(): Promise<void> {
       rigPriceLamports,
       purchaseFeeBps,
       rewardFunder,
+      feeRecipient,
     }),
   );
   row('signature', signature);
@@ -119,6 +140,7 @@ async function main(): Promise<void> {
   const checks: [string, unknown, unknown][] = [
     ['authority', config.authority, authority.address],
     ['reward_funder', config.rewardFunder, rewardFunder],
+    ['fee_recipient', config.feeRecipient, feeRecipient],
     ['rig_price_lamports', config.rigPriceLamports, rigPriceLamports],
     ['purchase_fee_bps', config.purchaseFeeBps, purchaseFeeBps],
     ['total_rigs', config.totalRigs, 0n],
@@ -165,6 +187,9 @@ async function main(): Promise<void> {
   if (bad > 0) fail(`${bad} post-initialize check(s) did not match. Do not proceed.`);
 
   console.log('\nINITIALIZED. Every field verified against on-chain state.');
+  console.log(`\nProtocol fees will accrue in the FEE VAULT (${pdas.feeVault})`);
+  console.log(`and are withdrawable only to ${feeRecipient}:`);
+  console.log('  ./scripts/devnet-withdraw-fees.sh <amountSol>');
   console.log('\nRewards are NOT funded. That is a separate explicit step:');
   console.log('  ./scripts/devnet-fund.sh <amountSol> <durationSeconds>');
 }

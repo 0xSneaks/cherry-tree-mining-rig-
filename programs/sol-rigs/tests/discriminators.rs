@@ -32,6 +32,14 @@ fn discriminators_match_the_typescript_client() {
             "compound",
             hex(sol_rigs::instruction::Compound::DISCRIMINATOR),
         ),
+        (
+            "setFeeRecipient",
+            hex(sol_rigs::instruction::SetFeeRecipient::DISCRIMINATOR),
+        ),
+        (
+            "withdrawFees",
+            hex(sol_rigs::instruction::WithdrawFees::DISCRIMINATOR),
+        ),
         // accounts
         ("Config", hex(sol_rigs::state::Config::DISCRIMINATOR)),
         ("Miner", hex(sol_rigs::state::Miner::DISCRIMINATOR)),
@@ -49,6 +57,8 @@ fn discriminators_match_the_typescript_client() {
         ("buyRigs", "0cfa7948abf4e5a3"),
         ("claim", "3ec6d6c1d59f6cd2"),
         ("compound", "a5d0fb4ef2a08d2f"),
+        ("setFeeRecipient", "e312d72aedf69742"),
+        ("withdrawFees", "c6d4ab6d90d7ae59"),
         ("Config", "9b0caae01efacc82"),
         ("Miner", "df710f367b7a8c64"),
         ("Vault", "d308e82b02987577"),
@@ -72,11 +82,15 @@ fn discriminators_match_the_typescript_client() {
 fn emit_account_fixtures_for_the_typescript_decoder() {
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::AccountSerialize;
+    use std::str::FromStr;
 
     let config = sol_rigs::state::Config {
         authority: Pubkey::new_from_array([1u8; 32]),
         pending_authority: Pubkey::new_from_array([2u8; 32]),
         reward_funder: Pubkey::new_from_array([3u8; 32]),
+        // The real production fee recipient, so the TypeScript decoder test
+        // asserts the exact address rather than a placeholder.
+        fee_recipient: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
         paused: true,
         rig_price_lamports: 10_000_000,
         purchase_fee_bps: 300,

@@ -1,8 +1,9 @@
 /**
- * Instruction builders for the two operator-only instructions.
+ * Instruction builders for the operator-only instructions.
  *
- * Deliberately NOT in `src/lib/program/instructions.ts`: `initialize` and
- * `fund_rewards` have no business being reachable from the browser bundle.
+ * Deliberately NOT in `src/lib/program/instructions.ts`: `initialize`,
+ * `fund_rewards`, `set_fee_recipient` and `withdraw_fees` have no business
+ * being reachable from the browser bundle.
  *
  * Account order and writability mirror the `#[derive(Accounts)]` structs in
  * `programs/sol-rigs/src/instructions/`.
@@ -34,7 +35,12 @@ function concat(...parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-/** `initialize(rig_price_lamports, purchase_fee_bps, reward_funder)`. */
+/**
+ * `initialize(rig_price_lamports, purchase_fee_bps, reward_funder, fee_recipient)`.
+ *
+ * `feeRecipient` is a payout destination pinned into config, not a signer:
+ * `withdraw_fees` may pay it and nothing else, and it never has to sign.
+ */
 export function initializeInstruction(
   authority: Address,
   pdas: ProgramAddresses,
@@ -42,6 +48,7 @@ export function initializeInstruction(
     rigPriceLamports: bigint;
     purchaseFeeBps: number;
     rewardFunder: Address;
+    feeRecipient: Address;
   },
 ): Instruction {
   return {
@@ -59,6 +66,57 @@ export function initializeInstruction(
       new Uint8Array(getU64Encoder().encode(args.rigPriceLamports)),
       new Uint8Array(getU16Encoder().encode(args.purchaseFeeBps)),
       new Uint8Array(getAddressEncoder().encode(args.rewardFunder)),
+      new Uint8Array(getAddressEncoder().encode(args.feeRecipient)),
+    ),
+  };
+}
+
+/**
+ * `set_fee_recipient(fee_recipient)`. Authority only.
+ *
+ * The incoming recipient is an argument, not an account — it does not sign and
+ * is not even passed in, so moving the payout address never requires the new
+ * recipient's key to be online.
+ */
+export function setFeeRecipientInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+  feeRecipient: Address,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.setFeeRecipient,
+      new Uint8Array(getAddressEncoder().encode(feeRecipient)),
+    ),
+  };
+}
+
+/**
+ * `withdraw_fees(amount)`. Authority signs; the destination is constrained
+ * on chain to `config.fee_recipient`, so passing anything else fails.
+ */
+export function withdrawFeesInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+  feeRecipient: Address,
+  amountLamports: bigint,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+      { address: pdas.feeVault, role: AccountRole.WRITABLE },
+      { address: feeRecipient, role: AccountRole.WRITABLE },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.withdrawFees,
+      new Uint8Array(getU64Encoder().encode(amountLamports)),
     ),
   };
 }

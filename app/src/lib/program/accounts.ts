@@ -46,6 +46,12 @@ export type Config = {
   feeVaultBump: number;
   version: number;
   bump: number;
+  /** Pinned at initialize; the only wallet whose purchase can activate launch. */
+  founder: Address;
+  /** T0: chain time of the founder activation purchase; `0n` until then. */
+  launchT0: bigint;
+  /** `Σ rigs × weight`; emission is divided by this. */
+  totalShares: bigint;
 };
 
 export type Miner = {
@@ -61,6 +67,10 @@ export type Miner = {
   createdAt: bigint;
   lastActionAt: bigint;
   bump: number;
+  /** Reward weight per rig: 100 (base) or 105 (referred). */
+  weight: number;
+  /** Immutable referrer; the all-ones-zero address when none. */
+  referrer: Address;
 };
 
 const configDecoder = getStructDecoder([
@@ -89,6 +99,9 @@ const configDecoder = getStructDecoder([
   ['feeVaultBump', getU8Decoder()],
   ['version', getU16Decoder()],
   ['bump', getU8Decoder()],
+  ['founder', getAddressDecoder()],
+  ['launchT0', getI64Decoder()],
+  ['totalShares', getU64Decoder()],
 ]);
 
 const minerDecoder = getStructDecoder([
@@ -104,6 +117,8 @@ const minerDecoder = getStructDecoder([
   ['createdAt', getI64Decoder()],
   ['lastActionAt', getI64Decoder()],
   ['bump', getU8Decoder()],
+  ['weight', getU16Decoder()],
+  ['referrer', getAddressDecoder()],
 ]);
 
 export class AccountDecodeError extends Error {}

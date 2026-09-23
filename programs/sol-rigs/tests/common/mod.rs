@@ -37,9 +37,59 @@ pub fn fee_recipient() -> Pubkey {
     Pubkey::from_str(FEE_RECIPIENT).expect("FEE_RECIPIENT is not a valid base58 pubkey")
 }
 
+/// Kinds of name record a test can plant for a wallet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NameKind {
+    /// The pinned `sneaks.skr` record (FOUNDER_NAME_ACCOUNT).
+    FounderSkr,
+    /// Any other `.skr` record.
+    Skr,
+    /// A top-level SNS record.
+    Sns,
+}
+
+/// Raw bytes of an ANS name record header owned by `owner` under `parent`.
+pub fn ans_record(parent: &Pubkey, owner: &Pubkey, expires_at: u64) -> Vec<u8> {
+    let mut d = vec![0u8; 200 + 32];
+    d[..8].copy_from_slice(&ANS_NAME_RECORD_DISCRIMINATOR);
+    d[8..40].copy_from_slice(parent.as_ref());
+    d[40..72].copy_from_slice(owner.as_ref());
+    d[104..112].copy_from_slice(&expires_at.to_le_bytes());
+    d
+}
+
+/// Raw bytes of an SNS name record header owned by `owner` under `parent`.
+pub fn sns_record(parent: &Pubkey, owner: &Pubkey) -> Vec<u8> {
+    let mut d = vec![0u8; 96 + 32];
+    d[..32].copy_from_slice(parent.as_ref());
+    d[32..64].copy_from_slice(owner.as_ref());
+    d
+}
+
+pub fn program_owned(owner_program: Pubkey, data: Vec<u8>) -> Account {
+    Account {
+        lamports: SOL,
+        data,
+        owner: owner_program,
+        ..Account::default()
+    }
+}
+
 pub struct Env {
     pub ctx: ProgramTestContext,
     pub authority: Keypair,
+    /// Pinned as `config.founder`, and the owner of the planted `sneaks.skr`
+    /// record. Alias of `alice`, so every legacy test's first buy is the
+    /// activation.
+    pub founder: Keypair,
+    /// Holds a planted `.skr` record.
+    pub carol: Keypair,
+    /// Holds a planted SNS record only.
+    pub dave: Keypair,
+    /// Holds no name at all.
+    pub erin: Keypair,
+    /// wallet → name record account passed as its identity.
+    pub identities: std::collections::HashMap<Pubkey, Pubkey>,
     /// Where fees are configured to land. Not a signer — see [`FEE_RECIPIENT`].
     pub fee_recipient: Pubkey,
     pub funder: Keypair,
@@ -91,6 +141,13 @@ fn funded(pt: &mut ProgramTest, lamports: u64) -> Keypair {
 
 impl Env {
     pub async fn new() -> Env {
+        Env::with_names(|_, _| false).await
+    }
+
+    /// Build an environment, letting a test plant extra accounts first.
+    /// `extra` returns `true` if it planted its own account at
+    /// `FOUNDER_NAME_ACCOUNT` (to test a spoofed or transferred name).
+    pub async fn with_names(extra: impl FnOnce(&mut ProgramTest, &Keypair) -> bool) -> Env {
         let mut pt = ProgramTest::new("sol_rigs", sol_rigs::ID, processor!(entry_shim));
         pt.set_compute_max_units(400_000);
 
@@ -98,6 +155,44 @@ impl Env {
         let fundr = funded(&mut pt, 10_000 * SOL);
         let alice = funded(&mut pt, 10_000 * SOL);
         let bob = funded(&mut pt, 10_000 * SOL);
+        let carol = funded(&mut pt, 10_000 * SOL);
+        let dave = funded(&mut pt, 10_000 * SOL);
+        let erin = funded(&mut pt, 10_000 * SOL);
+
+        let mut identities = std::collections::HashMap::new();
+        let plant = |pt: &mut ProgramTest, key: Pubkey, acct: Account| {
+            pt.add_account(key, acct);
+        };
+        // alice = founder, owning sneaks.skr — unless the test replaces it.
+        if !extra(&mut pt, &alice) {
+            plant(
+                &mut pt,
+                FOUNDER_NAME_ACCOUNT,
+                program_owned(
+                    ANS_PROGRAM_ID,
+                    ans_record(&SKR_TLD_PARENT, &alice.pubkey(), 0),
+                ),
+            );
+        }
+        identities.insert(alice.pubkey(), FOUNDER_NAME_ACCOUNT);
+        for (who, kind) in [
+            (&bob, NameKind::Skr),
+            (&carol, NameKind::Skr),
+            (&dave, NameKind::Sns),
+        ] {
+            let key = Pubkey::new_unique();
+            let acct = match kind {
+                NameKind::Sns => {
+                    program_owned(SNS_NAME_PROGRAM_ID, sns_record(&SNS_ROOT, &who.pubkey()))
+                }
+                _ => program_owned(
+                    ANS_PROGRAM_ID,
+                    ans_record(&SKR_TLD_PARENT, &who.pubkey(), 0),
+                ),
+            };
+            plant(&mut pt, key, acct);
+            identities.insert(who.pubkey(), key);
+        }
 
         // Give the recipient an existing account so a withdrawal is a plain
         // credit, the way it will be on devnet.
@@ -115,8 +210,13 @@ impl Env {
             authority,
             fee_recipient: fee_recipient(),
             funder: fundr,
+            founder: alice.insecure_clone(),
             alice,
             bob,
+            carol,
+            dave,
+            erin,
+            identities,
         }
     }
 
@@ -166,6 +266,12 @@ impl Env {
         T::try_deserialize(&mut acc.data.as_slice()).unwrap()
     }
 
+    /// Set the on-chain clock to exactly `unix_timestamp`.
+    pub async fn set_time(&mut self, unix_timestamp: i64) {
+        let now = self.clock().await.unix_timestamp;
+        self.warp(unix_timestamp - now).await;
+    }
+
     pub async fn clock(&mut self) -> Clock {
         self.ctx.banks_client.get_sysvar::<Clock>().await.unwrap()
     }
@@ -199,6 +305,7 @@ impl Env {
                 purchase_fee_bps: FEE_BPS,
                 reward_funder: self.funder.pubkey(),
                 fee_recipient: self.fee_recipient,
+                founder: self.founder.pubkey(),
             }
             .data(),
         };
@@ -226,7 +333,39 @@ impl Env {
         self.send(ix, &[&f]).await
     }
 
+    /// `buy_rigs` with the buyer's planted identity (or the system program as
+    /// a placeholder) and no referrer.
     pub fn buy_ix(&self, owner: &Pubkey, count: u64) -> Instruction {
+        let identity = self
+            .identities
+            .get(owner)
+            .copied()
+            .unwrap_or(solana_sdk::system_program::ID);
+        self.buy_ix_with(owner, count, Some(identity), None)
+    }
+
+    /// `buy_rigs` with explicit remaining accounts.
+    pub fn buy_ix_with(
+        &self,
+        owner: &Pubkey,
+        count: u64,
+        identity: Option<Pubkey>,
+        referrer: Option<(Pubkey, Pubkey)>,
+    ) -> Instruction {
+        let mut ix = self.buy_ix_raw(owner, count, referrer.map(|r| r.0));
+        use solana_sdk::instruction::AccountMeta;
+        ix.accounts.push(AccountMeta::new_readonly(
+            identity.unwrap_or(solana_sdk::system_program::ID),
+            false,
+        ));
+        if let Some((_, referrer_miner)) = referrer {
+            ix.accounts
+                .push(AccountMeta::new_readonly(referrer_miner, false));
+        }
+        ix
+    }
+
+    pub fn buy_ix_raw(&self, owner: &Pubkey, count: u64, referrer: Option<Pubkey>) -> Instruction {
         Instruction {
             program_id: sol_rigs::ID,
             accounts: sol_rigs::accounts::BuyRigs {
@@ -239,7 +378,7 @@ impl Env {
                 system_program: solana_sdk::system_program::ID,
             }
             .to_account_metas(None),
-            data: sol_rigs::instruction::BuyRigs { count }.data(),
+            data: sol_rigs::instruction::BuyRigs { count, referrer }.data(),
         }
     }
 

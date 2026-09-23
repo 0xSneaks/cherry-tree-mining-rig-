@@ -10,6 +10,7 @@
  * bigint only. No floating point touches a rate.
  */
 import type { Config, Miner } from './accounts';
+import { WEIGHT_BASE, effectiveWeight } from './accrual';
 import { BPS_DENOMINATOR, PRECISION } from './constants';
 import { quotePurchase, rigsAffordable } from './pricing';
 
@@ -60,7 +61,8 @@ export function phaseFromAprBps(aprBps: bigint): YieldPhase {
 export type YieldInputs = {
   rewardRate: bigint;
   rewardPeriodFinish: bigint;
-  totalRigs: bigint;
+  /** `Σ rigs × weight`. A base rig is `WEIGHT_BASE` shares. */
+  totalShares: bigint;
   rigPriceLamports: bigint;
   purchaseFeeBps: bigint;
   now: bigint;
@@ -70,7 +72,7 @@ export function yieldInputs(config: Config, now: bigint): YieldInputs {
   return {
     rewardRate: config.rewardRate,
     rewardPeriodFinish: config.rewardPeriodFinish,
-    totalRigs: config.totalRigs,
+    totalShares: config.totalShares,
     rigPriceLamports: config.rigPriceLamports,
     purchaseFeeBps: BigInt(config.purchaseFeeBps),
     now,
@@ -89,12 +91,17 @@ function costPerRigScaled(i: YieldInputs): bigint {
   return i.rigPriceLamports * (BPS_DENOMINATOR + i.purchaseFeeBps);
 }
 
-/** `yield_curve::apr_bps`. */
-export function aprBps(i: YieldInputs, extraRigs = 0n): bigint {
+/**
+ * `yield_curve::apr_bps_weighted` — APR for one rig of `weight` after
+ * `extraRigs` more rigs of that weight. Default weight is a base rig.
+ */
+export function aprBps(i: YieldInputs, extraRigs = 0n, weight = WEIGHT_BASE): bigint {
   const cost = costPerRigScaled(i);
+  if (weight <= 0n) throw new Error('invalid weight');
   if (i.rewardRate === 0n || i.now >= i.rewardPeriodFinish) return 0n;
-  const rigs = i.totalRigs + extraRigs > 0n ? i.totalRigs + extraRigs : 1n;
-  return sat(numerator(i) / (rigs * cost));
+  let shares = i.totalShares + extraRigs * weight;
+  if (shares < weight) shares = weight;
+  return sat((numerator(i) * weight) / (shares * cost));
 }
 
 export function currentPhase(i: YieldInputs): YieldPhase {
@@ -102,7 +109,7 @@ export function currentPhase(i: YieldInputs): YieldPhase {
 }
 
 export type NextThreshold =
-  | { kind: 'rigs'; phase: YieldPhase; atTotalRigs: bigint }
+  | { kind: 'shares'; phase: YieldPhase; atTotalShares: bigint }
   | { kind: 'windowEnds'; at: bigint }
   | { kind: 'none' };
 
@@ -111,8 +118,8 @@ export function nextThreshold(i: YieldInputs): NextThreshold {
   const phase = currentPhase(i);
   if (phase === 'dormant') return { kind: 'none' };
   if (phase === 'mature') return { kind: 'windowEnds', at: i.rewardPeriodFinish };
-  const t = numerator(i) / (PHASE_FLOOR_BPS[phase] * costPerRigScaled(i)) + 1n;
-  return { kind: 'rigs', phase: nextPhase(phase), atTotalRigs: sat(t) };
+  const t = (numerator(i) * WEIGHT_BASE) / (PHASE_FLOOR_BPS[phase] * costPerRigScaled(i)) + 1n;
+  return { kind: 'shares', phase: nextPhase(phase), atTotalShares: sat(t) };
 }
 
 export type Projection = {
@@ -125,13 +132,18 @@ export type Projection = {
 };
 
 type Globals = {
-  totalRigs: bigint;
+  totalShares: bigint;
   rewardRate: bigint;
   rewardPeriodFinish: bigint;
   rewardLastUpdate: bigint;
   rewardPerRigStored: bigint;
 };
-type Position = { rigs: bigint; rewardPerRigPaid: bigint; pendingRewards: bigint };
+type Position = {
+  rigs: bigint;
+  weight: bigint;
+  rewardPerRigPaid: bigint;
+  pendingRewards: bigint;
+};
 
 function sync(g: Globals, now: bigint): void {
   const applicable = now < g.rewardPeriodFinish ? now : g.rewardPeriodFinish;
@@ -139,15 +151,16 @@ function sync(g: Globals, now: bigint): void {
   const elapsed = applicable - g.rewardLastUpdate;
   // A projection always carries the planter's own rigs, so total_rigs > 0
   // and the zero-rig dust branch of the engine cannot be reached here.
-  if (g.totalRigs > 0n) {
-    g.rewardPerRigStored += (elapsed * g.rewardRate * PRECISION) / g.totalRigs;
+  if (g.totalShares > 0n) {
+    g.rewardPerRigStored += (elapsed * g.rewardRate * PRECISION) / g.totalShares;
   }
   g.rewardLastUpdate = applicable;
 }
 
 function settle(g: Globals, p: Position, now: bigint): void {
   sync(g, now);
-  p.pendingRewards += (p.rigs * (g.rewardPerRigStored - p.rewardPerRigPaid)) / PRECISION;
+  p.pendingRewards +=
+    (p.rigs * p.weight * (g.rewardPerRigStored - p.rewardPerRigPaid)) / PRECISION;
   p.rewardPerRigPaid = g.rewardPerRigStored;
 }
 
@@ -158,7 +171,7 @@ function settle(g: Globals, p: Position, now: bigint): void {
  */
 export function projectCompounding(
   config: Config,
-  miner: Pick<Miner, 'rigs' | 'rewardPerRigPaid' | 'pendingRewards'>,
+  miner: Pick<Miner, 'rigs' | 'weight' | 'rewardPerRigPaid' | 'pendingRewards'>,
   now: bigint,
   intervalSeconds: bigint,
   horizonSeconds: bigint,
@@ -173,7 +186,7 @@ export function projectCompounding(
   const fee = BigInt(config.purchaseFeeBps);
 
   const g: Globals = {
-    totalRigs: config.totalRigs,
+    totalShares: config.totalShares,
     rewardRate: config.rewardRate,
     rewardPeriodFinish: config.rewardPeriodFinish,
     rewardLastUpdate: config.rewardLastUpdate,
@@ -181,6 +194,7 @@ export function projectCompounding(
   };
   const p: Position = {
     rigs: miner.rigs,
+    weight: effectiveWeight(miner),
     rewardPerRigPaid: miner.rewardPerRigPaid,
     pendingRewards: miner.pendingRewards,
   };
@@ -197,7 +211,7 @@ export function projectCompounding(
       if (count === 0n) continue;
       const q = quotePurchase(count, price, fee);
       p.pendingRewards -= q.totalLamports;
-      g.totalRigs += count;
+      g.totalShares += count * p.weight;
       p.rigs += count;
       compounded += q.totalLamports;
     }
@@ -250,9 +264,13 @@ export function hypotheticalPlanting(
   config: Config,
   now: bigint,
   rigs: bigint,
-): { config: Config; miner: Pick<Miner, 'rigs' | 'rewardPerRigPaid' | 'pendingRewards'> } {
+  weight: bigint = WEIGHT_BASE,
+): {
+  config: Config;
+  miner: Pick<Miner, 'rigs' | 'weight' | 'rewardPerRigPaid' | 'pendingRewards'>;
+} {
   const g: Globals = {
-    totalRigs: config.totalRigs,
+    totalShares: config.totalShares,
     rewardRate: config.rewardRate,
     rewardPeriodFinish: config.rewardPeriodFinish,
     rewardLastUpdate: config.rewardLastUpdate,
@@ -262,10 +280,16 @@ export function hypotheticalPlanting(
   return {
     config: {
       ...config,
-      totalRigs: g.totalRigs + rigs,
+      totalRigs: config.totalRigs + rigs,
+      totalShares: g.totalShares + rigs * weight,
       rewardLastUpdate: g.rewardLastUpdate,
       rewardPerRigStored: g.rewardPerRigStored,
     },
-    miner: { rigs, rewardPerRigPaid: g.rewardPerRigStored, pendingRewards: 0n },
+    miner: {
+      rigs,
+      weight: Number(weight),
+      rewardPerRigPaid: g.rewardPerRigStored,
+      pendingRewards: 0n,
+    },
   };
 }

@@ -10,6 +10,7 @@ pub struct Initialized {
     pub fee_recipient: Pubkey,
     pub rig_price_lamports: u64,
     pub purchase_fee_bps: u16,
+    pub founder: Pubkey,
 }
 
 #[event]
@@ -87,4 +88,21 @@ pub struct AuthorityTransferred {
 #[event]
 pub struct RewardFunderUpdated {
     pub reward_funder: Pubkey,
+}
+
+/// THE CHERRY TREE is live. Emitted exactly once, by the founder activation
+/// purchase, in the same instruction that writes `launch_t0`.
+#[event]
+pub struct LaunchActivated {
+    pub founder: Pubkey,
+    pub launch_t0: i64,
+    pub rigs: u64,
+    pub total_lamports: u64,
+}
+
+#[event]
+pub struct ReferralBound {
+    pub miner: Pubkey,
+    pub referrer: Pubkey,
+    pub weight: u16,
 }

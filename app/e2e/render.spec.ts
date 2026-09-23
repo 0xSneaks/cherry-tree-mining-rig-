@@ -544,3 +544,76 @@ test.describe('genesis yield', () => {
     expect(overflow).toBe(0);
   });
 });
+
+/**
+ * Launch state. The phase shown is derived from `launch_t0` and the chain
+ * clock the stub serves — the browser clock is irrelevant, and the program
+ * enforces the same gate regardless of what this page shows.
+ */
+test.describe('launch activation and access phases', () => {
+  const NOW = 1_780_000_000n;
+  const phaseOf = (page: Page) => page.getByTestId('launch-panel').getAttribute('data-phase');
+
+  test('pre-launch: the grove is dormant and nobody can plant from the app', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: null });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('The grove is dormant');
+    await expect(page.getByTestId('launch-panel')).toContainText('Founder activation pending.');
+    expect(await phaseOf(page)).toBe('preLaunch');
+    await expect(page.getByRole('button', { name: /^Hire/i })).toBeDisabled();
+    await expect(page.getByTestId('founder-activation')).toHaveCount(0);
+  });
+
+  test('genesis: .skr access with a countdown to SNS from chain time', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: 3_600n });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('Genesis is live');
+    await expect(page.getByTestId('launch-panel')).toContainText('.SKR genesis access');
+    await expect(page.getByTestId('launch-countdown')).toContainText('SNS early access in 22:59:');
+    // This wallet has no .skr name in the stub: planting stays closed to it.
+    await expect(page.getByRole('button', { name: /^Hire/i })).toBeDisabled();
+  });
+
+  test('SNS early access, then public', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: 86_400n + 60n });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('SNS early access');
+    await expect(page.getByTestId('launch-countdown')).toContainText('Public in 23:59:');
+  });
+
+  test('public: the grove is open', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: 2n * 86_400n });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('The grove is open');
+    await expect(page.getByTestId('launch-countdown')).toHaveCount(0);
+  });
+
+  test('founder activation fails closed and sends nothing when preflight fails', async ({
+    page,
+  }) => {
+    let sends = 0;
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: null, founder: WALLET });
+    page.on('request', (r) => {
+      const body = r.postData() ?? '';
+      if (/sendTransaction/.test(body)) sends += 1;
+    });
+    await page.goto('/');
+    const panel = page.getByTestId('founder-activation');
+    await expect(panel).toBeVisible();
+    // No default amount: preflight cannot even run until one is typed.
+    await expect(panel.getByRole('button', { name: 'Run preflight' })).toBeDisabled();
+    await panel.getByLabel('Seeds to plant').fill('10');
+    await panel.getByRole('button', { name: 'Run preflight' }).click();
+    // Either a failing check list or an error: both are fail-closed.
+    await expect(panel.locator('.preflight li.fail, .banner--alert').first()).toBeVisible();
+    // The stub is not mainnet and has no sneaks.skr record: no confirmation
+    // field is offered, and nothing was sent.
+    await expect(panel.getByLabel(/Type ACTIVATE/)).toHaveCount(0);
+    expect(sends).toBe(0);
+  });
+});

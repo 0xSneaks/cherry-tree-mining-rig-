@@ -159,6 +159,8 @@ async fn t14_authority_cannot_withdraw_from_reward_vault() {
 async fn t15_authority_cannot_withdraw_from_capital_vault() {
     let mut env = Env::new().await;
     env.initialize().await.unwrap();
+    // Launch activation (alice = founder) requires a funded schedule.
+    env.fund_rewards(SOL, 86_400).await.unwrap();
 
     let alice = env.alice.insecure_clone();
     env.buy(&alice, 100).await.unwrap();
@@ -186,6 +188,8 @@ async fn t15_authority_cannot_withdraw_from_capital_vault() {
 async fn fee_vault_withdrawal_works_and_is_bounded() {
     let mut env = Env::new().await;
     env.initialize().await.unwrap();
+    // Launch activation (alice = founder) requires a funded schedule.
+    env.fund_rewards(SOL, 86_400).await.unwrap();
 
     let alice = env.alice.insecure_clone();
     env.buy(&alice, 100).await.unwrap();
@@ -234,6 +238,8 @@ async fn fee_recipient_is_the_configured_address() {
 async fn authority_cannot_redirect_fees_away_from_the_recipient() {
     let mut env = Env::new().await;
     env.initialize().await.unwrap();
+    // Launch activation (alice = founder) requires a funded schedule.
+    env.fund_rewards(SOL, 86_400).await.unwrap();
 
     let alice = env.alice.insecure_clone();
     env.buy(&alice, 100).await.unwrap();
@@ -265,6 +271,8 @@ async fn authority_cannot_redirect_fees_away_from_the_recipient() {
 async fn non_authority_cannot_withdraw_fees() {
     let mut env = Env::new().await;
     env.initialize().await.unwrap();
+    // Launch activation (alice = founder) requires a funded schedule.
+    env.fund_rewards(SOL, 86_400).await.unwrap();
 
     let alice = env.alice.insecure_clone();
     env.buy(&alice, 100).await.unwrap();
@@ -291,6 +299,8 @@ async fn non_authority_cannot_withdraw_fees() {
 async fn only_the_authority_may_change_the_fee_recipient() {
     let mut env = Env::new().await;
     env.initialize().await.unwrap();
+    // Launch activation (alice = founder) requires a funded schedule.
+    env.fund_rewards(SOL, 86_400).await.unwrap();
 
     let replacement = Keypair::new().pubkey();
 
@@ -531,6 +541,8 @@ async fn reinitialize_is_rejected() {
 async fn claim_with_nothing_earned_errors() {
     let mut env = Env::new().await;
     env.initialize().await.unwrap();
+    // Launch activation (alice = founder) requires a funded schedule.
+    env.fund_rewards(SOL, 86_400).await.unwrap();
 
     let alice = env.alice.insecure_clone();
     env.buy(&alice, 1).await.unwrap();

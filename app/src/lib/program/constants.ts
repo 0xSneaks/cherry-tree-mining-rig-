@@ -60,6 +60,6 @@ export const ACCOUNT_DISCRIMINATOR = {
 
 /** Byte length of each account, discriminator included. */
 export const ACCOUNT_SIZE = {
-  config: 265,
-  miner: 129,
+  config: 313,
+  miner: 163,
 } as const;

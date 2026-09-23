@@ -12,7 +12,7 @@ import { useMemo } from 'react';
 
 import { formatCount, formatDuration, formatSol, formatUtcInstant } from '../lib/format';
 import type { Config, Miner } from '../lib/program/accounts';
-import { fundedRunwaySeconds } from '../lib/program/accrual';
+import { WEIGHT_BASE, WEIGHT_REFERRED, fundedRunwaySeconds } from '../lib/program/accrual';
 import {
   PHASE_LABEL,
   SECONDS_PER_YEAR,
@@ -45,6 +45,7 @@ export function YieldPanel({
   rewardVaultLamports,
   chainTime,
   snapshotTime,
+  weight = 0,
 }: {
   config: Config;
   miner: Miner | null;
@@ -54,6 +55,8 @@ export function YieldPanel({
   chainTime: bigint;
   /** Chain clock at the last fetch — the projection is pinned to state. */
   snapshotTime: bigint;
+  /** The viewer's reward weight per rig (0 = none / base). */
+  weight?: number;
 }) {
   const inputs = yieldInputs(config, chainTime);
   const apr = aprBps(inputs);
@@ -76,6 +79,8 @@ export function YieldPanel({
   }, [config, miner, snapshotTime]);
 
   const effective = miner ? effectiveRateBps(miner, claimable, chainTime) : null;
+  const referred = weight === Number(WEIGHT_REFERRED);
+  const yourApr = referred ? aprBps(inputs, 0n, WEIGHT_REFERRED) : null;
 
   const fullYear = projection !== null && projection.horizonSeconds >= SECONDS_PER_YEAR;
   // Only a full funded year earns the name APY. A shorter window is shown as
@@ -88,9 +93,13 @@ export function YieldPanel({
       : 'Projected return · no funded window';
 
   let nextLabel: string;
-  if (threshold.kind === 'rigs') {
-    const toGo = threshold.atTotalRigs - config.totalRigs;
-    nextLabel = `${PHASE_LABEL[threshold.phase]} at ${formatCount(threshold.atTotalRigs)} rigs · ${formatCount(toGo)} to go`;
+  if (threshold.kind === 'shares') {
+    // Shares → base-rig equivalents, rounded up: the phase turns on the rig
+    // that crosses the threshold.
+    const atRigs = (threshold.atTotalShares + WEIGHT_BASE - 1n) / WEIGHT_BASE;
+    const toGoShares = threshold.atTotalShares - config.totalShares;
+    const toGo = (toGoShares + WEIGHT_BASE - 1n) / WEIGHT_BASE;
+    nextLabel = `${PHASE_LABEL[threshold.phase]} at ${formatCount(atRigs)} rigs · ${formatCount(toGo)} to go`;
   } else if (threshold.kind === 'windowEnds') {
     nextLabel = `Window closes ${formatUtcInstant(threshold.at)}`;
   } else {
@@ -117,6 +126,9 @@ export function YieldPanel({
           value={`${formatSol(rewardVaultLamports, 3)} SOL · ${runway > 0n ? formatDuration(runway) : 'ended'}`}
         />
         <Readout label="Your accrued" value={formatSol(claimable, 6)} unit="SOL" />
+        {yourApr !== null ? (
+          <Readout label="Your APR · 1.05× referred weight" value={formatAprBps(yourApr)} />
+        ) : null}
         <Readout
           label="Your effective rate"
           value={effective === null ? '—' : formatAprBps(effective)}

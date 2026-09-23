@@ -38,6 +38,7 @@ use anchor_lang::prelude::*;
 pub mod constants;
 pub mod error;
 pub mod events;
+pub mod identity;
 pub mod instructions;
 pub mod state;
 pub mod vault;
@@ -57,6 +58,7 @@ pub mod sol_rigs {
         purchase_fee_bps: u16,
         reward_funder: Pubkey,
         fee_recipient: Pubkey,
+        founder: Pubkey,
     ) -> Result<()> {
         instructions::initialize::handle_initialize(
             ctx,
@@ -64,6 +66,7 @@ pub mod sol_rigs {
             purchase_fee_bps,
             reward_funder,
             fee_recipient,
+            founder,
         )
     }
 
@@ -74,8 +77,18 @@ pub mod sol_rigs {
     }
 
     /// Buy `count` whole rigs. 1 rig = 1 hashpower.
-    pub fn buy_rigs(ctx: Context<BuyRigs>, count: u64) -> Result<()> {
-        instructions::buy_rigs::handle_buy_rigs(ctx, count)
+    ///
+    /// Remaining accounts: `[identity, referrer_miner]`, both optional by
+    /// position — `identity` is the buyer's `.skr` / SNS name record (the
+    /// `sneaks.skr` record for the founder activation); `referrer_miner` is
+    /// required iff `referrer` is `Some`. Pass the system program as a
+    /// placeholder identity when none is needed.
+    pub fn buy_rigs<'info>(
+        ctx: Context<'_, '_, 'info, 'info, BuyRigs<'info>>,
+        count: u64,
+        referrer: Option<Pubkey>,
+    ) -> Result<()> {
+        instructions::buy_rigs::handle_buy_rigs(ctx, count, referrer)
     }
 
     /// Claim the settled ore bin as SOL.

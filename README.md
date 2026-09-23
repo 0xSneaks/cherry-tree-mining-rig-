@@ -55,6 +55,7 @@ scripts/verify-deploy-ready.sh  pre-deploy gate: IDs, branding, secrets, scripts
 scripts/devnet-*.sh         devnet-only deploy / init / fund / smoke entrypoints
 DEPLOY.md                   the runbook
 YIELD.md                    genesis yield: APR model, phases, solvency simulations
+LAUNCH.md                   founder activation, T0, access phases, referral, first buy
 ```
 
 The split is the point. Every decision about how many lamports someone is owed

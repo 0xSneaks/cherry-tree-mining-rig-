@@ -19,7 +19,9 @@
 //!                        multiplier: a front-loaded genesis is expressed by the
 //!                        funder scheduling a higher rate early (fund_rewards
 //!                        windows), never by scaling emission past what is funded.
-//! utilization_multiplier 1 / total_rigs — every rig planted dilutes every rig.
+//! utilization_multiplier weight / total_shares — every rig planted dilutes
+//!                        every rig. A referred rig's weight is 1.05× a base
+//!                        rig's; it takes a larger slice of the SAME emission.
 //!                        This is the decay curve: APR falls hyperbolically as
 //!                        participation grows, and the earliest planters hold
 //!                        the largest share of emission while it is highest.
@@ -40,7 +42,7 @@
 //!
 //! Integer math only; `u128` intermediates; results saturate rather than wrap.
 
-use crate::accumulator::RewardGlobals;
+use crate::accumulator::{RewardGlobals, WEIGHT_BASE};
 use crate::error::{EngineError, EngineResult};
 use crate::position::{compound, MinerPosition};
 use crate::pricing::BPS_DENOMINATOR;
@@ -120,7 +122,8 @@ impl YieldPhase {
 pub struct YieldInputs {
     pub reward_rate: u64,
     pub reward_period_finish: i64,
-    pub total_rigs: u64,
+    /// `Σ rigs × weight`. A base rig is [`WEIGHT_BASE`] shares.
+    pub total_shares: u64,
     pub rig_price_lamports: u64,
     pub purchase_fee_bps: u16,
     pub now: i64,
@@ -136,7 +139,7 @@ impl YieldInputs {
         YieldInputs {
             reward_rate: globals.reward_rate,
             reward_period_finish: globals.reward_period_finish,
-            total_rigs: globals.total_rigs,
+            total_shares: globals.total_shares,
             rig_price_lamports,
             purchase_fee_bps,
             now,
@@ -168,30 +171,45 @@ impl YieldInputs {
     }
 }
 
-/// APR in basis points on the fee-inclusive price of a rig, if the global
-/// rig count were `total_rigs + extra_rigs`.
+/// APR in basis points on the fee-inclusive price of a **base-weight** rig,
+/// if `extra_rigs` more base rigs were planted.
 ///
-/// `extra_rigs = 0` is the rate every existing rig earns now. `extra_rigs = n`
-/// is the rate *after* you plant `n` — which already includes the dilution
-/// your own rigs cause. With no rigs at all, the rate quoted is the first
-/// rig's (a denominator of one), because that is what a first planter gets.
+/// `extra_rigs = 0` is the rate a base rig earns now. `extra_rigs = n` is the
+/// rate *after* you plant `n` — including the dilution your own rigs cause.
+/// With nothing planted, the quote is the first rig's.
 ///
 /// Zero whenever there is no funded emission. Floors; saturates at `u64::MAX`.
 pub fn apr_bps(inputs: &YieldInputs, extra_rigs: u64) -> EngineResult<u64> {
+    apr_bps_weighted(inputs, extra_rigs, WEIGHT_BASE)
+}
+
+/// APR for one rig of `weight` (100 = base, 105 = referred), after
+/// `extra_rigs` more rigs of that same weight are planted.
+///
+/// `numerator × weight / ((total_shares + extra_rigs × weight) × cost)` —
+/// a referred rig reads exactly 1.05× the base rate, because it takes 1.05×
+/// the share of the same emission.
+pub fn apr_bps_weighted(inputs: &YieldInputs, extra_rigs: u64, weight: u64) -> EngineResult<u64> {
     let cost = inputs.cost_per_rig_scaled()?;
+    if weight == 0 {
+        return Err(EngineError::InvalidConfig);
+    }
     if !inputs.emitting() {
         return Ok(0);
     }
-    let rigs = core::cmp::max(
-        (inputs.total_rigs as u128).saturating_add(extra_rigs as u128),
-        1,
-    );
-    // ≤ 1e12 rigs × 1.8e19 × 11_000 ≈ 2e35 — inside u128.
-    let denom = rigs.checked_mul(cost).ok_or(EngineError::MathOverflow)?;
-    Ok(u64::try_from(inputs.numerator() / denom).unwrap_or(u64::MAX))
+    let shares = (inputs.total_shares as u128)
+        .saturating_add((extra_rigs as u128).saturating_mul(weight as u128));
+    let shares = core::cmp::max(shares, weight as u128);
+    // ≤ 1.05e14 shares × 1.8e19 × 11_000 ≈ 2e37 — inside u128.
+    let denom = shares.checked_mul(cost).ok_or(EngineError::MathOverflow)?;
+    let num = inputs
+        .numerator()
+        .checked_mul(weight as u128)
+        .ok_or(EngineError::MathOverflow)?;
+    Ok(u64::try_from(num / denom).unwrap_or(u64::MAX))
 }
 
-/// Phase of the current APR.
+/// Phase of the current base-rig APR.
 pub fn current_phase(inputs: &YieldInputs) -> EngineResult<YieldPhase> {
     Ok(YieldPhase::from_apr_bps(apr_bps(inputs, 0)?))
 }
@@ -199,12 +217,12 @@ pub fn current_phase(inputs: &YieldInputs) -> EngineResult<YieldPhase> {
 /// Where the current phase ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NextThreshold {
-    /// The APR drops into `phase` once the global rig count reaches
-    /// `at_total_rigs` — the smallest count whose APR is below the current
-    /// phase's floor.
-    Rigs {
+    /// The base APR drops into `phase` once global shares reach
+    /// `at_total_shares` — the smallest share count whose base APR is below
+    /// the current phase's floor. A base rig is [`WEIGHT_BASE`] shares.
+    Shares {
         phase: YieldPhase,
-        at_total_rigs: u64,
+        at_total_shares: u64,
     },
     /// Mature: emission (and so the phase) ends at the funded window's close.
     WindowEnds { at: i64 },
@@ -212,7 +230,7 @@ pub enum NextThreshold {
     None,
 }
 
-/// The next decay threshold, exact to the rig.
+/// The next decay threshold, exact to the share.
 pub fn next_threshold(inputs: &YieldInputs) -> EngineResult<NextThreshold> {
     let phase = current_phase(inputs)?;
     match phase {
@@ -221,16 +239,16 @@ pub fn next_threshold(inputs: &YieldInputs) -> EngineResult<NextThreshold> {
             at: inputs.reward_period_finish,
         }),
         _ => {
-            // Smallest T with numerator / (T × cost) < floor, i.e.
-            // T = floor(numerator / (floor × cost)) + 1.
+            // Smallest S with numerator × 100 / (S × cost) < floor, i.e.
+            // S = floor(numerator × 100 / (floor × cost)) + 1.
             let cost = inputs.cost_per_rig_scaled()?;
             let per = (phase.floor_bps() as u128)
                 .checked_mul(cost)
                 .ok_or(EngineError::MathOverflow)?;
-            let t = (inputs.numerator() / per).saturating_add(1);
-            Ok(NextThreshold::Rigs {
+            let t = (inputs.numerator() * WEIGHT_BASE as u128 / per).saturating_add(1);
+            Ok(NextThreshold::Shares {
                 phase: phase.next(),
-                at_total_rigs: u64::try_from(t).unwrap_or(u64::MAX),
+                at_total_shares: u64::try_from(t).unwrap_or(u64::MAX),
             })
         }
     }

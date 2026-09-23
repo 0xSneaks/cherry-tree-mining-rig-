@@ -215,6 +215,7 @@ describe('initialize instruction', () => {
     purchaseFeeBps: 300,
     rewardFunder: FUNDER,
     feeRecipient: FEE_RECIPIENT,
+    founder: FEE_RECIPIENT,
   });
 
   it('targets the program', () => {
@@ -233,14 +234,15 @@ describe('initialize instruction', () => {
     expect(ix.accounts![0]!.role).toBe(AccountRole.WRITABLE_SIGNER);
   });
 
-  it('encodes u64 price, u16 bps and two 32-byte pubkeys after the discriminator', () => {
+  it('encodes u64 price, u16 bps and three 32-byte pubkeys after the discriminator', () => {
     const data = ix.data!;
     expect(Array.from(data.slice(0, 8))).toEqual(Array.from(IX_DISCRIMINATOR.initialize));
     // 10_000_000 little-endian u64
     expect(Array.from(data.slice(8, 16))).toEqual([128, 150, 152, 0, 0, 0, 0, 0]);
     // 300 little-endian u16
     expect(Array.from(data.slice(16, 18))).toEqual([44, 1]);
-    expect(data.length).toBe(8 + 8 + 2 + 32 + 32);
+    // reward_funder, fee_recipient, founder
+    expect(data.length).toBe(8 + 8 + 2 + 32 + 32 + 32);
   });
 
   it('carries the fee recipient as the final argument, after the reward funder', () => {

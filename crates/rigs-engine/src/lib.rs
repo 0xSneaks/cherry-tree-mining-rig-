@@ -21,15 +21,22 @@
 
 pub mod accumulator;
 pub mod error;
+pub mod launch;
 pub mod position;
 pub mod pricing;
+pub mod referral;
 pub mod yield_curve;
 
 pub use accumulator::{
     assert_fully_funded, RewardGlobals, RewardLedger, MAX_REWARD_DURATION_SECONDS,
-    MAX_REWARD_RATE_LAMPORTS_PER_SECOND, PRECISION, ZERO_RIG_POLICY,
+    MAX_REWARD_RATE_LAMPORTS_PER_SECOND, PRECISION, WEIGHT_BASE, WEIGHT_REFERRED, ZERO_RIG_POLICY,
 };
 pub use error::{EngineError, EngineResult};
+pub use launch::{
+    access_phase, gate_purchase, purchase_allowed, seconds_to_next_phase, t0_after_success,
+    AccessPhase, ProvenIdentity, PurchaseContext, PurchaseGate, ACCESS_WINDOW_SECONDS,
+    NOT_ACTIVATED,
+};
 pub use position::{
     buy_rigs, claim, compound, estimated_output_per_second, CompoundOutcome, MinerPosition,
 };
@@ -37,11 +44,12 @@ pub use pricing::{
     quote_purchase, rigs_affordable, validate_pricing, PurchaseQuote, BPS_DENOMINATOR,
     MAX_PURCHASE_FEE_BPS, MAX_RIGS_PER_PURCHASE, MAX_TOTAL_RIGS,
 };
+pub use referral::{referral_weight, ReferrerCheck};
 
 pub use yield_curve::{
-    apr_bps, current_phase, effective_rate_bps, next_threshold, project_compounding,
-    required_annual_emission, NextThreshold, Projection, YieldInputs, YieldPhase,
-    MAX_PROJECTION_STEPS, SECONDS_PER_YEAR,
+    apr_bps, apr_bps_weighted, current_phase, effective_rate_bps, next_threshold,
+    project_compounding, required_annual_emission, NextThreshold, Projection, YieldInputs,
+    YieldPhase, MAX_PROJECTION_STEPS, SECONDS_PER_YEAR,
 };
 
 /// Lamports per SOL. Display helper only.

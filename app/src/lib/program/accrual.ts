@@ -13,6 +13,21 @@
 import { PRECISION } from './constants';
 import type { Config, Miner } from './accounts';
 
+/** Matches `WEIGHT_BASE`: a rig with no referral. */
+export const WEIGHT_BASE = 100n;
+/** Matches `WEIGHT_REFERRED`: a validly referred rig, 1.05×. */
+export const WEIGHT_REFERRED = 105n;
+
+/** `MinerPosition::effective_weight` — `0` reads as the base weight. */
+export function effectiveWeight(miner: Pick<Miner, 'weight'>): bigint {
+  return miner.weight === 0 ? WEIGHT_BASE : BigInt(miner.weight);
+}
+
+/** `MinerPosition::shares` — `rigs × weight`. */
+export function minerShares(miner: Pick<Miner, 'rigs' | 'weight'>): bigint {
+  return miner.rigs * effectiveWeight(miner);
+}
+
 export type ChainSnapshot = {
   config: Config;
   miner: Miner | null;
@@ -31,11 +46,11 @@ function projectRewardPerRig(config: Config, nowSeconds: bigint): bigint {
   const applicable =
     nowSeconds < config.rewardPeriodFinish ? nowSeconds : config.rewardPeriodFinish;
   if (applicable <= config.rewardLastUpdate) return config.rewardPerRigStored;
-  if (config.totalRigs === 0n) return config.rewardPerRigStored;
+  if (config.totalShares === 0n) return config.rewardPerRigStored;
 
   const elapsed = applicable - config.rewardLastUpdate;
   const emission = elapsed * config.rewardRate;
-  return config.rewardPerRigStored + (emission * PRECISION) / config.totalRigs;
+  return config.rewardPerRigStored + (emission * PRECISION) / config.totalShares;
 }
 
 /**
@@ -52,7 +67,7 @@ export function projectedClaimable(
 
   const stored = projectRewardPerRig(config, nowSeconds);
   const delta = stored > miner.rewardPerRigPaid ? stored - miner.rewardPerRigPaid : 0n;
-  return miner.pendingRewards + (miner.rigs * delta) / PRECISION;
+  return miner.pendingRewards + (minerShares(miner) * delta) / PRECISION;
 }
 
 /**
@@ -72,7 +87,7 @@ export function projectChainTime(
 }
 
 /**
- * `estimated_output = (userRigs / totalRigs) * rewardRate`, in lamports/second.
+ * `estimated_output = (userShares / totalShares) * rewardRate`, in lamports/second.
  *
  * Display-only. Zero once the funded window has ended — an estimate that
  * outlives its schedule would be a fabricated number.
@@ -82,9 +97,9 @@ export function estimatedOutputPerSecond(
   miner: Miner | null,
   nowSeconds: bigint,
 ): bigint {
-  if (!miner || config.totalRigs === 0n) return 0n;
+  if (!miner || config.totalShares === 0n) return 0n;
   if (nowSeconds >= config.rewardPeriodFinish) return 0n;
-  return (miner.rigs * config.rewardRate) / config.totalRigs;
+  return (minerShares(miner) * config.rewardRate) / config.totalShares;
 }
 
 export const SECONDS_PER_DAY = 86_400n;

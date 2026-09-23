@@ -8,6 +8,7 @@
  */
 import {
   AccountRole,
+  getAddressEncoder,
   getU64Encoder,
   type Address,
   type Instruction,
@@ -27,13 +28,31 @@ function ix(
   return { programAddress: PROGRAM_ID, accounts, data };
 }
 
-/** `buy_rigs(count)` — see `instructions/buy_rigs.rs`. */
+/**
+ * `buy_rigs(count, referrer)` — see `instructions/buy_rigs.rs`.
+ *
+ * Args: `u64 count` then Borsh `Option<Pubkey>` (`0` | `1 ‖ 32 bytes`).
+ * Remaining accounts: `[identity, referrer_miner?]` — the buyer's `.skr` / SNS
+ * name record (the system program when there is none), then the referrer's
+ * miner PDA iff a referrer is named. The program verifies both itself; the
+ * client choosing them grants nothing.
+ */
 export function buyRigsInstruction(
   owner: Address,
   miner: Address,
   pdas: ProgramAddresses,
   count: bigint,
+  opts: {
+    identity?: Address | null;
+    referrer?: { wallet: Address; miner: Address } | null;
+  } = {},
 ): Instruction {
+  const countBytes = getU64Encoder().encode(count);
+  const referrer = opts.referrer ?? null;
+  const args = new Uint8Array(8 + 1 + (referrer ? 32 : 0));
+  args.set(countBytes, 0);
+  args[8] = referrer ? 1 : 0;
+  if (referrer) args.set(getAddressEncoder().encode(referrer.wallet), 9);
   return ix(
     IX_DISCRIMINATOR.buyRigs,
     [
@@ -45,8 +64,11 @@ export function buyRigsInstruction(
       // Read-only on purpose: spec §3. A purchase cannot reach reward backing.
       { address: pdas.rewardVault, role: AccountRole.READONLY },
       { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+      // remaining accounts
+      { address: opts.identity ?? SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+      ...(referrer ? [{ address: referrer.miner, role: AccountRole.READONLY }] : []),
     ],
-    new Uint8Array(getU64Encoder().encode(count)),
+    args,
   );
 }
 

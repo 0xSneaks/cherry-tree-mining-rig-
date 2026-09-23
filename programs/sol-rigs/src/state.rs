@@ -56,12 +56,24 @@ pub struct Config {
     pub fee_vault_bump: u8,
     pub version: u16,
     pub bump: u8,
+
+    // --- launch (appended) ---
+    /// The only wallet whose purchase can activate launch. Pinned at
+    /// `initialize` and never writable afterwards: there is no setter.
+    pub founder: Pubkey,
+    /// T0: chain time of the founder activation purchase. `0` until then.
+    /// Written exactly once, inside that purchase; no instruction resets,
+    /// replaces or moves it.
+    pub launch_t0: i64,
+    /// `Σ rigs × weight` (mirrors `RewardGlobals::total_shares`).
+    pub total_shares: u64,
 }
 
 impl Config {
     pub fn globals(&self) -> RewardGlobals {
         RewardGlobals {
             total_rigs: self.total_rigs,
+            total_shares: self.total_shares,
             reward_rate: self.reward_rate,
             reward_period_finish: self.reward_period_finish,
             reward_last_update: self.reward_last_update,
@@ -72,6 +84,7 @@ impl Config {
 
     pub fn write_globals(&mut self, g: &RewardGlobals) {
         self.total_rigs = g.total_rigs;
+        self.total_shares = g.total_shares;
         self.reward_rate = g.reward_rate;
         self.reward_period_finish = g.reward_period_finish;
         self.reward_last_update = g.reward_last_update;
@@ -110,6 +123,13 @@ pub struct Miner {
     pub created_at: i64,
     pub last_action_at: i64,
     pub bump: u8,
+
+    // --- referral (appended) ---
+    /// Reward weight per rig: 100 (base) or 105 (validly referred). Fixed at
+    /// the position's first purchase.
+    pub weight: u16,
+    /// Immutable referrer, or `Pubkey::default()` for none.
+    pub referrer: Pubkey,
 }
 
 impl Miner {
@@ -123,6 +143,7 @@ impl Miner {
             lifetime_sol_spent: self.lifetime_sol_spent,
             lifetime_sol_compounded: self.lifetime_sol_compounded,
             lifetime_sol_claimed: self.lifetime_sol_claimed,
+            weight: self.weight as u64,
         }
     }
 

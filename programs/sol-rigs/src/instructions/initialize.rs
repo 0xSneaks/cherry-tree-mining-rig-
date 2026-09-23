@@ -56,8 +56,12 @@ pub fn handle_initialize(
     purchase_fee_bps: u16,
     reward_funder: Pubkey,
     fee_recipient: Pubkey,
+    founder: Pubkey,
 ) -> Result<()> {
     validate_pricing(rig_price_lamports, purchase_fee_bps).anchor()?;
+    // The founder is pinned here and nowhere else. An unset founder would
+    // make launch impossible to activate, so it is refused outright.
+    require_keys_neq!(founder, Pubkey::default(), RigsError::InvalidConfig);
     require_keys_neq!(reward_funder, Pubkey::default(), RigsError::InvalidConfig);
     // The system program's own id is the "unset" pubkey. Accepting it would
     // make every fee withdrawal a burn.
@@ -110,6 +114,11 @@ pub fn handle_initialize(
         fee_vault_bump: ctx.bumps.fee_vault,
         version: STATE_VERSION,
         bump: ctx.bumps.config,
+
+        founder,
+        // Initialising does not activate launch.
+        launch_t0: rigs_engine::NOT_ACTIVATED,
+        total_shares: 0,
     });
 
     emit!(Initialized {
@@ -118,6 +127,7 @@ pub fn handle_initialize(
         fee_recipient,
         rig_price_lamports,
         purchase_fee_bps,
+        founder,
     });
     Ok(())
 }

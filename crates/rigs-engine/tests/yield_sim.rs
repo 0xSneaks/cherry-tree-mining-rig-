@@ -229,10 +229,11 @@ fn s06_long_duration_ten_years() {
 
 #[test]
 fn s07_referral_heavy() {
-    // There is no referral mechanism in the program (pinned by
-    // `exploit_no_referral_surface_exists`). A "referral-heavy" population is
-    // therefore just planters: a sybil ring of 200 one-rig accounts earns
-    // exactly what one 200-rig account earns — no amplification.
+    // Splitting across many wallets earns nothing extra: a sybil ring of 200
+    // one-rig accounts earns exactly what one 200-rig account earns. Referral
+    // weight is covered separately in `launch_referral.rs`
+    // (`referral_heavy_population_stays_solvent`): it is bounded at 1.05× per
+    // rig and never adds emission.
     println!("\n[s07] sybil/referral ring: 200 × 1 rig vs 1 × 200 rigs");
     let mut ring = World::new(201, PRICE, FEE);
     ring.fund(10 * SOL, 30 * DAY as u64).unwrap();

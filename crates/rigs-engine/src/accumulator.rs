@@ -42,17 +42,31 @@ pub const MAX_REWARD_RATE_LAMPORTS_PER_SECOND: u64 = 1_000_000_000_000;
 /// the transparency panel a moving target.
 pub const ZERO_RIG_POLICY: &str = "credited-to-dust";
 
+/// Reward weight of a rig with no referral, per rig. Shares are
+/// `rigs × weight`, and emission is split by shares.
+pub const WEIGHT_BASE: u64 = 100;
+
+/// Reward weight of a rig owned by a validly referred planter: 1.05×.
+///
+/// This redistributes the same funded emission — a referred rig takes a
+/// 5% larger slice of it at everyone else's expense. It never adds emission,
+/// so `paid + owed ≤ funded` is untouched.
+pub const WEIGHT_REFERRED: u64 = 105;
+
 /// Global reward state. Lives inside the Config PDA on-chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RewardGlobals {
     pub total_rigs: u64,
+    /// `Σ rigs × weight` over every position. Emission is divided by this.
+    pub total_shares: u64,
     /// Lamports per second for the current funded window.
     pub reward_rate: u64,
     /// Unix timestamp at which the current funded window ends.
     pub reward_period_finish: i64,
     /// Unix timestamp of the last accumulator sync.
     pub reward_last_update: i64,
-    /// Cumulative lamports-per-rig, scaled by [`PRECISION`].
+    /// Cumulative lamports-per-share, scaled by [`PRECISION`]. (The name is
+    /// kept from V0, when one rig was one share; the on-chain field is too.)
     pub reward_per_rig_stored: u128,
     /// Emission that elapsed while `total_rigs == 0`. Unattributable, stays in
     /// the vault, never claimable in V1. See [`ZERO_RIG_POLICY`].
@@ -127,11 +141,11 @@ impl RewardGlobals {
             .checked_mul(self.reward_rate as u128)
             .ok_or(EngineError::MathOverflow)?;
 
-        if self.total_rigs > 0 {
+        if self.total_shares > 0 {
             let scaled = emission
                 .checked_mul(PRECISION)
                 .ok_or(EngineError::MathOverflow)?;
-            let per_rig = scaled / self.total_rigs as u128;
+            let per_rig = scaled / self.total_shares as u128;
             self.reward_per_rig_stored = self
                 .reward_per_rig_stored
                 .checked_add(per_rig)
@@ -204,7 +218,7 @@ impl RewardGlobals {
         Ok(())
     }
 
-    pub(crate) fn add_rigs(&mut self, count: u64) -> EngineResult<()> {
+    pub(crate) fn add_rigs(&mut self, count: u64, weight: u64) -> EngineResult<()> {
         let next = self
             .total_rigs
             .checked_add(count)
@@ -212,7 +226,12 @@ impl RewardGlobals {
         if next > MAX_TOTAL_RIGS {
             return Err(EngineError::RigSupplyExceeded);
         }
+        let shares = count
+            .checked_mul(weight)
+            .and_then(|s| self.total_shares.checked_add(s))
+            .ok_or(EngineError::MathOverflow)?;
         self.total_rigs = next;
+        self.total_shares = shares;
         Ok(())
     }
 }

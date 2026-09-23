@@ -66,6 +66,7 @@ fn emit_accrual_vectors() {
             "steady",
             RewardGlobals {
                 total_rigs: 1_000,
+                total_shares: 1_000 * 100,
                 reward_rate: 2_500_000,
                 reward_period_finish: 10_000,
                 reward_last_update: 0,
@@ -83,6 +84,7 @@ fn emit_accrual_vectors() {
             "mid-window-with-pending",
             RewardGlobals {
                 total_rigs: 14_281,
+                total_shares: 14_281 * 100,
                 reward_rate: 25_462_962,
                 reward_period_finish: 8_000,
                 reward_last_update: 1_200,
@@ -100,6 +102,7 @@ fn emit_accrual_vectors() {
             "no-rigs",
             RewardGlobals {
                 total_rigs: 0,
+                total_shares: 0,
                 reward_rate: 1_000,
                 reward_period_finish: 5_000,
                 reward_last_update: 0,
@@ -109,9 +112,28 @@ fn emit_accrual_vectors() {
             MinerPosition::default(),
         ),
         (
+            // 900 base rigs + this referred planter's 100 rigs at 1.05×.
+            "referred",
+            RewardGlobals {
+                total_rigs: 1_000,
+                total_shares: 900 * 100 + 100 * 105,
+                reward_rate: 2_500_000,
+                reward_period_finish: 10_000,
+                reward_last_update: 0,
+                reward_per_rig_stored: 0,
+                undistributed_dust: 0,
+            },
+            MinerPosition {
+                rigs: 100,
+                weight: 105,
+                ..Default::default()
+            },
+        ),
+        (
             "already-finished",
             RewardGlobals {
                 total_rigs: 10,
+                total_shares: 10 * 100,
                 reward_rate: 1_000_000,
                 reward_period_finish: 500,
                 reward_last_update: 500,
@@ -136,7 +158,7 @@ fn emit_accrual_vectors() {
             g.sync(t).unwrap();
             let earned = position.earned(&g).unwrap();
             println!(
-                "{name},{t},{},{},{},{},{},{},{},{},{}",
+                "{name},{t},{},{},{},{},{},{},{},{},{},{},{}",
                 globals.total_rigs,
                 globals.reward_rate,
                 globals.reward_period_finish,
@@ -145,7 +167,9 @@ fn emit_accrual_vectors() {
                 position.rigs,
                 position.reward_per_rig_paid,
                 position.pending_rewards,
-                earned
+                earned,
+                globals.total_shares,
+                position.effective_weight()
             );
         }
     }
@@ -160,13 +184,22 @@ fn emit_accrual_vectors() {
 #[test]
 fn emit_yield_vectors() {
     use rigs_engine::{
-        apr_bps, current_phase, effective_rate_bps, next_threshold, project_compounding,
+        apr_bps_weighted, current_phase, effective_rate_bps, next_threshold, project_compounding,
         MinerPosition, NextThreshold, RewardGlobals, YieldInputs,
     };
 
     println!("---APR---");
     let rates = [0u64, 1, 2, 11_574, 1_000_000, 1_000_000_000_000];
-    let totals = [0u64, 1, 37, 1_000, 5_000, 503_600, 1_000_000_000_000];
+    let totals = [
+        0u64,
+        1,
+        105,
+        3_700,
+        100_000,
+        500_500,
+        50_360_000,
+        105_000_000_000_000,
+    ];
     let prices = [1u64, 10_000_000, 3_333_333, 18_000_000_000_000_000_000];
     let fees = [0u16, 300, 1_000];
     for &rate in &rates {
@@ -174,26 +207,28 @@ fn emit_yield_vectors() {
             for &price in &prices {
                 for &fee in &fees {
                     for &(now, finish) in &[(0i64, 86_400i64), (86_400, 86_400)] {
-                        for &extra in &[0u64, 1, 1_000] {
+                        for &(extra, weight) in
+                            &[(0u64, 100u64), (1, 100), (1_000, 100), (0, 105), (7, 105)]
+                        {
                             let i = YieldInputs {
                                 reward_rate: rate,
                                 reward_period_finish: finish,
-                                total_rigs: total,
+                                total_shares: total,
                                 rig_price_lamports: price,
                                 purchase_fee_bps: fee,
                                 now,
                             };
-                            let apr = apr_bps(&i, extra).unwrap();
+                            let apr = apr_bps_weighted(&i, extra, weight).unwrap();
                             let phase = current_phase(&i).unwrap().code();
                             let (kind, value) = match next_threshold(&i).unwrap() {
-                                NextThreshold::Rigs { at_total_rigs, .. } => {
-                                    (0, at_total_rigs as i128)
-                                }
+                                NextThreshold::Shares {
+                                    at_total_shares, ..
+                                } => (0, at_total_shares as i128),
                                 NextThreshold::WindowEnds { at } => (1, at as i128),
                                 NextThreshold::None => (2, 0),
                             };
                             println!(
-                                "{rate},{finish},{total},{price},{fee},{now},{extra},{apr},{phase},{kind},{value}"
+                                "{rate},{finish},{total},{price},{fee},{now},{extra},{weight},{apr},{phase},{kind},{value}"
                             );
                         }
                     }
@@ -210,15 +245,23 @@ fn emit_yield_vectors() {
         (37, 1_000_000_000, 30 * day, 0),
         (100_000, 11_574, 365 * day, 999_999_999_999),
     ] {
-        for &(rigs, pending) in &[(1u64, 0u64), (100, 5_000_000), (1_000, 0)] {
+        for &(rigs, pending, weight) in &[
+            (1u64, 0u64, 100u64),
+            (100, 5_000_000, 100),
+            (1_000, 0, 100),
+            (100, 0, 105),
+        ] {
             if rigs > total {
                 continue;
             }
+            // Everyone else is a base rig; this position carries `weight`.
+            let shares = (total - rigs) * 100 + rigs * weight;
             for &now in &[0i64, 3 * day] {
                 for &interval in &[0u64, 3_600, 86_400, 7 * 86_400] {
                     for &horizon in &[86_400u64, 30 * 86_400, 365 * 86_400] {
                         let g = RewardGlobals {
                             total_rigs: total,
+                            total_shares: shares,
                             reward_rate: rate,
                             reward_period_finish: finish,
                             reward_last_update: 0,
@@ -229,6 +272,7 @@ fn emit_yield_vectors() {
                             rigs,
                             reward_per_rig_paid: stored,
                             pending_rewards: pending,
+                            weight,
                             ..Default::default()
                         };
                         let Ok(p) =
@@ -237,7 +281,7 @@ fn emit_yield_vectors() {
                             continue;
                         };
                         println!(
-                            "{total},{rate},{finish},{stored},{rigs},{pending},{now},{interval},{horizon},{},{},{},{},{},{}",
+                            "{total},{shares},{weight},{rate},{finish},{stored},{rigs},{pending},{now},{interval},{horizon},{},{},{},{},{},{}",
                             p.horizon_seconds,
                             p.start_rigs,
                             p.end_rigs,
@@ -272,6 +316,40 @@ fn emit_yield_vectors() {
             "{spent},{claimed},{compounded},{claimable},1000,{},{r}",
             1_000 + age
         );
+    }
+    println!("---END---");
+}
+
+/// Emits launch-phase vectors consumed by `app/tests/launch.test.ts`.
+///
+/// The countdown on screen and the gate the program enforces must be the same
+/// function of T0 and the chain clock.
+#[test]
+fn emit_launch_vectors() {
+    use rigs_engine::{access_phase, seconds_to_next_phase, ACCESS_WINDOW_SECONDS};
+    let h = ACCESS_WINDOW_SECONDS;
+    let t0s = [0i64, 1, 1_790_000_000];
+    let offsets = [
+        -1_000_000i64,
+        -1,
+        0,
+        1,
+        h - 1,
+        h,
+        h + 1,
+        2 * h - 1,
+        2 * h,
+        2 * h + 1,
+        10 * 365 * 86_400,
+    ];
+    println!("---LAUNCH---");
+    for &t0 in &t0s {
+        for &o in &offsets {
+            let now = if t0 == 0 { 1_790_000_000 + o } else { t0 + o };
+            let phase = access_phase(t0, now).code();
+            let next = seconds_to_next_phase(t0, now).unwrap_or(-1);
+            println!("{t0},{now},{phase},{next}");
+        }
     }
     println!("---END---");
 }

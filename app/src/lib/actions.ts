@@ -12,6 +12,7 @@ import {
   claimInstruction,
   compoundInstruction,
 } from './program/instructions';
+import { FOUNDER_NAME_ACCOUNT, discoverIdentity } from './program/identity';
 import { minerPda, programAddresses } from './program/pdas';
 import type { RigsSigner } from './signer';
 
@@ -20,10 +21,26 @@ async function context(owner: Address) {
   return { pdas, miner };
 }
 
-export async function buyRigs(signer: RigsSigner, count: bigint): Promise<string> {
+/**
+ * Plant `count` seeds. The identity account is discovered for the signer (the
+ * program re-verifies it); the founder always presents the pinned
+ * `sneaks.skr` record. `referrer`, if given, is bound only on a first
+ * purchase — the program rejects it otherwise.
+ */
+export async function buyRigs(
+  signer: RigsSigner,
+  count: bigint,
+  opts: { isFounder?: boolean; referrer?: Address | null } = {},
+): Promise<string> {
   const { pdas, miner } = await context(signer.address);
+  const identity = opts.isFounder
+    ? FOUNDER_NAME_ACCOUNT
+    : (await discoverIdentity(rpc(), signer.address)).account;
+  const referrer = opts.referrer
+    ? { wallet: opts.referrer, miner: await minerPda(opts.referrer) }
+    : null;
   const sig = await signer.signAndSend(
-    buyRigsInstruction(signer.address, miner, pdas, count),
+    buyRigsInstruction(signer.address, miner, pdas, count, { identity, referrer }),
   );
   await confirmSignature(sig, rpc());
   return sig;

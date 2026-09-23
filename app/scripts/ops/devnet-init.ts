@@ -27,6 +27,7 @@ import { address, type Address } from '@solana/kit';
 
 import { programAddresses } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
+import { EXPECTED_FOUNDER } from '../../src/lib/launch/expected';
 import { initializeInstruction } from './admin-instructions';
 
 async function main(): Promise<void> {
@@ -52,6 +53,7 @@ async function main(): Promise<void> {
     'Set it to the protocol fee recipient PUBLIC KEY. It never signs: the ' +
       'program pins it as the only account withdraw_fees may pay.',
   );
+  const founderRaw = process.env.CHERRY_TREE_FOUNDER ?? EXPECTED_FOUNDER;
   const rigPriceLamports = BigInt(
     requireEnv('CHERRY_TREE_RIG_PRICE_LAMPORTS', 'e.g. 10000000 for 0.01 SOL.'),
   );
@@ -59,6 +61,19 @@ async function main(): Promise<void> {
     requireEnv('CHERRY_TREE_PURCHASE_FEE_BPS', 'e.g. 300 for 3.00%.'),
   );
 
+  let founder: Address;
+  try {
+    founder = address(founderRaw);
+  } catch {
+    fail(`CHERRY_TREE_FOUNDER is not a valid public key: ${founderRaw}`);
+  }
+  if (founder !== EXPECTED_FOUNDER && process.env.CHERRY_TREE_ALLOW_OTHER_FOUNDER !== '1') {
+    fail(
+      `CHERRY_TREE_FOUNDER ${founder} is not the verified sneaks.skr wallet ` +
+        `${EXPECTED_FOUNDER}. The founder is pinned forever at initialize. ` +
+        'Set CHERRY_TREE_ALLOW_OTHER_FOUNDER=1 only for a devnet rehearsal wallet.',
+    );
+  }
   let rewardFunder: Address;
   try {
     rewardFunder = address(funderRaw);
@@ -89,6 +104,7 @@ async function main(): Promise<void> {
   row('authority balance', `${sol(await lamportsOf(chain, authority.address))} SOL`);
   row('reward funder', rewardFunder);
   row('fee recipient', feeRecipient);
+  row('founder (pinned forever)', founder);
   row('rig price', `${rigPriceLamports} lamports (${sol(rigPriceLamports)} SOL)`);
   row('purchase fee', `${purchaseFeeBps} bps (${(purchaseFeeBps / 100).toFixed(2)}%)`);
   console.log();
@@ -129,6 +145,7 @@ async function main(): Promise<void> {
       purchaseFeeBps,
       rewardFunder,
       feeRecipient,
+      founder,
     }),
   );
   row('signature', signature);
@@ -141,6 +158,8 @@ async function main(): Promise<void> {
     ['authority', config.authority, authority.address],
     ['reward_funder', config.rewardFunder, rewardFunder],
     ['fee_recipient', config.feeRecipient, feeRecipient],
+    ['founder', config.founder, founder],
+    ['launch_t0 (initialize must NOT activate)', config.launchT0, 0n],
     ['rig_price_lamports', config.rigPriceLamports, rigPriceLamports],
     ['purchase_fee_bps', config.purchaseFeeBps, purchaseFeeBps],
     ['total_rigs', config.totalRigs, 0n],

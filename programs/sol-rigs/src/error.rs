@@ -49,6 +49,19 @@ pub enum RigsError {
     ZeroAmount,
     #[msg("Fee withdrawal destination is not the configured fee recipient")]
     FeeRecipientMismatch,
+    // --- launch + referral (appended: existing codes are unchanged) ---
+    #[msg("A wallet cannot refer itself")]
+    SelfReferral,
+    #[msg("The referrer is bound at the first purchase only and is never replaced")]
+    ReferrerAlreadyBound,
+    #[msg("Referrer is not an existing planter")]
+    InvalidReferrer,
+    #[msg("Buying is not open to this wallet in the current launch phase")]
+    AccessDenied,
+    #[msg("Founder activation requires an active, funded reward schedule")]
+    ActivationUnfunded,
+    #[msg("A referrer was named but its miner account was not supplied")]
+    MissingReferrerAccount,
 }
 
 impl From<EngineError> for RigsError {
@@ -65,6 +78,11 @@ impl From<EngineError> for RigsError {
             EngineError::NothingToCompound => RigsError::NothingToCompound,
             EngineError::InsufficientRewardBacking => RigsError::InsufficientRewardBacking,
             EngineError::ClockWentBackwards => RigsError::ClockWentBackwards,
+            EngineError::SelfReferral => RigsError::SelfReferral,
+            EngineError::ReferrerAlreadyBound => RigsError::ReferrerAlreadyBound,
+            EngineError::InvalidReferrer => RigsError::InvalidReferrer,
+            EngineError::AccessDenied => RigsError::AccessDenied,
+            EngineError::ActivationUnfunded => RigsError::ActivationUnfunded,
         }
     }
 }

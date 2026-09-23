@@ -24,6 +24,8 @@ export function BuyPanel({
   chainTime,
   walletLamports,
   disabled,
+  closedReason = null,
+  referrer = null,
   busy,
   onBuy,
 }: {
@@ -32,6 +34,10 @@ export function BuyPanel({
   /** Spendable wallet balance, used only for the MAX button. */
   walletLamports: bigint | null;
   disabled: boolean;
+  /** Why planting is closed, when the launch gate is what closes it. */
+  closedReason?: string | null;
+  /** Proposed referrer from the link, for a wallet with no position yet. */
+  referrer?: string | null;
   busy: boolean;
   onBuy: (count: bigint) => void;
 }) {
@@ -142,6 +148,15 @@ export function BuyPanel({
       >
         {busy ? 'Hiring…' : `Hire ${count.toString()} rig${count === 1n ? '' : 's'}`}
       </button>
+
+      {closedReason ? <p className="note">{closedReason}</p> : null}
+      {referrer ? (
+        <p className="note" data-testid="referral-note">
+          Referred by {referrer.slice(0, 4)}…{referrer.slice(-4)}: a 1.05× reward
+          weight on your first planting, if the referrer is an existing planter.
+          It takes a larger slice of the same funded emission — not extra APR.
+        </p>
+      ) : null}
 
       <p className="note">
         Rigs are game production capacity, not a deposit. They are

@@ -327,6 +327,43 @@ button.primary:disabled {
   padding: 12px 14px;
 }
 
+/* Launch state: a quiet strip above the yield. Blossom only while live. */
+.launch {
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--rule-strong);
+  background: var(--bg-inset);
+  border-radius: 2px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.launch--skrGenesis,
+.launch--skrSnsEarly {
+  border-left-color: var(--blossom);
+}
+.launch-title {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.launch--skrGenesis .launch-title {
+  color: var(--blossom);
+}
+.launch-line {
+  margin: 3px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.launch-countdown {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--blossom-soft);
+}
+
 /*
  * GENESIS YIELD. The one place the glow is allowed past the wordmark: the
  * rate is the product's headline. Number in off-white, phase in blossom,
@@ -417,6 +454,29 @@ button.primary:disabled {
   width: calc(100% - 32px);
   max-width: calc(420px - 32px);
   margin: 0 auto calc(var(--safe-bottom) + 28px);
+}
+
+.founder {
+  margin-bottom: 16px;
+}
+.founder-input {
+  grid-template-columns: 1fr;
+}
+.preflight {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  font-size: 11px;
+}
+.preflight li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.preflight li.pass > span:first-child {
+  color: var(--live);
+}
+.preflight li.fail > span:first-child {
+  color: var(--alert);
 }
 
 .quote {

@@ -1,9 +1,13 @@
 use anchor_lang::prelude::*;
-use rigs_engine::assert_fully_funded;
+use rigs_engine::{
+    assert_fully_funded, gate_purchase, referral_weight, t0_after_success, PurchaseContext,
+    PurchaseGate, ReferrerCheck,
+};
 
 use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
-use crate::events::RigsPurchased;
+use crate::events::{LaunchActivated, ReferralBound, RigsPurchased};
+use crate::identity;
 use crate::state::{Config, Miner, Vault};
 use crate::vault::{deposit_from_wallet, distributable};
 
@@ -57,14 +61,44 @@ pub struct BuyRigs<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// `buy_rigs(count)`.
+/// `buy_rigs(count, referrer)`.
 ///
 /// Purchase lamports split between the CAPITAL and FEE vaults. Not one lamport
 /// reaches the REWARD vault — that is the core invariant, and it is structural
 /// here: the reward vault is passed read-only.
-pub fn handle_buy_rigs(ctx: Context<BuyRigs>, count: u64) -> Result<()> {
+///
+/// Launch gate, decided by `rigs_engine::gate_purchase` before anything moves:
+///
+/// * `launch_t0 == 0`: only the ACTIVATION is possible — the pinned founder,
+///   proving in this instruction that it owns `sneaks.skr`, with an active
+///   funded schedule. On success `launch_t0 := Clock` in this same
+///   instruction, so a failed purchase can never leave T0 behind.
+/// * afterwards: the access phase (from T0 and the clock only) decides which
+///   proven identity may buy.
+pub fn handle_buy_rigs<'info>(
+    ctx: Context<'_, '_, 'info, 'info, BuyRigs<'info>>,
+    count: u64,
+    referrer: Option<Pubkey>,
+) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let owner_key = ctx.accounts.owner.key();
+    let identity_account = ctx.remaining_accounts.first();
+
+    // --- launch gate ---
+    let gate = {
+        let config = &ctx.accounts.config;
+        gate_purchase(&PurchaseContext {
+            launch_t0: config.launch_t0,
+            now,
+            is_founder: owner_key == config.founder,
+            owns_founder_name: identity_account
+                .map(|a| identity::owns_founder_name(a, &owner_key, now))
+                .unwrap_or(false),
+            schedule_active: config.reward_rate > 0 && now < config.reward_period_finish,
+            identity: identity::prove(identity_account, &owner_key, now),
+        })
+        .anchor()?
+    };
 
     // First purchase initialises the position.
     let miner = &mut ctx.accounts.miner;
@@ -75,6 +109,33 @@ pub fn handle_buy_rigs(ctx: Context<BuyRigs>, count: u64) -> Result<()> {
         miner.bump = ctx.bumps.miner;
     } else {
         require_keys_eq!(miner.owner, owner_key, RigsError::MinerOwnerMismatch);
+    }
+
+    // --- referral: bound once, at creation, to an existing planter ---
+    let referrer_check = match referrer {
+        None => None,
+        Some(r) => {
+            let acct = ctx
+                .remaining_accounts
+                .get(1)
+                .ok_or(error!(RigsError::MissingReferrerAccount))?;
+            let (expected, _) =
+                Pubkey::find_program_address(&[MINER_SEED, r.as_ref()], ctx.program_id);
+            let is_planter = acct.key == &expected
+                && acct.owner == ctx.program_id
+                && Account::<Miner>::try_from(acct)
+                    .map(|m| m.owner == r && m.rigs > 0)
+                    .unwrap_or(false);
+            Some(ReferrerCheck {
+                referrer: r.to_bytes(),
+                referrer_is_planter: is_planter,
+            })
+        }
+    };
+    let weight = referral_weight(owner_key.to_bytes(), is_new, referrer_check).anchor()?;
+    if is_new {
+        miner.weight = u16::try_from(weight).map_err(|_| error!(RigsError::MathOverflow))?;
+        miner.referrer = referrer.unwrap_or_default();
     }
 
     let config = &mut ctx.accounts.config;
@@ -130,6 +191,27 @@ pub fn handle_buy_rigs(ctx: Context<BuyRigs>, count: u64) -> Result<()> {
     config.write_globals(&globals);
     miner.write_position(&position);
     miner.last_action_at = now;
+
+    // T0 is written only by the activation, only while unset, and only here —
+    // after the purchase and the solvency check have both succeeded. Any
+    // earlier failure aborts the whole transaction, T0 included.
+    let previous_t0 = config.launch_t0;
+    config.launch_t0 = t0_after_success(gate, previous_t0, now);
+    if gate == PurchaseGate::Activation && previous_t0 != config.launch_t0 {
+        emit!(LaunchActivated {
+            founder: owner_key,
+            launch_t0: config.launch_t0,
+            rigs: count,
+            total_lamports: quote.total_lamports,
+        });
+    }
+    if is_new && referrer.is_some() {
+        emit!(ReferralBound {
+            miner: owner_key,
+            referrer: miner.referrer,
+            weight: miner.weight,
+        });
+    }
 
     emit!(RigsPurchased {
         owner: owner_key,

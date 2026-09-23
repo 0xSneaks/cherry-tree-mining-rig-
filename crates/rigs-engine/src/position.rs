@@ -1,6 +1,6 @@
 //! Miner position state and the mandatory settle-then-transition ordering.
 
-use crate::accumulator::{RewardGlobals, RewardLedger, PRECISION};
+use crate::accumulator::{RewardGlobals, RewardLedger, PRECISION, WEIGHT_BASE};
 use crate::error::{EngineError, EngineResult};
 use crate::pricing::{quote_purchase, rigs_affordable, PurchaseQuote};
 
@@ -18,6 +18,10 @@ pub struct MinerPosition {
     pub lifetime_sol_spent: u64,
     pub lifetime_sol_compounded: u64,
     pub lifetime_sol_claimed: u64,
+    /// Reward weight per rig: [`WEIGHT_BASE`] or `WEIGHT_REFERRED`. Fixed when
+    /// the position is created. `0` (a default-constructed position) is read
+    /// as [`WEIGHT_BASE`].
+    pub weight: u64,
 }
 
 /// What a `compound` actually did. Every field is exact lamports.
@@ -35,7 +39,23 @@ pub struct CompoundOutcome {
 }
 
 impl MinerPosition {
-    /// `earned = pending_rewards + rigs * (stored - paid) / PRECISION`
+    /// Weight per rig, with `0` read as the base weight.
+    pub fn effective_weight(&self) -> u64 {
+        if self.weight == 0 {
+            WEIGHT_BASE
+        } else {
+            self.weight
+        }
+    }
+
+    /// `rigs × weight`: this position's claim on emission.
+    pub fn shares(&self) -> EngineResult<u64> {
+        self.rigs
+            .checked_mul(self.effective_weight())
+            .ok_or(EngineError::MathOverflow)
+    }
+
+    /// `earned = pending_rewards + shares * (stored - paid) / PRECISION`
     ///
     /// Read-only. Call [`RewardGlobals::sync`] first for a live figure.
     pub fn earned(&self, globals: &RewardGlobals) -> EngineResult<u64> {
@@ -44,7 +64,7 @@ impl MinerPosition {
             .checked_sub(self.reward_per_rig_paid)
             .ok_or(EngineError::MathOverflow)?;
 
-        let accrued = (self.rigs as u128)
+        let accrued = (self.shares()? as u128)
             .checked_mul(delta)
             .ok_or(EngineError::MathOverflow)?
             / PRECISION;
@@ -91,7 +111,7 @@ pub fn buy_rigs(
 
     let quote = quote_purchase(count, rig_price_lamports, purchase_fee_bps)?;
 
-    globals.add_rigs(count)?;
+    globals.add_rigs(count, position.effective_weight())?;
     position.rigs = position
         .rigs
         .checked_add(count)
@@ -170,7 +190,7 @@ pub fn compound(
         .checked_sub(quote.total_lamports)
         .ok_or(EngineError::MathOverflow)?;
 
-    globals.add_rigs(count)?;
+    globals.add_rigs(count, position.effective_weight())?;
     position.rigs = position
         .rigs
         .checked_add(count)
@@ -198,12 +218,13 @@ pub fn compound(
     })
 }
 
-/// `estimated_output = (user_rigs / total_rigs) * reward_rate`, in lamports per
-/// second. Display-only; the chain never uses this figure.
+/// `estimated_output = (user_shares / total_shares) * reward_rate`, in lamports
+/// per second. Display-only; the chain never uses this figure.
 pub fn estimated_output_per_second(globals: &RewardGlobals, position: &MinerPosition) -> u64 {
-    if globals.total_rigs == 0 {
+    if globals.total_shares == 0 {
         return 0;
     }
-    let v = (position.rigs as u128) * (globals.reward_rate as u128) / globals.total_rigs as u128;
+    let shares = position.shares().unwrap_or(u64::MAX);
+    let v = (shares as u128) * (globals.reward_rate as u128) / globals.total_shares as u128;
     u64::try_from(v).unwrap_or(u64::MAX)
 }

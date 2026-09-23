@@ -65,6 +65,9 @@ function config(over: Partial<Config>): Config {
     feeVaultBump: 255,
     version: 1,
     bump: 255,
+    founder: 'x' as never,
+    launchT0: 0n,
+    totalShares: 0n,
     ...over,
   } as Config;
 }
@@ -78,22 +81,24 @@ describe('APR, phase and threshold match the Rust engine', () => {
 
   it('agrees on every row', () => {
     for (const r of rows) {
-      const [rate, finish, total, price, fee, now, extra, apr, phase, kind, value] = r as [
-        bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint,
-      ];
+      const [rate, finish, total, price, fee, now, extra, weight, apr, phase, kind, value] =
+        r as [
+          bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint,
+          bigint,
+        ];
       const i: YieldInputs = {
         rewardRate: rate,
         rewardPeriodFinish: finish,
-        totalRigs: total,
+        totalShares: total,
         rigPriceLamports: price,
         purchaseFeeBps: fee,
         now,
       };
       const ctx = r.join(',');
-      expect(aprBps(i, extra), ctx).toBe(apr);
+      expect(aprBps(i, extra, weight), ctx).toBe(apr);
       expect(currentPhase(i), ctx).toBe(PHASES[Number(phase)]);
       const t = nextThreshold(i);
-      if (kind === 0n) expect(t, ctx).toMatchObject({ kind: 'rigs', atTotalRigs: value });
+      if (kind === 0n) expect(t, ctx).toMatchObject({ kind: 'shares', atTotalShares: value });
       else if (kind === 1n) expect(t, ctx).toEqual({ kind: 'windowEnds', at: value });
       else expect(t, ctx).toEqual({ kind: 'none' });
     }
@@ -105,23 +110,25 @@ describe('compounding projection matches the Rust engine', () => {
 
   it('has vectors with and without compounding', () => {
     expect(rows.length).toBeGreaterThan(100);
-    expect(rows.some((r) => r[7] === 0n)).toBe(true);
-    expect(rows.some((r) => (r[7] ?? 0n) > 0n)).toBe(true);
+    expect(rows.some((r) => r[9] === 0n)).toBe(true);
+    expect(rows.some((r) => (r[9] ?? 0n) > 0n)).toBe(true);
+    expect(rows.some((r) => r[2] === 105n)).toBe(true);
   });
 
   it('agrees on every row', () => {
     for (const r of rows) {
-      const [total, rate, finish, stored, rigs, pending, now, interval, horizon, ...expected] =
+      const [total, shares, weight, rate, finish, stored, rigs, pending, now, interval, horizon, ...expected] =
         r as bigint[];
       const p = projectCompounding(
         config({
           totalRigs: total!,
+          totalShares: shares!,
           rewardRate: rate!,
           rewardPeriodFinish: finish!,
           rewardLastUpdate: 0n,
           rewardPerRigStored: stored!,
         }),
-        { rigs: rigs!, rewardPerRigPaid: stored!, pendingRewards: pending! },
+        { rigs: rigs!, weight: Number(weight!), rewardPerRigPaid: stored!, pendingRewards: pending! },
         now!,
         interval!,
         horizon!,
@@ -167,6 +174,7 @@ describe('hypothetical planting', () => {
   it('earns exactly its share from now on, and nothing from before', () => {
     const base = config({
       totalRigs: 999n,
+      totalShares: 99_900n,
       rewardRate: 1_000_000n,
       rewardPeriodFinish: 1_000_000n,
       rewardLastUpdate: 0n,
@@ -175,6 +183,7 @@ describe('hypothetical planting', () => {
     const now = 500n;
     const h = hypotheticalPlanting(base, now, 1n);
     expect(h.config.totalRigs).toBe(1_000n);
+    expect(h.config.totalShares).toBe(100_000n);
     expect(h.config.rewardLastUpdate).toBe(now);
     const p = projectCompounding(h.config, h.miner, now, 0n, 10_000n);
     const PRECISION = 1_000_000_000_000n;

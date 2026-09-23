@@ -12,11 +12,16 @@ const PRICE: u64 = 10_000_000; // 0.01 SOL
 const FEE: u16 = 300; // 3.00%
 const DAY: i64 = 86_400;
 
+/// Inputs for `total_rigs` base-weight rigs.
 fn inputs(rate: u64, total_rigs: u64, now: i64, finish: i64) -> YieldInputs {
+    shares_inputs(rate, total_rigs * WEIGHT_BASE, now, finish)
+}
+
+fn shares_inputs(rate: u64, total_shares: u64, now: i64, finish: i64) -> YieldInputs {
     YieldInputs {
         reward_rate: rate,
         reward_period_finish: finish,
-        total_rigs,
+        total_shares,
         rig_price_lamports: PRICE,
         purchase_fee_bps: FEE,
         now,
@@ -103,14 +108,14 @@ fn next_threshold_is_exact_to_the_rig() {
         let i = inputs(rate, total, 0, 180 * DAY);
         let phase = current_phase(&i).unwrap();
         match next_threshold(&i).unwrap() {
-            NextThreshold::Rigs {
+            NextThreshold::Shares {
                 phase: next,
-                at_total_rigs,
+                at_total_shares,
             } => {
                 assert_eq!(next, phase.next());
-                assert!(at_total_rigs > total);
-                let at = inputs(rate, at_total_rigs, 0, 180 * DAY);
-                let before = inputs(rate, at_total_rigs - 1, 0, 180 * DAY);
+                assert!(at_total_shares > total * WEIGHT_BASE);
+                let at = shares_inputs(rate, at_total_shares, 0, 180 * DAY);
+                let before = shares_inputs(rate, at_total_shares - 1, 0, 180 * DAY);
                 assert!(
                     apr_bps(&at, 0).unwrap() < phase.floor_bps(),
                     "at the threshold the APR must be below {phase:?}'s floor"
@@ -458,11 +463,13 @@ fn exhaustion_is_defined() {
     );
 }
 
-/// There is no referral path: the instruction set is exactly the one below,
-/// so self-referral and circular referral amplification have nothing to act on.
-/// A referral instruction would have to be added here deliberately.
+/// Referral V1 lives entirely inside `buy_rigs` (an optional referrer bound
+/// once, as a reward weight). There is no referral instruction and no
+/// referrer payout: the instruction set is exactly the one below, so a
+/// referral can never move lamports on its own. Adding one would have to be
+/// done here, deliberately.
 #[test]
-fn exploit_no_referral_surface_exists() {
+fn exploit_referral_has_no_payout_surface() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../programs/sol-rigs/src/lib.rs"
@@ -472,7 +479,7 @@ fn exploit_no_referral_surface_exists() {
     let mut fns: Vec<&str> = program
         .lines()
         .filter_map(|l| l.trim().strip_prefix("pub fn "))
-        .map(|l| l.split('(').next().unwrap())
+        .map(|l| l.split(['(', '<']).next().unwrap())
         .collect();
     fns.sort_unstable();
     assert_eq!(
@@ -492,7 +499,15 @@ fn exploit_no_referral_surface_exists() {
             "withdraw_fees",
         ]
     );
-    assert!(!src.to_lowercase().contains("referr"));
+    let events = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../programs/sol-rigs/src/events.rs"
+    ))
+    .unwrap();
+    // The only referral event records a binding; none records a payment.
+    assert!(events.contains("pub struct ReferralBound"));
+    assert!(!events.to_lowercase().contains("referralpaid"));
+    assert!(!events.to_lowercase().contains("referrer_reward"));
 }
 
 /// Every money handler reads the chain clock itself; none accepts a time.
@@ -534,8 +549,8 @@ proptest! {
         now in -1_000i64..1_000_000,
         finish in -1_000i64..1_000_000,
     ) {
-        let i = YieldInputs { reward_rate: rate, reward_period_finish: finish, total_rigs: rigs,
-            rig_price_lamports: price, purchase_fee_bps: fee, now };
+        let i = YieldInputs { reward_rate: rate, reward_period_finish: finish,
+            total_shares: rigs * WEIGHT_BASE, rig_price_lamports: price, purchase_fee_bps: fee, now };
         let apr = apr_bps(&i, extra).unwrap();
         let _ = next_threshold(&i).unwrap();
         if apr > 0 && apr < u64::MAX {

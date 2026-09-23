@@ -112,6 +112,11 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         fee_vault_bump: 252,
         version: 1,
         bump: 253,
+        // The founder the preflight expects (`sneaks.skr` → this wallet).
+        founder: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
+        launch_t0: 1_779_900_000,
+        // 14,156 base rigs + 125 referred rigs.
+        total_shares: 14_156 * 100 + 125 * 105,
     };
     let miner = sol_rigs::state::Miner {
         owner: Pubkey::new_from_array([9u8; 32]),
@@ -126,6 +131,8 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         created_at: 1_770_000_000,
         last_action_at: 1_785_000_000,
         bump: 254,
+        weight: 105,
+        referrer: Pubkey::new_from_array([7u8; 32]),
     };
 
     let mut cbuf = Vec::new();

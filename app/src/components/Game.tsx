@@ -5,7 +5,7 @@
  * the `host` prop, so there is exactly one implementation of the loop.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Address } from '@solana/kit';
+import { isAddress, type Address } from '@solana/kit';
 
 import { buyRigs, claim, compound } from '../lib/actions';
 import { PRODUCT_NAME, PRODUCT_NAME_SHORT } from '../lib/brand';
@@ -13,6 +13,8 @@ import { rpc } from '../lib/chain';
 import { formatCount, formatSol } from '../lib/format';
 import { estimatedOutputPerDay } from '../lib/program/accrual';
 import { rigsAffordable } from '../lib/program/pricing';
+import { discoverIdentity } from '../lib/program/identity';
+import { accessPhase, purchaseAllowed, type Identity } from '../lib/program/launch';
 import { useLiveAccrual } from '../hooks/useLiveAccrual';
 import { useRigsState, type LifecycleSource } from '../hooks/useRigsState';
 import type { RigsSigner } from '../lib/signer';
@@ -23,7 +25,20 @@ import { RigVisual } from './RigVisual';
 import { RoomLeaderboard } from './RoomLeaderboard';
 import { ShareCard, type SharePayload } from './ShareCard';
 import { TransparencyPanel } from './TransparencyPanel';
+import { FounderActivation } from './FounderActivation';
+import { LaunchPanel } from './LaunchPanel';
 import { YieldPanel } from './YieldPanel';
+
+/**
+ * `?ref=<wallet>` — a proposed referrer, nothing more. The program decides
+ * whether it binds (first purchase only, an existing planter, not yourself).
+ */
+function referrerFromUrl(self: Address | null): Address | null {
+  if (typeof window === 'undefined') return null;
+  const raw = new URLSearchParams(window.location.search).get('ref');
+  if (!raw || !isAddress(raw) || raw === self) return null;
+  return raw as Address;
+}
 
 export type CherryRoomInfo = { id: string; title: string; memberCount: number };
 
@@ -51,6 +66,21 @@ export function Game({ host }: { host: Host }) {
     host.lifecycle,
   );
   const { claimable, chainTime } = useLiveAccrual(snapshot, live);
+
+  // The name record this wallet can present. Display and account selection
+  // only: the program re-verifies it on every purchase.
+  const [identity, setIdentity] = useState<Identity | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setIdentity(null);
+    if (!host.address) return;
+    void discoverIdentity(rpc(), host.address).then((p) => {
+      if (!cancelled) setIdentity(p.kind);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [host.address]);
 
   const [busy, setBusy] = useState<null | 'buy' | 'claim' | 'compound'>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -97,6 +127,13 @@ export function Game({ host }: { host: Host }) {
   // read-only state on screen. State is never unmounted.
   const canAct = host.walletConnected && !!host.signer && !paused && busy === null;
 
+  // Planting follows the launch phase. Before T0 nobody plants through the
+  // app — the founder activation is the one deliberate first-buy procedure
+  // (app/scripts/ops/first-buy.ts), with preflight and explicit confirmation.
+  const phase = config ? accessPhase(config.launchT0, chainTime) : 'preLaunch';
+  const plantOpen = phase !== 'preLaunch' && purchaseAllowed(phase, identity ?? 'none');
+  const referrer = !miner ? referrerFromUrl(host.address) : null;
+
   const compoundPreview = useMemo(() => {
     if (!config) return 0n;
     try {
@@ -129,7 +166,7 @@ export function Game({ host }: { host: Host }) {
   );
 
   const onBuy = (count: bigint) =>
-    void run('buy', () => buyRigs(host.signer!, count));
+    void run('buy', () => buyRigs(host.signer!, count, { referrer }));
 
   const onClaim = () =>
     void run('claim', async () => {
@@ -153,18 +190,21 @@ export function Game({ host }: { host: Host }) {
       }
     });
 
+  const preLaunch = !!config && phase === 'preLaunch';
   const statusClass = !live
     ? 'status status--offline'
-    : paused || !scheduleLive
+    : paused || !scheduleLive || preLaunch
       ? 'status status--paused'
       : 'status status--live';
   const statusLabel = !live
     ? 'Paused'
     : paused
       ? 'Halted'
-      : scheduleLive
-        ? 'Live'
-        : 'Unfunded';
+      : preLaunch
+        ? 'Pre-launch'
+        : scheduleLive
+          ? 'Live'
+          : 'Unfunded';
 
   return (
     <main className="shell">
@@ -200,6 +240,20 @@ export function Game({ host }: { host: Host }) {
         </div>
       ) : (
         <>
+          <LaunchPanel
+            config={config}
+            chainTime={chainTime}
+            wallet={host.address}
+            identity={identity}
+          />
+
+          {phase === 'preLaunch' &&
+          host.address !== null &&
+          host.address === config.founder &&
+          host.signer ? (
+            <FounderActivation founder={host.address} signer={host.signer} onDone={refresh} />
+          ) : null}
+
           <YieldPanel
             config={config}
             miner={miner}
@@ -207,6 +261,7 @@ export function Game({ host }: { host: Host }) {
             rewardVaultLamports={snap.rewardVaultDistributable}
             chainTime={chainTime}
             snapshotTime={snap.chainTimeSeconds}
+            weight={miner?.weight ?? 0}
           />
 
           <Readout label="My hashpower" value={formatCount(rigs)} unit="RIGS" rigs />
@@ -264,7 +319,15 @@ export function Game({ host }: { host: Host }) {
             config={config}
             chainTime={chainTime}
             walletLamports={walletLamports}
-            disabled={!canAct}
+            disabled={!canAct || !plantOpen}
+            closedReason={
+              plantOpen
+                ? null
+                : phase === 'preLaunch'
+                  ? 'Planting opens when the founder activates the grove.'
+                  : 'Planting is not open to this wallet in the current access phase.'
+            }
+            referrer={referrer}
             busy={busy === 'buy'}
             onBuy={onBuy}
           />

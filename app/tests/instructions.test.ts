@@ -38,12 +38,26 @@ describe('buy_rigs', () => {
     expect(ix.programAddress).toBe(PROGRAM_ID);
   });
 
-  it('carries the discriminator followed by a little-endian u64 count', () => {
+  it('carries the discriminator, a little-endian u64 count and Option::None', () => {
     expect(Array.from(ix.data!.slice(0, 8))).toEqual(
       Array.from(IX_DISCRIMINATOR.buyRigs),
     );
-    expect(Array.from(ix.data!.slice(8))).toEqual([10, 0, 0, 0, 0, 0, 0, 0]);
-    expect(ix.data!.length).toBe(16);
+    expect(Array.from(ix.data!.slice(8))).toEqual([10, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(ix.data!.length).toBe(17);
+  });
+
+  it('encodes a referrer as Option::Some and appends its miner account', () => {
+    const REF = address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM');
+    const REF_MINER = address('11111111111111111111111111111116');
+    const IDENTITY = address('11111111111111111111111111111117');
+    const r = buyRigsInstruction(OWNER, MINER, PDAS, 1n, {
+      identity: IDENTITY,
+      referrer: { wallet: REF, miner: REF_MINER },
+    });
+    expect(r.data!.length).toBe(8 + 8 + 1 + 32);
+    expect(r.data![16]).toBe(1);
+    expect(r.accounts!.slice(7).map((a) => a.address)).toEqual([IDENTITY, REF_MINER]);
+    expect(r.accounts!.slice(7).every((a) => a.role === AccountRole.READONLY)).toBe(true);
   });
 
   it('orders accounts exactly as the Accounts struct declares them', () => {
@@ -54,6 +68,8 @@ describe('buy_rigs', () => {
       PDAS.capitalVault,
       PDAS.feeVault,
       PDAS.rewardVault,
+      SYSTEM_PROGRAM_ID,
+      // remaining: identity placeholder
       SYSTEM_PROGRAM_ID,
     ]);
   });

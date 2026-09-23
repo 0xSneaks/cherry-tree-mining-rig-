@@ -469,6 +469,7 @@ fn t19_extreme_inputs_error_rather_than_wrap() {
     // ~31 years of elapsed time at 1000 SOL/second with a single rig.
     let mut g = RewardGlobals {
         total_rigs: 1,
+        total_shares: WEIGHT_BASE,
         reward_rate: MAX_REWARD_RATE_LAMPORTS_PER_SECOND,
         reward_period_finish: i64::MAX,
         reward_last_update: 0,

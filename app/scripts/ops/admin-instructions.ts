@@ -36,7 +36,10 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 }
 
 /**
- * `initialize(rig_price_lamports, purchase_fee_bps, reward_funder, fee_recipient)`.
+ * `initialize(rig_price_lamports, purchase_fee_bps, reward_funder, fee_recipient, founder)`.
+ *
+ * `founder` is pinned forever: the only wallet whose purchase can activate
+ * launch. There is no setter.
  *
  * `feeRecipient` is a payout destination pinned into config, not a signer:
  * `withdraw_fees` may pay it and nothing else, and it never has to sign.
@@ -49,6 +52,7 @@ export function initializeInstruction(
     purchaseFeeBps: number;
     rewardFunder: Address;
     feeRecipient: Address;
+    founder: Address;
   },
 ): Instruction {
   return {
@@ -67,6 +71,7 @@ export function initializeInstruction(
       new Uint8Array(getU16Encoder().encode(args.purchaseFeeBps)),
       new Uint8Array(getAddressEncoder().encode(args.rewardFunder)),
       new Uint8Array(getAddressEncoder().encode(args.feeRecipient)),
+      new Uint8Array(getAddressEncoder().encode(args.founder)),
     ),
   };
 }

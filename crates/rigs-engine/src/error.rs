@@ -32,12 +32,32 @@ pub enum EngineError {
     InsufficientRewardBacking,
     /// Clock moved backwards past a recorded checkpoint.
     ClockWentBackwards,
+    /// A wallet named itself as its own referrer.
+    SelfReferral,
+    /// A referrer was supplied for a position that already exists. The
+    /// referrer is bound once, at the first purchase, and never replaced.
+    ReferrerAlreadyBound,
+    /// The referrer is not an existing planter.
+    InvalidReferrer,
+    /// Buying is closed: pre-launch (and not the founder activation), or the
+    /// current access phase requires an identity the buyer did not prove.
+    AccessDenied,
+    /// The founder activation purchase was attempted without an active,
+    /// funded reward schedule.
+    ActivationUnfunded,
 }
 
 impl fmt::Display for EngineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             EngineError::MathOverflow => "checked math overflowed",
+            EngineError::SelfReferral => "a wallet cannot refer itself",
+            EngineError::ReferrerAlreadyBound => "referrer is bound at the first purchase only",
+            EngineError::InvalidReferrer => "referrer is not an existing planter",
+            EngineError::AccessDenied => "buying is not open to this wallet in the current phase",
+            EngineError::ActivationUnfunded => {
+                "activation requires an active funded reward schedule"
+            }
             EngineError::InvalidConfig => "invalid config",
             EngineError::InvalidRigCount => "invalid rig count",
             EngineError::RigSupplyExceeded => "rig supply exceeded",

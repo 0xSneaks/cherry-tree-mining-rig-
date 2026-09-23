@@ -7,15 +7,16 @@
  * real decoding of real layouts — only the transport is faked.
  */
 import type { Page, Route } from '@playwright/test';
+import { address, getAddressEncoder } from '@solana/kit';
 
 export const WALLET = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
 
 /** Rust fixture: paused=true, so it is rewritten per test as needed. */
 const CONFIG_HEX =
-  '9b0caae01efacc82010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303dd4fd8b645aa70d07045a4fc0adf6fc5c9d235e334252c8d5da4b989a625d9610180969800000000002c01c937000000000000b288840100000000803bb16a0000000000a5186a00000000d20a3f4eeee073c3f60fe98e010000009210000000000000c007857303000000c08c6c050000000040ed9604000000000000943577000000000087930300000040420f0000000000db03000000000000fafbfc0100fd';
+  '9b0caae01efacc82010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303dd4fd8b645aa70d07045a4fc0adf6fc5c9d235e334252c8d5da4b989a625d9610180969800000000002c01c937000000000000b288840100000000803bb16a0000000000a5186a00000000d20a3f4eeee073c3f60fe98e010000009210000000000000c007857303000000c08c6c050000000040ed9604000000000000943577000000000087930300000040420f0000000000db03000000000000fafbfc0100fddd4fd8b645aa70d07045a4fc0adf6fc5c9d235e334252c8d5da4b989a625d961601e176a00000000f5cc150000000000';
 
 const MINER_HEX =
-  'df710f367b7a8c6409090909090909090909090909090909090909090909090909090909090909092a00000000000000ea7e26e5384da55a050000000000000038191701000000001e000000000000000c0000000000000040f76a1200000000000e270700000000e0dc4e0300000000800e80690000000040f0646a00000000fe';
+  'df710f367b7a8c6409090909090909090909090909090909090909090909090909090909090909092a00000000000000ea7e26e5384da55a050000000000000038191701000000001e000000000000000c0000000000000040f76a1200000000000e270700000000e0dc4e0300000000800e80690000000040f0646a00000000fe69000707070707070707070707070707070707070707070707070707070707070707';
 
 function hexToBytes(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
@@ -63,6 +64,9 @@ const OFF_PERIOD_FINISH = OFF_PAUSED + 1 + 8 + 2 + 8 + 8;
 const OFF_LAST_UPDATE = OFF_PERIOD_FINISH + 8;
 const OFF_RPR_STORED = OFF_LAST_UPDATE + 8;
 const OFF_RATE = OFF_PAUSED + 1 + 8 + 2 + 8;
+// Launch fields are appended after `bump` (Config is 313 bytes).
+const OFF_FOUNDER = 265;
+const OFF_LAUNCH_T0 = 297;
 
 /** ≈2.200 SOL/day across the whole mine, as on the spec's example screen. */
 const REWARD_RATE = 25_462n;
@@ -78,7 +82,11 @@ const OFF_MINER_PENDING = OFF_MINER_RPR_PAID + 16;
  * the figure the spec's example screen shows.
  */
 const RPR_STORED = 1_000_000_000_000_000_000n;
-const RPR_PAID = 564_500_000_000_000_000n;
+// Per-SHARE gap: 18_291_000 lamports × 1e12 / (42 rigs × 100 weight).
+const RPR_PAID = 1_000_000_000_000_000_000n - 4_355_000_000_000_000n;
+// Miner.weight (u16) sits right after `bump`; the Rust fixture carries a
+// referred 105, the rendering fixture a base 100.
+const OFF_MINER_WEIGHT = 129;
 
 export type StubOptions = {
   paused?: boolean;
@@ -88,7 +96,17 @@ export type StubOptions = {
   runwaySeconds?: bigint;
   /** Omit the miner account, as for a wallet that has never bought a rig. */
   withMiner?: boolean;
+  /** Seconds since T0 at `now`; `null` = not activated. Default: public. */
+  sinceLaunch?: bigint | null;
+  /** Pin this wallet as the founder instead of the fixture's. */
+  founder?: string;
 };
+
+function setAddress(bytes: Uint8Array, offset: number, b58: string): Uint8Array {
+  const copy = bytes.slice();
+  copy.set(getAddressEncoder().encode(address(b58)), offset);
+  return copy;
+}
 
 export function configBytes(opts: StubOptions = {}): Uint8Array {
   const now = opts.now ?? 1_780_000_000n;
@@ -100,6 +118,9 @@ export function configBytes(opts: StubOptions = {}): Uint8Array {
   bytes = setI64(bytes, OFF_LAST_UPDATE, now);
   bytes = setU64(bytes, OFF_RATE, REWARD_RATE);
   bytes = setU128(bytes, OFF_RPR_STORED, RPR_STORED);
+  const since = opts.sinceLaunch === undefined ? 3n * 86_400n : opts.sinceLaunch;
+  bytes = setI64(bytes, OFF_LAUNCH_T0, since === null ? 0n : now - since);
+  if (opts.founder) bytes = setAddress(bytes, OFF_FOUNDER, opts.founder);
   return bytes;
 }
 
@@ -107,6 +128,8 @@ export function minerBytes(): Uint8Array {
   let bytes = hexToBytes(MINER_HEX);
   bytes = setU128(bytes, OFF_MINER_RPR_PAID, RPR_PAID);
   bytes = setU64(bytes, OFF_MINER_PENDING, 0n);
+  const view = new DataView(bytes.buffer, bytes.byteOffset);
+  view.setUint16(OFF_MINER_WEIGHT, 100, true);
   return bytes;
 }
 

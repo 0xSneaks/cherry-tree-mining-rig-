@@ -197,8 +197,15 @@ describe('theme is honest seeds, not a hand-tuned palette', () => {
     // The embed derives ~60 variables from these. Hand-tuning the granular
     // ones fights that engine and lands on a tint-over-default look.
     const keys = Object.keys(CHERRY_CHAT_THEME);
-    expect(keys).toEqual(['mode', 'primaryColor', 'backgroundColor', 'accentColor']);
-    expect(keys.filter((k) => k !== 'mode')).toHaveLength(3);
+    expect(keys).toEqual(['mode', 'primaryColor', 'backgroundColor', 'accentColor', 'gmColor']);
+    const seeds = keys.filter((k) => k !== 'mode' && k !== 'gmColor');
+    expect(seeds).toHaveLength(3);
+  });
+
+  it("paints Cherry's GM badge with the canonical --blossom, cosmetically", () => {
+    // A documented EmbedTheme field; the app never reads the GM count.
+    expect(CHERRY_CHAT_THEME.gmColor).toBe(token('blossom'));
+    expect(CHERRY_CHAT_THEME.gmColor).toBe('#ff5fa2');
   });
 
   it('sets none of the granular derived variables', () => {

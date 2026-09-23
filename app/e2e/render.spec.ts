@@ -51,6 +51,42 @@ test.describe('standalone path', () => {
   });
 });
 
+test.describe('referral link', () => {
+  const REF = 'US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx';
+
+  /**
+   * App side of `?ref=`: once the launch URL reaches the app with the query
+   * intact, embedded mode reads it exactly as standalone does. Whether Cherry
+   * forwards the query into the mini-app launch is a host behaviour this
+   * suite cannot observe — see LAUNCH.md, "Referral links inside Cherry".
+   */
+  test('embedded: a new wallet sees the referrer from ?ref=', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { withMiner: false });
+    await page.goto(`/?ref=${REF}&cherry_embed=1`);
+    await expect(page.getByText(/Referred by US51…ELFx/)).toBeVisible();
+  });
+
+  test('embedded: self-referral and junk are ignored', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { withMiner: false });
+    await page.goto(`/?ref=${WALLET}`);
+    await expect(page.getByText('My grove')).toBeVisible();
+    await expect(page.getByText(/Referred by/)).toHaveCount(0);
+    await page.goto('/?ref=not-an-address');
+    await expect(page.getByText('My grove')).toBeVisible();
+    await expect(page.getByText(/Referred by/)).toHaveCount(0);
+  });
+
+  test('embedded: an existing planter never shows a referrer', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto(`/?ref=${REF}`);
+    await expect(page.getByText('My grove')).toBeVisible();
+    await expect(page.getByText(/Referred by/)).toHaveCount(0);
+  });
+});
+
 test.describe('embedded path', () => {
   test.beforeEach(async ({ page }) => {
     await stubCherryHost(page);

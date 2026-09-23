@@ -58,7 +58,7 @@ export function cherryChatEnabled(): boolean {
  *
  * The embed runs a calibrated derivation engine: hand it 2–4 honest brand
  * colours and it derives the whole ~60-variable palette with contrast floors
- * baked in. Hand-tuning the granular variables fights that engine and lands on
+ * baked in. (`gmColor` below is not a seed: it only paints Cherry's GM badge.) Hand-tuning the granular variables fights that engine and lands on
  * a tint-filter-over-the-default look, so there are exactly three seeds here
  * plus `mode`, extracted by role from `globals.css`:
  *
@@ -93,6 +93,13 @@ export const CHERRY_CHAT_THEME = {
   backgroundColor: '#080c16',
   /** `--blossom-soft`: the app's secondary highlight. */
   accentColor: '#ff8fbf',
+  /**
+   * `--blossom` on Cherry's own GM (👋) header badge. A documented
+   * `EmbedTheme` field (SDK default #FFB800), passed through `setTheme`
+   * untouched. Cosmetic only: the app never reads the GM count and no
+   * economics depend on it.
+   */
+  gmColor: '#ff5fa2',
 } as const;
 
 export const CHERRY_CHAT_LAYOUT = {

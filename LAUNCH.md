@@ -99,6 +99,22 @@ developer docs (dev.sns.id) define:
 Subdomains are not top-level domains, so they are rejected by the parent
 check.
 
+### RPC requirements for discovery
+
+The app finds a wallet's proof with:
+
+- `getProgramAccounts` + `memcmp` on ANS, the AllDomains Name House, SPL Name
+  Service and the SNS tokenizer;
+- `getTokenAccountsByOwner` (SPL Token) for held NFTs — never
+  `getProgramAccounts` on the Token program, which most RPCs refuse;
+- `getAccountInfo` for the wrapped / tokenized name record.
+
+Each path fails closed on its own: a refused or failed call establishes
+nothing and never hides a proof found on another path. Candidates pass the
+program's own checks client side before they are used. The mainnet RPC must
+allow `getProgramAccounts` with filters on those four programs, or `.skr` /
+`.sns` holders are treated as the public phase (`app/tests/identity.test.ts`).
+
 ## Referral V1
 
 - **Weight.** A validly referred wallet plants at **1.05× reward weight**.
@@ -110,6 +126,11 @@ check.
 - **Rejected:** self-referral, a non-planter referrer, a forged referrer
   account, and any referrer on a later purchase.
 - **No payouts.** There is no referrer payout and there are no levels.
+- **Links.** `?ref=<wallet>` is read from the launch URL in both modes
+  (`app/e2e/render.spec.ts`, "referral link"). Whether Cherry forwards a
+  shared link's query string into the mini-app launch is Cherry host
+  behaviour, not documented in the SDK; it needs a real-Cherry check before
+  referral links are promoted inside Cherry.
 - **Limit.** This does not prove distinct humans.
 
 ## First buy — the one live transaction

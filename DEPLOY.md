@@ -215,36 +215,49 @@ then asserts the fully-funded invariant.
 
 ---
 
-## 6. Smoke test on real devnet
+## 6. Launch rehearsal on real devnet
+
+Since launch gating, a non-founder purchase before T0 is refused, so the old
+two-wallet smoke (`devnet-smoke.sh`) can no longer run on a fresh deployment.
+The rehearsal replaces it:
 
 ```bash
-./scripts/devnet-smoke.sh 5 5 45     # rigsA rigsB waitSeconds
+# Init with a THROWAWAY devnet founder (never the mainnet founder):
+CHERRY_TREE_FOUNDER=<devnet founder pubkey> CHERRY_TREE_ALLOW_OTHER_FOUNDER=1 \
+CHERRY_TREE_RIG_PRICE_LAMPORTS=1000000 ./scripts/devnet-init.sh
+./scripts/devnet-fund.sh 1.0 259200          # must outlive T0 + 48h
+
+CHERRY_TREE_FOUNDER_KEYPAIR=<devnet founder keypair> \
+./scripts/devnet-rehearsal.sh activate 60     # right away
+./scripts/devnet-rehearsal.sh public 60       # at or after T0 + 48h, fresh wallets A/B
 ```
 
-Two distinct wallets, real elapsed time:
+`activate` proves:
 
-```
-WALLET A  buy rigs
-   wait   (real seconds, real slots)
-WALLET B  buy rigs — later
-   wait
-WALLET A  claim
-WALLET B  compound
-```
+- a non-founder purchase before T0 is refused (`AccessDenied`);
+- the founder purchase writes T0 = its block time, and a second founder
+  purchase leaves T0 unchanged;
+- a wallet with no domain is refused in the `.skr` phase;
+- a founder replant pays no penalty and keeps the planting clock;
+- a founder claim inside 24h pays 25%, and a sole planter's penalty stays
+  in the reward vault as dust;
+- the fee and capital vaults are untouched, and the reward vault is solvent.
 
-Then it reads chain state and asserts, in exact integer lamports:
+`public` proves:
 
-1. **Wallet B received no reward attributable to time before it owned rigs.**
-   Checked at the mechanism — B's `reward_per_rig_paid` watermark equals the
-   accumulator at the moment of purchase and its ore bin is empty — and again
-   against everything B has since realised.
-2. **`reward vault distributable >= funded - claimed - compounded`.**
-3. Purchase lamports landed in CAPITAL and FEE, never REWARD.
-4. `claim` paid a positive amount and left the rig count untouched.
-5. `compound` minted whole rigs and preserved the exact remainder.
+- public planting at weight 100, and a referred first planting at weight
+  105 with the referrer bound;
+- a second referrer is refused (`ReferrerAlreadyBound`);
+- a replant pays no penalty;
+- a claim inside 24h pays 25% and only the net leaves the reward vault;
+- the reward vault is solvent.
 
-It refuses to run if the two wallet paths resolve to the same key, if the
-program is paused, or if the reward schedule has already finished.
+`.skr` / `.sns` acceptance cannot run on devnet: those registries are
+mainnet-only. They are covered by `programs/sol-rigs/tests/launch.rs` and
+`app/tests/identity.test.ts`.
+
+The `devnet.yml` workflow runs the same thing (`stage: activate`, then
+`stage: public` two days later).
 
 ---
 

@@ -13,7 +13,10 @@
  *     path: `share()` is called with `previewable: true`, which promises the
  *     host that this route renders correctly from `route` + `params` alone,
  *     with no `messageId` and no room. Reading the query string instead would
- *     make that promise false and show an empty card.
+ *     make that promise false and show an empty card. Inside Cherry the
+ *     snapshot is the only source: a field the host did not hand over is left
+ *     blank, never filled from the query — everything after `token` in a
+ *     shared URL is attacker-controlled.
  *  2. Query fields — standalone and development only.
  *
  * The provider is mounted only for an inline/preview launch. Outside one,
@@ -61,17 +64,11 @@ function toParams(source: (key: string) => string | undefined): ResultParams {
   } satisfies ResultParams;
 }
 
-/** Inside Cherry: the host's snapshot, with the query as a last resort. */
+/** Inside Cherry: the host's snapshot, and nothing else. */
 function BlinkResult() {
-  const blink = useCherryBlink();
-  const sp = useSearchParams();
-  const params = blink?.params;
+  const params = useCherryBlink()?.params;
 
-  return (
-    <ResultCard
-      params={toParams((key) => str(params?.[key]) ?? sp.get(key) ?? undefined)}
-    />
-  );
+  return <ResultCard params={toParams((key) => str(params?.[key]))} />;
 }
 
 /** Standalone: nothing to read but the query. */

@@ -131,7 +131,7 @@ echo "--> no personal wallet hardcoded"
 REGISTRY_ALLOW='ALTNSZ46uaAUU7XUV6awvdorLGqAsPwa9shm7h4uP2FK|3mX9b4AZaQehNoQGfckVcmgmA6bkBoFcbLj9RMmMyNcU|F3A8kuikEiu6k2399oSJ1PWfcJYDHqpwoQ2e8psSDNuF|NH3uX6FtVE2fNREAioP7hm5RaozotZxeL6khU1EHx51|CPD3hKJE51VuiDE5u5Nosx1u7MXWwKGPff8HFJTtpX4V|TLDHkysf5pCnKsVA4gXpNvmy7psXLPEu4LAdDJthT9S|namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX|58PwtjSDuFHuUkYjH9BYnnQKHfwo9reZhC2zMJv9JPkx|nftD3vbNkNqfj2Sd3HZwbpw4BxxKWr4AjGb9X38JeZk|TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
 HARDCODED=$(grep -rnE "\"[1-9A-HJ-NP-Za-km-z]{43,44}\"" \
   programs/*/src crates/*/src 2>/dev/null \
-  | grep -v "By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH" \
+  | grep -v "C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt" \
   | grep -vE "pubkey!\\(\"($REGISTRY_ALLOW)\"\\)" || true)
 if [[ -n "$HARDCODED" ]]; then
   echo "$HARDCODED"

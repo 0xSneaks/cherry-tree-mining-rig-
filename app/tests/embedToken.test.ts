@@ -261,7 +261,8 @@ describe('wallet ownership proof', () => {
   });
 
   it('rejects an off-curve address without throwing', () => {
-    // The program ID is a hash, not a curve point — a useful real example.
+    // The retired placeholder program ID is a hash, not a curve point, so no
+    // keypair can exist for it — kept only as a real off-curve example.
     expect(
       verifySignature(
         'By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH',

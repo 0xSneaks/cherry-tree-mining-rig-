@@ -94,7 +94,7 @@ It needs three repository secrets, each the **contents** of a keypair JSON:
 
 | Secret | Role |
 |---|---|
-| `DEVNET_PROGRAM_KEYPAIR` | the program's own keypair. Must be the keypair for `By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH` — the workflow refuses to deploy under any other address rather than rewriting `declare_id!`. |
+| `DEVNET_PROGRAM_KEYPAIR` | the program's own keypair. Must be the keypair for `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt` — the workflow refuses to deploy under any other address rather than rewriting `declare_id!`. |
 | `DEVNET_AUTHORITY_KEYPAIR` | pays for the deploy and becomes the program authority. |
 | `DEVNET_REWARD_FUNDER_KEYPAIR` | the only signer permitted to call `fund_rewards`. The workflow refuses to run if this equals the authority. |
 
@@ -179,7 +179,7 @@ resolve.
 Expected program ID:
 
 ```
-By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH
+C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt
 ```
 
 If `target/deploy/sol_rigs-keypair.json` is not that key, the deploy stops. Put

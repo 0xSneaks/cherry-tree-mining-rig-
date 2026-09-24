@@ -12,10 +12,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-sol_rigs = "By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH"
+sol_rigs = "C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt"
 
 [programs.devnet]
-sol_rigs = "By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH"
+sol_rigs = "C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt"
 
 [registry]
 url = "https://api.apr.dev"

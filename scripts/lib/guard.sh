@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-EXPECTED_PROGRAM_ID="By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH"
+EXPECTED_PROGRAM_ID="C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt"
 
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }

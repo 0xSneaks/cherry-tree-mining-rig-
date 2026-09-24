@@ -76,7 +76,7 @@ Requested permissions:
                        a blink. Required by the SDK for share() to work.
 
 Solana network during testing:   DEVNET ONLY
-                     Program ID: By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH
+                     Program ID: C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt
                      No mainnet deployment exists and the deployment scripts
                      refuse mainnet outright (they verify the cluster's genesis
                      hash on chain, not just the URL).

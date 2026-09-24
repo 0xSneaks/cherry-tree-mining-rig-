@@ -146,7 +146,7 @@ export async function stubRpc(page: Page, opts: StubOptions = {}): Promise<void>
     data: [toBase64(data), 'base64'],
     executable: false,
     lamports,
-    owner: 'By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH',
+    owner: 'C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt',
     rentEpoch: '0',
     space: String(data.length),
   });

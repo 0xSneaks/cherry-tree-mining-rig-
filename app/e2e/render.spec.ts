@@ -370,6 +370,22 @@ test.describe('blink snapshot from the Cherry host', () => {
     expect(text).not.toContain('999999');
     expect(text).not.toContain('888888');
   });
+
+  test('a field the host did not provide stays blank, never the query', async ({ page }) => {
+    await stubCherryInlineHost(page, {
+      params: { rigs: '31' },
+    });
+    // The host handed over `rigs` and nothing else; `compounded` and
+    // `claimed` arrive only from the attacker-controlled query.
+    await page.goto('/result?mode=inline&token=stub&compounded=888888&claimed=777777');
+
+    await expect(page.getByText('31')).toBeVisible();
+    const text = await page.locator('body').innerText();
+    expect(text).not.toContain('888888');
+    expect(text).not.toContain('777777');
+    expect(text).not.toContain('SEEDS REPLANTED');
+    expect(text).not.toContain('SOL CLAIMED');
+  });
 });
 
 /**

@@ -9,7 +9,7 @@
 import { address, type Address } from '@solana/kit';
 
 export const PROGRAM_ID: Address = address(
-  'By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH',
+  'CQKvfYNqD5Z2j7rPdXP1q3egWJZS43SdZNtyz6wRrJsv',
 );
 
 export const SYSTEM_PROGRAM_ID: Address = address(

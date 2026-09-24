@@ -45,7 +45,7 @@ pub mod vault;
 
 use instructions::*;
 
-declare_id!("By7qjU4ZYBYQvdkh41UjnhxWmLyP63S3PbdZXbg1UiKH");
+declare_id!("CQKvfYNqD5Z2j7rPdXP1q3egWJZS43SdZNtyz6wRrJsv");
 
 #[program]
 pub mod sol_rigs {

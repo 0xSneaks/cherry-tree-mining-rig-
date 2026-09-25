@@ -72,6 +72,11 @@ jobs:
       - name: Disable Jekyll
         run: touch app/out/.nojekyll
 
+      # Documentation site: plain static HTML with relative links, published
+      # alongside the app under /docs/ on the same host. No build step.
+      - name: Add docs site
+        run: cp -r docs-site app/out/docs
+
       - name: Publish to gh-pages
         run: |
           cd app/out

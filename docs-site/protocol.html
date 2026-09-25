@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="THE CHERRY TREE protocol — initialize, migrate_v2, fund_rewards, buy_rigs, claim, compound; PDA accounts and on-chain state.">
+<meta name="theme-color" content="#080c16">
+<meta property="og:title" content="Protocol — THE CHERRY TREE Docs">
+<meta property="og:description" content="Instructions, program-derived accounts, and state: initialize, migrate_v2, fund_rewards, buy_rigs, claim, compound.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/cherry-tree-hero.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='%23ff5ba8'%3E%3Ccircle cx='16' cy='9.5' r='5.6'/%3E%3Ccircle cx='9.8' cy='14' r='5.6'/%3E%3Ccircle cx='12.2' cy='21.3' r='5.6'/%3E%3Ccircle cx='19.8' cy='21.3' r='5.6'/%3E%3Ccircle cx='22.2' cy='14' r='5.6'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23080c16'/%3E%3C/g%3E%3C/svg%3E">
+<title>Protocol — THE CHERRY TREE Docs</title>
+<link rel="stylesheet" href="assets/style.css?v=3">
+<script src="assets/site.js?v=3" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <button class="menu-btn" aria-expanded="false" aria-controls="sidebar" aria-label="Open menu">☰ MENU</button>
+  <a class="brand" href="index.html">
+    <img src="assets/cherry-tree-hero.png" alt="" width="28" height="28">
+    <span class="wordmark">THE CHERRY TREE</span>
+  </a>
+  <a class="gh" href="https://github.com/PhantomCapAI/cherry-tree-mining-rig-">GitHub ↗</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Documentation">
+      <input class="nav-search" type="search" placeholder="FILTER" aria-label="Filter pages by title">
+      <div class="nav-group">
+        <b>START</b>
+        <a class="page" href="index.html">Overview</a>
+        <a class="page" href="user-flow.html">User flow</a>
+        <a class="page" href="glossary.html">Glossary</a>
+      </div>
+      <div class="nav-group">
+        <b>HOW IT WORKS</b>
+        <a class="page" href="architecture.html">Architecture</a>
+        <a class="page" href="protocol.html">Protocol</a>
+        <a class="page" href="economics.html">Economics</a>
+        <a class="page" href="security.html">Security</a>
+      </div>
+      <div class="nav-group">
+        <b>BUILD &amp; RUN</b>
+        <a class="page" href="development.html">Development</a>
+        <a class="page" href="deployment.html">Deployment</a>
+        <a class="page" href="operations.html">Operations</a>
+      </div>
+      <a class="page gh-side" href="https://github.com/PhantomCapAI/cherry-tree-mining-rig-">GitHub ↗</a>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <article>
+      <p class="eyebrow page-eyebrow">HOW IT WORKS</p>
+      <h1>Protocol</h1>
+
+      <h2 id="instructions">Instructions</h2>
+      <p><code>initialize</code> creates configuration/vaults; <code>migrate_v2</code> appends the Genesis cap; <code>fund_rewards</code> deposits and schedules emissions; <code>buy_rigs</code> purchases whole Seeds and may bind a referrer; <code>claim</code> pays settled net rewards; <code>compound</code> converts affordable whole Seeds and preserves the remainder. Authority instructions pause, change configuration, hand over authority, and withdraw fees.</p>
+
+      <h2 id="program-accounts-pdas">Program accounts (PDAs)</h2>
+      <p>PDAs, defined in <code>programs/sol-rigs/src/constants.rs</code>:</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Account</th><th>Seeds</th></tr></thead>
+          <tbody>
+            <tr><td>Config</td><td><code>config</code></td></tr>
+            <tr><td>Miner</td><td><code>miner</code>, owner</td></tr>
+            <tr><td>Capital vault</td><td><code>capital_vault</code></td></tr>
+            <tr><td>Reward vault</td><td><code>reward_vault</code></td></tr>
+            <tr><td>Fee vault</td><td><code>fee_vault</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="state-and-accounting">State and accounting</h2>
+      <p><code>Config</code> stores authority, funder, fee recipient, pause state, pricing, accumulator, launch, referral, penalty, and cap state. <code>Miner</code> stores Seeds, reward watermark, pending rewards, lifetime counters, weight, referrer, and planting time. The engine uses integer lamports and checked <code>u128</code> intermediates. Purchase lamports cannot reach REWARD because <code>buy_rigs</code> treats it as read-only.</p>
+    </article>
+
+    <nav class="prevnext" aria-label="Pagination">
+      <a class="pagenav prev" href="architecture.html"><span class="dir">← Previous</span><b>Architecture</b></a>
+      <a class="pagenav next" href="economics.html"><span class="dir">Next →</span><b>Economics</b></a>
+    </nav>
+  </main>
+
+  <aside class="rail" aria-label="On this page">
+    <b class="rail-title">ON THIS PAGE</b>
+    <nav class="toc"></nav>
+  </aside>
+</div>
+
+<footer><p class="powered">POWERED BY <a href="https://cherry.fun" rel="noopener">CHERRY</a> · PART OF THE FAMILY</p>
+Implementation source is available under the Business Source License 1.1. This documentation is not a yield promise, investment advice, or a claim that a live deployment exists.</footer>
+</body>
+</html>

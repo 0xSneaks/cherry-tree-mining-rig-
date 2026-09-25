@@ -247,7 +247,8 @@ with one, render it as a callout with a small uppercase pill:
 | **INCOMPLETE / UNCONFIRMED** | `--alert` |
 
 **Terminology:** the product unit is the **Seed** (users *plant* Seeds), never
-"rig", in any prose, heading, button or label. Identifiers in `code` keep their
+"rig" and never "tree", in any prose, heading, button or label (the brand
+name THE CHERRY TREE and the tree artwork are fine — just never count units as trees). Identifiers in `code` keep their
 original on-chain names (`buy_rigs`, `rig_price_lamports`, `rigs-engine`,
 `sol-rigs`) — do not rename those. "PDA seeds" means Solana address seeds,
 not the product unit.
@@ -265,16 +266,6 @@ features, numbers, addresses or links.
 - The Economics phase table: render APR bands as small horizontal bars in
   `--blossom` at decreasing opacity (Genesis brightest → Dormant empty), pure
   CSS, numbers still visible as text.
-- **Seeds grow into trees.** On the Overview and Glossary pages, a
-  "Grove tiers" strip: six small inline SVG scenes left→right, same soil line
-  and dashed roots in each — Bare soil (0, a small mound), Seedling (1–4, a
-  stem with two `--blossom-dim` leaves and one bud), Sapling (5–24),
-  Young tree (25–99), Cherry tree (100–499), Cherry grove (500+, one big tree
-  flanked by two smaller ones). Trunks and branches in `--bark` (`#5b4136`,
-  add it to `:root`), canopies as a faint `--blossom-wash-strong` ellipse
-  filled with five-petal blossoms in `--blossom` / `--blossom-soft`. Caption
-  each with the uppercase tier name and seed range. This mirrors the app's
-  own grove visual, which grows the same way.
 - The claim-penalty schedule (25% / 15% / 5% / 0%) as a 4-step stepped
   timeline in CSS.
 - `<meta name="theme-color" content="#080c16">`, a favicon as an inline SVG
@@ -409,5 +400,4 @@ Scripts under `scripts/` and `app/scripts/ops/` cover initialization, funding, s
 - **REWARD vault:** funded source for claims and compounding.
 - **T0:** chain timestamp of founder activation.
 - **Weight:** reward-share units; base 100, referred 105.
-- **Grove tier:** the tree drawn from a wallet's Seed count — Seedling (1–4), Sapling (5–24), Young tree (25–99), Cherry tree (100–499), Cherry grove (500+). Cosmetic only; it never changes a number.
 ````

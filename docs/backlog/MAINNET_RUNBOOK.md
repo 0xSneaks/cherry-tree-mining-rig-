@@ -12,7 +12,7 @@ a FAIL stops the run.
       duration / source (`REWARD_RUNWAY_OPS.md`), seed price + fee, custody members /
       thresholds / timelocks (`CUSTODY.md`), fee-recipient destination, official referrer,
       referral qualification thresholds, CAPITAL policy statement.
-- [ ] Multisigs created by the founder; addresses recorded; test proposal executed on devnet.
+- [ ] Multisigs provisioned; addresses recorded; test proposal executed on devnet.
 - [ ] Physical Seeker plan (`SEEKER_DEVICE_TEST_PLAN.md`) PASS on devnet.
 - [ ] `CHERRY_APP_ID` issued; production host chosen (header-capable).
 - [ ] External audit status recorded (done / scheduled / accepted risk).

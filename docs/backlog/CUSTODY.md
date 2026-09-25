@@ -35,7 +35,7 @@ hostage indefinitely. This is why config authority must be a multisig with indep
 ## 3. Signer requirements
 
 - Each signer key on its own **hardware wallet** (Ledger/Keystone or Seeker Seed Vault), never
-  a hot keypair file; seed phrases on metal, stored in separate locations.
+  an online signing file; recovery material stored separately.
 - **Independent humans.** A 2-of-3 where one person controls all three keys is operationally
   **single-sig**, whatever the chain shows. At least two different people per multisig; for
   the upgrade authority, at least one signer outside the founder's day-to-day control.

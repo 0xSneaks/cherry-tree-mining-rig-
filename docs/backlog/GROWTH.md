@@ -1,7 +1,7 @@
 # Growth, engagement and transparency layer (Backlog 2–9)
 
 **Category A — built.** Off-chain and frontend only. No instruction, account layout, weight,
-emission or purchase semantics changed. Commit `fc75b3b` on `claude/cherry-postqual-backlog`.
+emission or purchase semantics changed. Commit `fc75b3b` on the post-qualification backlog.
 
 ## What was built
 

@@ -1,7 +1,6 @@
 # Post-qualification miner backlog
 
-Branch: `claude/cherry-postqual-backlog` (isolated). Started from `1586bca` (= protected
-`claude/cherry-protocol-v2` HEAD). **No file under `programs/`, `crates/` or `scripts/` was
+This backlog is isolated. Started from `1586bca` (protected protocol snapshot). **No file under `programs/`, `crates/` or `scripts/` was
 changed; the qualified Part A → Part B lane is untouched.** Nothing was deployed, funded,
 initialised or signed.
 

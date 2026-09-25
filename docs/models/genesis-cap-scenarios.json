@@ -1,0 +1,821 @@
+{
+  "capSensitivity": [
+    {
+      "cap": 10,
+      "participants": 200,
+      "genesisFreshSeeds": 1664,
+      "capBindingBps": 4000,
+      "deferredSeeds": 52868,
+      "largestOrdinaryWalletBps": 60,
+      "actorBps": 300,
+      "founderBps": 60,
+      "top10WalletsBps": 600,
+      "hhi": 51,
+      "actorBpsAfterCompounding": 300,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 1426,
+          "actorBps": 42
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 163,
+          "actorBps": 4
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 16,
+          "actorBps": 0
+        }
+      ]
+    },
+    {
+      "cap": 25,
+      "participants": 200,
+      "genesisFreshSeeds": 2488,
+      "capBindingBps": 1500,
+      "deferredSeeds": 52059,
+      "largestOrdinaryWalletBps": 100,
+      "actorBps": 502,
+      "founderBps": 100,
+      "top10WalletsBps": 1004,
+      "hhi": 66,
+      "actorBpsAfterCompounding": 502,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 1992,
+          "actorBps": 100
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 242,
+          "actorBps": 12
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 24,
+          "actorBps": 1
+        }
+      ]
+    },
+    {
+      "cap": 50,
+      "participants": 200,
+      "genesisFreshSeeds": 3136,
+      "capBindingBps": 700,
+      "deferredSeeds": 51436,
+      "largestOrdinaryWalletBps": 159,
+      "actorBps": 797,
+      "founderBps": 159,
+      "top10WalletsBps": 1594,
+      "hhi": 89,
+      "actorBpsAfterCompounding": 797,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 2387,
+          "actorBps": 190
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 304,
+          "actorBps": 24
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 31,
+          "actorBps": 2
+        }
+      ]
+    },
+    {
+      "cap": 100,
+      "participants": 200,
+      "genesisFreshSeeds": 3886,
+      "capBindingBps": 300,
+      "deferredSeeds": 50736,
+      "largestOrdinaryWalletBps": 257,
+      "actorBps": 1286,
+      "founderBps": 257,
+      "top10WalletsBps": 2573,
+      "hhi": 130,
+      "actorBpsAfterCompounding": 1286,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 2798,
+          "actorBps": 360
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 374,
+          "actorBps": 48
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 38,
+          "actorBps": 4
+        }
+      ]
+    },
+    {
+      "cap": 250,
+      "participants": 200,
+      "genesisFreshSeeds": 5308,
+      "capBindingBps": 100,
+      "deferredSeeds": 49464,
+      "largestOrdinaryWalletBps": 470,
+      "actorBps": 2354,
+      "founderBps": 470,
+      "top10WalletsBps": 4485,
+      "hhi": 241,
+      "actorBpsAfterCompounding": 2354,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 3467,
+          "actorBps": 816
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 504,
+          "actorBps": 118
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 52,
+          "actorBps": 12
+        }
+      ]
+    },
+    {
+      "cap": 500,
+      "participants": 200,
+      "genesisFreshSeeds": 7147,
+      "capBindingBps": 50,
+      "deferredSeeds": 47875,
+      "largestOrdinaryWalletBps": 699,
+      "actorBps": 3497,
+      "founderBps": 699,
+      "top10WalletsBps": 5904,
+      "hhi": 400,
+      "actorBpsAfterCompounding": 3497,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 4168,
+          "actorBps": 1457
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 667,
+          "actorBps": 233
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 70,
+          "actorBps": 24
+        }
+      ]
+    },
+    {
+      "cap": 1000,
+      "participants": 200,
+      "genesisFreshSeeds": 10522,
+      "capBindingBps": 0,
+      "deferredSeeds": 45000,
+      "largestOrdinaryWalletBps": 831,
+      "actorBps": 4751,
+      "founderBps": 950,
+      "top10WalletsBps": 7218,
+      "hhi": 637,
+      "actorBpsAfterCompounding": 4751,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 5127,
+          "actorBps": 2436
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 952,
+          "actorBps": 452
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 104,
+          "actorBps": 49
+        }
+      ]
+    },
+    {
+      "cap": 2500,
+      "participants": 200,
+      "genesisFreshSeeds": 18022,
+      "capBindingBps": 0,
+      "deferredSeeds": 37500,
+      "largestOrdinaryWalletBps": 485,
+      "actorBps": 6935,
+      "founderBps": 554,
+      "top10WalletsBps": 8375,
+      "hhi": 1025,
+      "actorBpsAfterCompounding": 6935,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 6431,
+          "actorBps": 4460
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 1527,
+          "actorBps": 1059
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 177,
+          "actorBps": 122
+        }
+      ]
+    },
+    {
+      "cap": 5000,
+      "participants": 200,
+      "genesisFreshSeeds": 30522,
+      "capBindingBps": 0,
+      "deferredSeeds": 25000,
+      "largestOrdinaryWalletBps": 286,
+      "actorBps": 8190,
+      "founderBps": 327,
+      "top10WalletsBps": 9041,
+      "hhi": 1363,
+      "actorBpsAfterCompounding": 8190,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 7532,
+          "actorBps": 6169
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 2338,
+          "actorBps": 1915
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 296,
+          "actorBps": 242
+        }
+      ]
+    },
+    {
+      "cap": null,
+      "participants": 200,
+      "genesisFreshSeeds": 55522,
+      "capBindingBps": 0,
+      "deferredSeeds": 0,
+      "largestOrdinaryWalletBps": 157,
+      "actorBps": 9005,
+      "founderBps": 180,
+      "top10WalletsBps": 9472,
+      "hhi": 1628,
+      "actorBpsAfterCompounding": 9005,
+      "afterPublic": [
+        {
+          "publicSeeds": 10000,
+          "genesisCohortBps": 8473,
+          "actorBps": 7631
+        },
+        {
+          "publicSeeds": 100000,
+          "genesisCohortBps": 3570,
+          "actorBps": 3214
+        },
+        {
+          "publicSeeds": 1000000,
+          "genesisCohortBps": 526,
+          "actorBps": 473
+        }
+      ]
+    }
+  ],
+  "actorMatrix": {
+    "10": {
+      "1": 61,
+      "2": 122,
+      "3": 182,
+      "5": 300,
+      "10": 583
+    },
+    "25": {
+      "1": 104,
+      "2": 207,
+      "3": 307,
+      "5": 502,
+      "10": 956
+    },
+    "50": {
+      "1": 170,
+      "2": 334,
+      "3": 494,
+      "5": 797,
+      "10": 1476
+    },
+    "100": {
+      "1": 286,
+      "2": 557,
+      "3": 813,
+      "5": 1286,
+      "10": 2279
+    },
+    "250": {
+      "1": 580,
+      "2": 1096,
+      "3": 1559,
+      "5": 2354,
+      "10": 3812
+    },
+    "500": {
+      "1": 971,
+      "2": 1770,
+      "3": 2440,
+      "5": 3497,
+      "10": 5182
+    },
+    "1000": {
+      "1": 1533,
+      "2": 2658,
+      "3": 3520,
+      "5": 4751,
+      "10": 6442
+    },
+    "2500": {
+      "1": 3116,
+      "2": 4751,
+      "3": 5759,
+      "5": 6935,
+      "10": 8190
+    },
+    "5000": {
+      "1": 4751,
+      "2": 6442,
+      "3": 7309,
+      "5": 8190,
+      "10": 9005
+    }
+  },
+  "populationGrid": [
+    {
+      "pop": 2000,
+      "level": "low",
+      "participants": 10,
+      "actorBps": [
+        4664,
+        5643,
+        6587,
+        7534,
+        7913,
+        8118
+      ]
+    },
+    {
+      "pop": 2000,
+      "level": "expected",
+      "participants": 40,
+      "actorBps": [
+        2029,
+        2890,
+        3990,
+        5504,
+        6629,
+        7384
+      ]
+    },
+    {
+      "pop": 2000,
+      "level": "high",
+      "participants": 120,
+      "actorBps": [
+        804,
+        1248,
+        1944,
+        3302,
+        4516,
+        5815
+      ]
+    },
+    {
+      "pop": 2000,
+      "level": "very high",
+      "participants": 300,
+      "actorBps": [
+        341,
+        548,
+        903,
+        1731,
+        2700,
+        3918
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "low",
+      "participants": 50,
+      "actorBps": [
+        1702,
+        2477,
+        3508,
+        5046,
+        6264,
+        7152
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "expected",
+      "participants": 200,
+      "actorBps": [
+        502,
+        797,
+        1286,
+        2354,
+        3497,
+        4751
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "high",
+      "participants": 600,
+      "actorBps": [
+        174,
+        283,
+        477,
+        965,
+        1614,
+        2573
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "very high",
+      "participants": 1500,
+      "actorBps": [
+        70,
+        115,
+        198,
+        415,
+        730,
+        1263
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "low",
+      "participants": 250,
+      "actorBps": [
+        406,
+        649,
+        1061,
+        1993,
+        3050,
+        4275
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "expected",
+      "participants": 1000,
+      "actorBps": [
+        105,
+        172,
+        293,
+        607,
+        1049,
+        1762
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "high",
+      "participants": 3000,
+      "actorBps": [
+        35,
+        58,
+        100,
+        212,
+        382,
+        683
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "very high",
+      "participants": 7500,
+      "actorBps": [
+        14,
+        23,
+        40,
+        86,
+        157,
+        287
+      ]
+    },
+    {
+      "pop": 150000,
+      "level": "low",
+      "participants": 750,
+      "actorBps": [
+        140,
+        228,
+        386,
+        791,
+        1342,
+        2191
+      ]
+    },
+    {
+      "pop": 150000,
+      "level": "expected",
+      "participants": 3000,
+      "actorBps": [
+        35,
+        58,
+        100,
+        212,
+        382,
+        683
+      ]
+    },
+    {
+      "pop": 150000,
+      "level": "high",
+      "participants": 9000,
+      "actorBps": [
+        11,
+        19,
+        33,
+        72,
+        131,
+        241
+      ]
+    },
+    {
+      "pop": 150000,
+      "level": "very high",
+      "participants": 22500,
+      "actorBps": [
+        4,
+        7,
+        13,
+        29,
+        53,
+        98
+      ]
+    }
+  ],
+  "maxCapForTarget": [
+    {
+      "pop": 10000,
+      "level": "low",
+      "k": 3,
+      "caps": [
+        null,
+        10,
+        50
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "low",
+      "k": 5,
+      "caps": [
+        null,
+        null,
+        25
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "low",
+      "k": 10,
+      "caps": [
+        null,
+        null,
+        10
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "expected",
+      "k": 3,
+      "caps": [
+        50,
+        100,
+        250
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "expected",
+      "k": 5,
+      "caps": [
+        10,
+        50,
+        100
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "expected",
+      "k": 10,
+      "caps": [
+        null,
+        25,
+        50
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "high",
+      "k": 3,
+      "caps": [
+        100,
+        250,
+        1000
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "high",
+      "k": 5,
+      "caps": [
+        100,
+        250,
+        500
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "high",
+      "k": 10,
+      "caps": [
+        25,
+        100,
+        250
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "very high",
+      "k": 3,
+      "caps": [
+        500,
+        1000,
+        2500
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "very high",
+      "k": 5,
+      "caps": [
+        250,
+        500,
+        1000
+      ]
+    },
+    {
+      "pop": 10000,
+      "level": "very high",
+      "k": 10,
+      "caps": [
+        100,
+        250,
+        500
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "low",
+      "k": 3,
+      "caps": [
+        50,
+        100,
+        250
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "low",
+      "k": 5,
+      "caps": [
+        25,
+        50,
+        250
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "low",
+      "k": 10,
+      "caps": [
+        10,
+        25,
+        100
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "expected",
+      "k": 3,
+      "caps": [
+        250,
+        500,
+        1000
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "expected",
+      "k": 5,
+      "caps": [
+        100,
+        250,
+        1000
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "expected",
+      "k": 10,
+      "caps": [
+        50,
+        100,
+        500
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "high",
+      "k": 3,
+      "caps": [
+        1000,
+        2500,
+        5000
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "high",
+      "k": 5,
+      "caps": [
+        500,
+        1000,
+        2500
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "high",
+      "k": 10,
+      "caps": [
+        250,
+        500,
+        1000
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "very high",
+      "k": 3,
+      "caps": [
+        2500,
+        5000,
+        5000
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "very high",
+      "k": 5,
+      "caps": [
+        1000,
+        2500,
+        5000
+      ]
+    },
+    {
+      "pop": 50000,
+      "level": "very high",
+      "k": 10,
+      "caps": [
+        500,
+        1000,
+        2500
+      ]
+    }
+  ]
+}

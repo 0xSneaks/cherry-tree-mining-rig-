@@ -181,3 +181,13 @@ describe('reward funding model', () => {
     expect(m).not.toMatch(/guarantee|ROI/i);
   });
 });
+
+describe('committed decision tables', () => {
+  it('docs/models match the generators (regenerate with --write)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const dir = join(import.meta.dirname, '..', '..', 'docs', 'models');
+    expect(readFileSync(join(dir, 'genesis-cap-scenarios.md'), 'utf8')).toBe(capReport().markdown);
+    expect(readFileSync(join(dir, 'reward-funding-scenarios.md'), 'utf8')).toBe(fundingReport().markdown);
+  });
+});

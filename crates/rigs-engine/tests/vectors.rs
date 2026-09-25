@@ -329,19 +329,7 @@ fn emit_launch_vectors() {
     use rigs_engine::{access_phase, seconds_to_next_phase, ACCESS_WINDOW_SECONDS};
     let h = ACCESS_WINDOW_SECONDS;
     let t0s = [0i64, 1, 1_790_000_000];
-    let offsets = [
-        -1_000_000i64,
-        -1,
-        0,
-        1,
-        h - 1,
-        h,
-        h + 1,
-        2 * h - 1,
-        2 * h,
-        2 * h + 1,
-        10 * 365 * 86_400,
-    ];
+    let offsets = [-1_000_000i64, -1, 0, 1, h - 1, h, h + 1, 10 * 365 * 86_400];
     println!("---LAUNCH---");
     for &t0 in &t0s {
         for &o in &offsets {

@@ -5,16 +5,25 @@
 //! purchase's chain timestamp is T0. Every access phase is a pure function of T0 and the chain
 //! clock — nothing else, and nobody, moves it.
 //!
+//! Production V2 access:
+//!
 //! ```text
 //! now < T0 (or T0 unset)      PreLaunch    founder activation only
 //! T0 ≤ now < T0 + 24h         SkrGenesis   .skr holders
-//! T0 + 24h ≤ now < T0 + 48h   SkrSnsEarly  .skr or .sns holders
-//! T0 + 48h ≤ now              Public       everyone, permanently
+//! T0 + 24h ≤ now              Public       everyone, permanently
 //! ```
+//!
+//! There is no `.sns` gated phase in Production V2: `.sns` identity remains
+//! supported infrastructure (see `identity.rs`), but it has no role in launch
+//! gating, and no second early-access window exists. [`AccessPhase::SkrSnsEarly`]
+//! is retained solely to keep `code()` numbering stable for the TypeScript
+//! port and historical V1 fixtures — no input maps to it under V2, which
+//! `sns_early_phase_is_unreachable_under_v2` pins down.
 
 use crate::error::{EngineError, EngineResult};
+use crate::pricing::MAX_TOTAL_RIGS;
 
-/// Length of each gated window.
+/// Length of the `.skr`-only Genesis window. Public begins the second it ends.
 pub const ACCESS_WINDOW_SECONDS: i64 = 24 * 60 * 60;
 
 /// `launch_t0` value meaning "not activated". T0 is a real chain timestamp,
@@ -25,6 +34,9 @@ pub const NOT_ACTIVATED: i64 = 0;
 pub enum AccessPhase {
     PreLaunch,
     SkrGenesis,
+    /// V1's second gated window. **Unreachable under Production V2**: from
+    /// T0 + 24h the protocol is Public forever. The variant survives only so
+    /// `code()` numbering (shared with the TypeScript port) stays stable.
     SkrSnsEarly,
     Public,
 }
@@ -47,7 +59,9 @@ pub enum ProvenIdentity {
     None,
     /// Owns a `.skr` domain (AllDomains), directly or wrapped.
     Skr,
-    /// Owns a `.sns` domain (SNS), directly or tokenized.
+    /// Owns a `.sns` domain (SNS), directly or tokenized. Provable on-chain,
+    /// but in Production V2 it grants no launch access — only Public lets a
+    /// `.sns`-only wallet buy.
     Sns,
 }
 
@@ -60,8 +74,6 @@ pub fn access_phase(launch_t0: i64, now: i64) -> AccessPhase {
     let since = now - launch_t0;
     if since < ACCESS_WINDOW_SECONDS {
         AccessPhase::SkrGenesis
-    } else if since < 2 * ACCESS_WINDOW_SECONDS {
-        AccessPhase::SkrSnsEarly
     } else {
         AccessPhase::Public
     }
@@ -72,8 +84,9 @@ pub fn access_phase(launch_t0: i64, now: i64) -> AccessPhase {
 pub fn seconds_to_next_phase(launch_t0: i64, now: i64) -> Option<i64> {
     match access_phase(launch_t0, now) {
         AccessPhase::SkrGenesis => Some(launch_t0 + ACCESS_WINDOW_SECONDS - now),
-        AccessPhase::SkrSnsEarly => Some(launch_t0 + 2 * ACCESS_WINDOW_SECONDS - now),
-        AccessPhase::PreLaunch | AccessPhase::Public => None,
+        // `SkrSnsEarly` is unreachable under V2 (see `access_phase`); if it
+        // ever were reached there would be no further gate to count down to.
+        AccessPhase::SkrSnsEarly | AccessPhase::PreLaunch | AccessPhase::Public => None,
     }
 }
 
@@ -82,6 +95,7 @@ pub fn purchase_allowed(phase: AccessPhase, identity: ProvenIdentity) -> bool {
     match phase {
         AccessPhase::PreLaunch => false,
         AccessPhase::SkrGenesis => identity == ProvenIdentity::Skr,
+        // Unreachable under V2; the rule is kept for the stable phase table.
         AccessPhase::SkrSnsEarly => {
             identity == ProvenIdentity::Skr || identity == ProvenIdentity::Sns
         }
@@ -136,4 +150,44 @@ pub fn t0_after_success(gate: PurchaseGate, launch_t0: i64, now: i64) -> i64 {
         PurchaseGate::Activation if launch_t0 <= NOT_ACTIVATED => now,
         _ => launch_t0,
     }
+}
+
+/// Validate a configured Genesis cap. It must be reachable by a real wallet
+/// (≥ 1 rig) and can never exceed the global rig supply bound.
+pub fn validate_genesis_cap(cap: u64) -> EngineResult<()> {
+    if cap == 0 || cap > MAX_TOTAL_RIGS {
+        return Err(EngineError::InvalidConfig);
+    }
+    Ok(())
+}
+
+/// The cumulative per-wallet Genesis fresh-purchase cap.
+///
+/// While the launch is gated — from the founder activation until Public at
+/// T0 + 24h — every wallet may buy at most `cap` fresh rigs in total. The
+/// check consumes the *launch phase* directly, so:
+///
+/// * the founder activation itself (PreLaunch) is capped;
+/// * a fresh Miner starts from zero lifetime purchases;
+/// * compounding never passes through here and never consumes allowance;
+/// * from T0 + 24h (Public) the cap no longer applies at all.
+///
+/// Equality with the cap is allowed; exceeding it is [`EngineError::GenesisCapExceeded`].
+pub fn genesis_cap_check(
+    launch_t0: i64,
+    now: i64,
+    lifetime_rigs_bought: u64,
+    requested_count: u64,
+    cap: u64,
+) -> EngineResult<()> {
+    if access_phase(launch_t0, now) == AccessPhase::Public {
+        return Ok(());
+    }
+    let cumulative = lifetime_rigs_bought
+        .checked_add(requested_count)
+        .ok_or(EngineError::MathOverflow)?;
+    if cumulative > cap {
+        return Err(EngineError::GenesisCapExceeded);
+    }
+    Ok(())
 }

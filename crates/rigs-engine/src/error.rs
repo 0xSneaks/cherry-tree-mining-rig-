@@ -45,6 +45,10 @@ pub enum EngineError {
     /// The founder activation purchase was attempted without an active,
     /// funded reward schedule.
     ActivationUnfunded,
+    /// The wallet's cumulative fresh purchases during the gated launch period
+    /// would exceed the configured Genesis cap. Appended for Production V2;
+    /// existing codes are unchanged.
+    GenesisCapExceeded,
 }
 
 impl fmt::Display for EngineError {
@@ -68,6 +72,7 @@ impl fmt::Display for EngineError {
             EngineError::NothingToCompound => "nothing to compound",
             EngineError::InsufficientRewardBacking => "insufficient reward backing",
             EngineError::ClockWentBackwards => "clock went backwards",
+            EngineError::GenesisCapExceeded => "genesis cumulative fresh-purchase cap exceeded",
         };
         f.write_str(s)
     }

@@ -34,9 +34,9 @@ pub use accumulator::{
 };
 pub use error::{EngineError, EngineResult};
 pub use launch::{
-    access_phase, gate_purchase, purchase_allowed, seconds_to_next_phase, t0_after_success,
-    AccessPhase, ProvenIdentity, PurchaseContext, PurchaseGate, ACCESS_WINDOW_SECONDS,
-    NOT_ACTIVATED,
+    access_phase, gate_purchase, genesis_cap_check, purchase_allowed, seconds_to_next_phase,
+    t0_after_success, validate_genesis_cap, AccessPhase, ProvenIdentity, PurchaseContext,
+    PurchaseGate, ACCESS_WINDOW_SECONDS, NOT_ACTIVATED,
 };
 pub use penalty::{claim_penalty_bps, penalty_amount, PENALTY_WINDOW_SECONDS};
 pub use position::{

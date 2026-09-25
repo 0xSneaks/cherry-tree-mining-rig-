@@ -22,7 +22,7 @@ const rows = readFileSync(join(import.meta.dirname, 'fixtures', 'launch-vectors.
 
 describe('launch phases match the Rust engine', () => {
   it('has boundary vectors', () => {
-    expect(rows.length).toBeGreaterThan(30);
+    expect(rows.length).toBeGreaterThan(20);
   });
 
   it('agrees on every row', () => {

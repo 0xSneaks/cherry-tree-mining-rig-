@@ -35,15 +35,25 @@ fn phase_boundaries_are_exact() {
         (T0 - 1, PreLaunch),
         (T0, SkrGenesis),
         (T0 + h - 1, SkrGenesis),
-        (T0 + h, SkrSnsEarly),
-        (T0 + 2 * h - 1, SkrSnsEarly),
-        (T0 + 2 * h, Public),
+        (T0 + h, Public),
+        (T0 + h + 1, Public),
         (T0 + 10 * 365 * DAY, Public),
         (i64::MAX, Public),
     ] {
         assert_eq!(access_phase(T0, now), want, "now = T0 {:+}", now - T0);
     }
-    assert_eq!(ACCESS_WINDOW_SECONDS, 86_400);
+    assert_eq!(ACCESS_WINDOW_SECONDS, 86_400, "the only gate is 24h");
+}
+
+/// Production V2 has no `.sns` phase: the variant survives for `code()`
+/// stability alone, and nothing may ever map to it.
+#[test]
+fn sns_early_phase_is_unreachable_under_v2() {
+    for offset in -10 * DAY..=10 * DAY {
+        assert_ne!(access_phase(T0, T0 + offset), AccessPhase::SkrSnsEarly);
+    }
+    assert_ne!(access_phase(NOT_ACTIVATED, T0), AccessPhase::SkrSnsEarly);
+    assert_ne!(access_phase(NOT_ACTIVATED, 0), AccessPhase::SkrSnsEarly);
 }
 
 #[test]
@@ -57,9 +67,7 @@ fn unactivated_is_always_prelaunch() {
 fn countdown_reaches_zero_exactly_at_each_boundary() {
     assert_eq!(seconds_to_next_phase(T0, T0), Some(DAY));
     assert_eq!(seconds_to_next_phase(T0, T0 + DAY - 1), Some(1));
-    assert_eq!(seconds_to_next_phase(T0, T0 + DAY), Some(DAY));
-    assert_eq!(seconds_to_next_phase(T0, T0 + 2 * DAY - 1), Some(1));
-    assert_eq!(seconds_to_next_phase(T0, T0 + 2 * DAY), None);
+    assert_eq!(seconds_to_next_phase(T0, T0 + DAY), None);
     assert_eq!(seconds_to_next_phase(NOT_ACTIVATED, T0), None);
 }
 

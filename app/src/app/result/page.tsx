@@ -58,6 +58,9 @@ function toParams(source: (key: string) => string | undefined): ResultParams {
     rigs: source('rigs'),
     compounded: source('compounded'),
     claimed: source('claimed'),
+    rooted: source('rooted'),
+    milestone: source('milestone'),
+    ref: source('ref'),
   } satisfies ResultParams;
 }
 

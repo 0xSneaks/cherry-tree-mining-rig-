@@ -19,12 +19,15 @@ export async function eventHistory(
 ): Promise<EventRow[]> {
   const limit = Math.min(Math.max(opts.limit ?? 200, 1), 1_000);
   const sigs = await rpc.getSignaturesForAddress(account, { limit }).send();
-  const out: EventRow[] = [];
-  for (const s of sigs) {
-    if (s.err !== null) continue;
+  const successful = sigs.filter((signature) => signature.err === null);
+  const transactions = await Promise.all(successful.map(async (s) => {
     const tx = await rpc
       .getTransaction(s.signature as Signature, { maxSupportedTransactionVersion: 0, encoding: 'json' })
       .send();
+    return { s, tx };
+  }));
+  const out: EventRow[] = [];
+  for (const { s, tx } of transactions) {
     const logs = tx?.meta?.logMessages ?? [];
     for (const event of eventsFromLogs(logs, PROGRAM_ID)) {
       if (opts.names && !opts.names.includes(event.name)) continue;

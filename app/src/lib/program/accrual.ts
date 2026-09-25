@@ -35,6 +35,11 @@ export type ChainSnapshot = {
   rewardVaultDistributable: bigint;
   /** The reward vault PDA, for the VERIFY ON SOLANA link. */
   rewardVaultAddress: string;
+  /** CAPITAL and FEE balances, with rent reserve removed, from the same slot. */
+  capitalVaultDistributable?: bigint;
+  feeVaultDistributable?: bigint;
+  capitalVaultAddress?: string;
+  feeVaultAddress?: string;
   /** Unix seconds the snapshot was taken at, from the chain's own clock. */
   chainTimeSeconds: bigint;
   /** `performance.now()`-style local clock reading at fetch time, in ms. */

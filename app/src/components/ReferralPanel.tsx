@@ -21,10 +21,27 @@ type Api = {
   note: string;
 };
 
-export function ReferralPanel({ wallet, hasPosition }: { wallet: string | null; hasPosition: boolean }) {
-  const [data, setData] = useState<Api | null>(null);
+export type ReferralSummary = {
+  total: number;
+  qualified: number;
+  pending: number;
+  configured: boolean;
+  tier: string | null;
+};
+
+export function ReferralPanel({
+  wallet,
+  hasPosition,
+  onSummary,
+}: {
+  wallet: string | null;
+  hasPosition: boolean;
+  onSummary?: (summary: ReferralSummary | null) => void;
+}) {
+  const [result, setResult] = useState<{ key: string; data: Api } | null>(null);
   const [copied, setCopied] = useState(false);
   const [season, setSeason] = useState<string | null>(null);
+  const requestKey = `${wallet ?? 'disconnected'}:${season ?? 'all'}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -34,13 +51,26 @@ export function ReferralPanel({ wallet, hasPosition }: { wallet: string | null; 
     fetch(`/api/referrals?${q.toString()}`)
       .then((r) => (r.ok ? (r.json() as Promise<Api>) : null))
       .then((j) => {
-        if (!cancelled && j && 'leaderboard' in j) setData(j);
+        if (!cancelled && j && 'leaderboard' in j) setResult({ key: requestKey, data: j });
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [wallet, season]);
+  }, [wallet, season, requestKey]);
+
+  const data = result?.key === requestKey ? result.data : null;
+
+  useEffect(() => {
+    const me = data?.me;
+    onSummary?.(me ? {
+      total: me.total,
+      qualified: me.qualified,
+      pending: me.pending,
+      configured: me.configured,
+      tier: me.tier?.label ?? null,
+    } : null);
+  }, [data?.me, onSummary]);
 
   const link =
     wallet && typeof window !== 'undefined'

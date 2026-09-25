@@ -192,6 +192,103 @@ test.describe('replant preview', () => {
   });
 });
 
+test.describe('miner cadence surfaces', () => {
+  test('fresh planting discloses the clock reset before the wallet is asked to sign', async ({ page }) => {
+    await stubWalletStandard(page);
+    await stubRpc(page);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Seeker Test Wallet' }).click();
+
+    const warning = page.getByTestId('buy-reset-warning');
+    await expect(warning).toContainText(/restarts the whole position’s 72-hour/i);
+    await expect(warning).toContainText(/accrued REWARD.*25%/i);
+    await expect(warning).toContainText(/Harvesting and replanting do not reset/i);
+
+    let sends = 0;
+    page.on('request', (request) => {
+      if (/getLatestBlockhash/.test(request.postData() ?? '')) sends += 1;
+    });
+    await page.getByRole('button', { name: /Plant 10 seeds · review/i }).click();
+    const confirm = page.getByTestId('buy-confirm');
+    await expect(confirm).toBeVisible();
+    expect(sends).toBe(0);
+    await confirm.getByRole('button', { name: 'Not now' }).click();
+    await expect(confirm).toHaveCount(0);
+    expect(sends).toBe(0);
+
+    await page.getByRole('button', { name: /Plant 10 seeds · review/i }).click();
+    await page.getByTestId('buy-confirm').getByRole('button', { name: /Confirm plant/i }).click();
+    await expect(page.getByTestId('buy-confirm')).toHaveCount(0);
+    await expect.poll(() => sends).toBeGreaterThan(0);
+  });
+
+  test('cockpit shows position, penalty countdown, replant arithmetic and reward health', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    const cockpit = page.getByTestId('miner-cockpit');
+    await expect(cockpit).toBeVisible();
+    await expect(cockpit).toContainText(/Plant → tend → watch → rooted → harvest or replant → share/i);
+    await expect(cockpit.getByTestId('harvest-state')).toContainText('15%');
+    await expect(cockpit.getByTestId('harvest-state')).toContainText(/5% in 18h/);
+    await expect(cockpit.getByTestId('replant-state')).toContainText(/Resulting grove/);
+    await expect(cockpit.getByTestId('reward-health')).toContainText(/Funded until/);
+  });
+
+  test('trust panel separates proven data from unavailable authority metadata', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    const trust = page.getByTestId('trust-panel');
+    await expect(trust).toContainText('Program ID');
+    await expect(trust).toContainText('Program authority');
+    await expect(trust).toContainText('Upgrade authority');
+    await expect(trust).toContainText('Not available');
+    await expect(trust).toContainText('Capital vault · locked');
+    await expect(trust).toContainText('Reward backing');
+    await expect(trust).not.toContainText(/audited|multisig \d|timelock active/i);
+  });
+});
+
+test.describe('personal activity history', () => {
+  test('renders decoded wallet events with a safe explorer link', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { activity: 'populated' });
+    await page.goto('/');
+    const history = page.getByTestId('activity-history');
+    await expect(history.getByTestId('activity-list')).toContainText('Fresh plant');
+    await expect(history.locator('a')).toHaveAttribute('href', /^https:\/\/explorer\.solana\.com\/tx\/[1-9A-HJ-NP-Za-km-z]+\?cluster=devnet$/);
+  });
+
+  test('renders an honest empty state', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { activity: 'empty' });
+    await page.goto('/');
+    await expect(page.getByTestId('activity-empty')).toBeVisible();
+  });
+
+  test('renders RPC/indexing failure without disturbing the position', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { activity: 'failure' });
+    await page.goto('/');
+    await expect(page.getByTestId('activity-error')).toBeVisible();
+    await expect(page.locator('.readout', { hasText: 'My grove' })).toContainText('42');
+  });
+});
+
+test.describe('shareable progress', () => {
+  test('shows the explicit referral URL without balances or return claims', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    const card = page.getByTestId('progress-card');
+    await expect(card).toContainText('42 seeds');
+    await expect(card).toContainText(`?ref=${WALLET}`);
+    await expect(card).not.toContainText(/4\.000000 SOL|daily return|ROI|profit/i);
+    await expect(card).toContainText('No wallet balance or return estimate is shared.');
+  });
+});
+
 test.describe('responsive', () => {
   test('desktop viewport: no overflow, miner centered, no console errors', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -238,5 +335,16 @@ test.describe('responsive', () => {
       () => document.documentElement.scrollWidth - window.innerWidth,
     );
     expect(overflow).toBe(0);
+  });
+
+  test('narrow Android-like viewport keeps trust, countdowns and signatures inside the page', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await stubCherryHost(page);
+    await stubRpc(page, { activity: 'populated' });
+    await page.goto('/');
+    await expect(page.getByTestId('miner-cockpit')).toBeVisible();
+    await expect(page.getByTestId('trust-panel')).toBeVisible();
+    await expect(page.getByTestId('activity-list')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
   });
 });

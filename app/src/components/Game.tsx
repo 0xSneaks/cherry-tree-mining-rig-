@@ -12,10 +12,10 @@ import { PRODUCT_NAME, PRODUCT_NAME_SHORT } from '../lib/brand';
 import { rpc } from '../lib/chain';
 import { CLUSTER } from '../lib/env';
 import { explainActionError } from '../lib/errors';
-import { formatCount, formatSol } from '../lib/format';
+import { formatCount } from '../lib/format';
 import { estimatedOutputPerDay } from '../lib/program/accrual';
 import { quoteClaim } from '../lib/program/penalty';
-import { quotePurchase, rigsAffordable } from '../lib/program/pricing';
+import { rigsAffordable } from '../lib/program/pricing';
 import { discoverIdentity } from '../lib/program/identity';
 import {
   accessPhase,
@@ -29,11 +29,9 @@ import type { RigsSigner } from '../lib/signer';
 import { BuyPanel } from './BuyPanel';
 import { ClaimConfirm } from './ClaimConfirm';
 import { GroveRecord } from './GroveRecord';
-import { OreBin } from './OreBin';
-import { Readout } from './Readout';
 import { RigVisual } from './RigVisual';
 import { RoomLeaderboard } from './RoomLeaderboard';
-import { ShareCard, type SharePayload } from './ShareCard';
+import { ProgressShareCard, ShareCard, type SharePayload } from './ShareCard';
 import { TransparencyPanel } from './TransparencyPanel';
 import { FounderActivation } from './FounderActivation';
 import { LaunchPanel } from './LaunchPanel';
@@ -42,7 +40,9 @@ import { DilutionPanel } from './DilutionPanel';
 import { DistributionPanel } from './DistributionPanel';
 import { GroveStatus } from './GroveStatus';
 import { MilestonesPanel } from './MilestonesPanel';
-import { ReferralPanel } from './ReferralPanel';
+import { ReferralPanel, type ReferralSummary } from './ReferralPanel';
+import { MinerCockpit } from './MinerCockpit';
+import { ActivityHistory } from './ActivityHistory';
 import { usePlanterStatus } from '../hooks/usePlanterStatus';
 import {
   OFFICIAL_REFERRER,
@@ -80,14 +80,9 @@ export type Host = {
   connectSlot?: React.ReactNode;
 };
 
-function formatHours(seconds: bigint): string {
-  const h = seconds / 3_600n;
-  const m = (seconds % 3_600n) / 60n;
-  return h > 0n ? `${h}h ${m}m` : `${m}m`;
-}
-
 /** A claim worth offering to share, rather than nagging on every dust claim. */
 const LARGE_CLAIM_LAMPORTS = 50_000_000n; // 0.05 SOL
+const CLAIM_ACTION_LABEL = 'Claim SOL';
 
 export function Game({ host }: { host: Host }) {
   const { snapshot, loading, error, live, refresh } = useRigsState(
@@ -116,6 +111,21 @@ export function Game({ host }: { host: Host }) {
   const [confirmingClaim, setConfirmingClaim] = useState(false);
   const [walletLamports, setWalletLamports] = useState<bigint | null>(null);
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
+  const [referralSummary, setReferralSummary] = useState<ReferralSummary | null>(null);
+  const onReferralSummary = useCallback((next: ReferralSummary | null) => {
+    setReferralSummary((current) => {
+      if (current === next) return current;
+      if (
+        current && next &&
+        current.total === next.total &&
+        current.qualified === next.qualified &&
+        current.pending === next.pending &&
+        current.configured === next.configured &&
+        current.tier === next.tier
+      ) return current;
+      return next;
+    });
+  }, []);
 
   // Wallet balance backs the MAX button only; it is never used in accounting.
   useEffect(() => {
@@ -210,22 +220,6 @@ export function Game({ host }: { host: Host }) {
       return 0n;
     }
   }, [claimable, config]);
-
-  // What those replanted seeds cost out of the accrued harvest, and what
-  // stays behind — the same `quotePurchase` port the buy panel shows.
-  const compoundQuote = useMemo(() => {
-    if (!config || compoundPreview === 0n) return null;
-    try {
-      const quote = quotePurchase(
-        compoundPreview,
-        config.rigPriceLamports,
-        BigInt(config.purchaseFeeBps),
-      );
-      return { quote, remainder: claimable - quote.totalLamports };
-    } catch {
-      return null;
-    }
-  }, [claimable, compoundPreview, config]);
 
   const run = useCallback(
     async (kind: 'buy' | 'claim' | 'compound', fn: () => Promise<unknown>) => {
@@ -364,30 +358,21 @@ export function Game({ host }: { host: Host }) {
             weight={miner?.weight ?? 0}
           />
 
-          <Readout label="My grove" value={formatCount(rigs)} unit="SEEDS" rigs />
-          <Readout
-            label="Current growth"
-            value={`≈ ${formatSol(outputPerDay, 5)}`}
-            unit="SOL / DAY"
+          <MinerCockpit
+            config={config}
+            miner={miner}
+            claimable={claimable}
+            rewardVaultLamports={snap.rewardVaultDistributable}
+            chainTime={chainTime}
+            currentOutputPerDay={outputPerDay}
+            canAct={canAct}
+            busy={busy}
+            onReplant={onCompound}
+            onHarvest={() => setConfirmingClaim(true)}
+            claimLabel={CLAIM_ACTION_LABEL}
+            hasReferralLink={hasPosition && host.address !== null}
+            referralSummary={referralSummary}
           />
-          <OreBin lamports={claimable} />
-
-          {claimQuote && claimQuote.gross > 0n ? (
-            <p className="note" data-testid="claim-penalty">
-              Claim penalty now: {claimQuote.penaltyBps / 100}% ·{' '}
-              you receive {formatSol(claimQuote.net, 6)} SOL
-              {claimQuote.secondsToNextStep !== null
-                ? ` · drops in ${formatHours(claimQuote.secondsToNextStep)}`
-                : ''}
-              . The penalty stays in the reward pool for other planters.
-              Replanting has no penalty.
-            </p>
-          ) : null}
-
-          <p className="note">
-            Based on the current funded reward schedule and seeds planted.
-            Changes when seeds planted or reward funding changes.
-          </p>
 
           {!host.walletConnected ? (
             <div className="banner">
@@ -405,34 +390,6 @@ export function Game({ host }: { host: Host }) {
             <div className="banner banner--alert">{actionError}</div>
           ) : null}
 
-          <div className="actions">
-            <button type="button" onClick={onCompound} disabled={!canAct || compoundPreview === 0n}>
-              {busy === 'compound'
-                ? 'Replanting…'
-                : compoundPreview > 0n
-                  ? `Replant · ${formatCount(compoundPreview)}`
-                  : 'Replant'}
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => setConfirmingClaim(true)}
-              disabled={!canAct || claimable === 0n}
-            >
-              {busy === 'claim' ? 'Claiming…' : 'Claim SOL'}
-            </button>
-          </div>
-
-          {compoundQuote ? (
-            <p className="note" data-testid="compound-preview">
-              Replant plants {formatCount(compoundQuote.quote.count)} more{' '}
-              seed{compoundQuote.quote.count === 1n ? '' : 's'} for{' '}
-              {formatSol(compoundQuote.quote.totalLamports, 6)} SOL of your accrued
-              harvest — {formatSol(compoundQuote.remainder, 6)} SOL stays ready to
-              harvest.
-            </p>
-          ) : null}
-
           {confirmingClaim && claimQuote ? (
             <ClaimConfirm
               quote={claimQuote}
@@ -447,6 +404,12 @@ export function Game({ host }: { host: Host }) {
 
           {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
           {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          <ProgressShareCard
+            wallet={host.address}
+            miner={miner}
+            chainTime={chainTime}
+            onShare={host.share}
+          />
           <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
 
           <hr className="rule" />
@@ -468,6 +431,8 @@ export function Game({ host }: { host: Host }) {
             genesisRemaining={genesisRemaining}
             referralNote={referralNote}
             officialFallback={referral?.kind === 'official'}
+            hasPosition={hasPosition}
+            accruedRewardLamports={claimable}
             busy={busy === 'buy'}
             onBuy={onBuy}
           />
@@ -487,7 +452,12 @@ export function Game({ host }: { host: Host }) {
 
           <hr className="rule" />
 
-          <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
+          <ReferralPanel
+            wallet={host.address}
+            hasPosition={hasPosition}
+            onSummary={onReferralSummary}
+          />
+          <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
           <DistributionPanel viewer={host.address} />
 
           <hr className="rule" />
@@ -497,6 +467,10 @@ export function Game({ host }: { host: Host }) {
             miner={miner}
             rewardVaultLamports={snap.rewardVaultDistributable}
             rewardVaultAddress={snap.rewardVaultAddress}
+            capitalVaultLamports={snap.capitalVaultDistributable ?? 0n}
+            capitalVaultAddress={snap.capitalVaultAddress ?? null}
+            feeVaultLamports={snap.feeVaultDistributable ?? 0n}
+            feeVaultAddress={snap.feeVaultAddress ?? null}
             chainTime={chainTime}
           />
 

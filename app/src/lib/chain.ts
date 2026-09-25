@@ -34,9 +34,9 @@ function decodeBase64(data: string): Uint8Array {
 /**
  * One round trip for everything the main screen needs.
  *
- * `getMultipleAccounts` keeps config, miner and the reward vault on the same
- * slot, so the claimable figure and the backing behind it can never be read
- * from two different points in time.
+ * `getMultipleAccounts` keeps config, miner and all three economic vaults on
+ * the same slot, so claimable/backing and the trust panel never combine
+ * values from different points in time.
  */
 export async function fetchSnapshot(
   owner: Address | null,
@@ -45,7 +45,12 @@ export async function fetchSnapshot(
   const pdas = await programAddresses();
   const miner = owner ? await minerPda(owner) : null;
 
-  const keys: Address[] = [pdas.config, pdas.rewardVault];
+  const keys: Address[] = [
+    pdas.config,
+    pdas.rewardVault,
+    pdas.capitalVault,
+    pdas.feeVault,
+  ];
   if (miner) keys.push(miner);
 
   const [accounts, blockTime] = await Promise.all([
@@ -59,14 +64,18 @@ export async function fetchSnapshot(
   const config: Config = decodeConfig(decodeBase64(configAccount.data[0]));
 
   const rewardVaultAccount = accounts.value[1];
-  const rewardVaultLamports = rewardVaultAccount
-    ? BigInt(rewardVaultAccount.lamports)
+  const capitalVaultAccount = accounts.value[2];
+  const feeVaultAccount = accounts.value[3];
+  const representativeVault = rewardVaultAccount ?? capitalVaultAccount ?? feeVaultAccount;
+  const vaultRent = representativeVault
+    ? await rentExemptMinimum(BigInt(representativeVault.space ?? 0n), client)
     : 0n;
-  const rewardVaultRent = rewardVaultAccount
-    ? await rentExemptMinimum(BigInt(rewardVaultAccount.space ?? 0n), client)
-    : 0n;
+  const distributable = (account: typeof rewardVaultAccount): bigint => {
+    const balance = account ? BigInt(account.lamports) : 0n;
+    return balance > vaultRent ? balance - vaultRent : 0n;
+  };
 
-  const minerAccount = miner ? accounts.value[2] : null;
+  const minerAccount = miner ? accounts.value[4] : null;
   const minerState: Miner | null = minerAccount
     ? decodeMiner(decodeBase64(minerAccount.data[0]))
     : null;
@@ -74,9 +83,12 @@ export async function fetchSnapshot(
   return {
     config,
     miner: minerState,
-    rewardVaultDistributable:
-      rewardVaultLamports > rewardVaultRent ? rewardVaultLamports - rewardVaultRent : 0n,
+    rewardVaultDistributable: distributable(rewardVaultAccount),
     rewardVaultAddress: pdas.rewardVault,
+    capitalVaultDistributable: distributable(capitalVaultAccount),
+    feeVaultDistributable: distributable(feeVaultAccount),
+    capitalVaultAddress: pdas.capitalVault,
+    feeVaultAddress: pdas.feeVault,
     chainTimeSeconds: blockTime,
     fetchedAtMs: nowMs(),
   };

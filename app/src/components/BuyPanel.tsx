@@ -11,6 +11,7 @@
 import { useMemo, useState } from 'react';
 
 import { formatSol } from '../lib/format';
+import { buyResetDisclosure } from '../lib/minerCadence';
 import type { Config } from '../lib/program/accounts';
 import { MAX_RIGS_PER_PURCHASE } from '../lib/program/constants';
 import { quotePurchase, rigsAffordable } from '../lib/program/pricing';
@@ -29,6 +30,8 @@ export function BuyPanel({
   closedReason = null,
   referralNote = null,
   officialFallback = false,
+  hasPosition,
+  accruedRewardLamports,
   busy,
   onBuy,
 }: {
@@ -45,11 +48,15 @@ export function BuyPanel({
   referralNote?: string | null;
   /** True when the referral shown is the official Cherry Tree fallback. */
   officialFallback?: boolean;
+  hasPosition: boolean;
+  accruedRewardLamports: bigint;
   busy: boolean;
   onBuy: (count: bigint) => void;
 }) {
   const [count, setCount] = useState<bigint>(10n);
+  const [pendingCount, setPendingCount] = useState<bigint | null>(null);
   const emissionLive = projectionsAllowed(config, chainTime);
+  const resetDisclosure = buyResetDisclosure(hasPosition, accruedRewardLamports);
 
   const quote = useMemo(() => {
     try {
@@ -84,6 +91,7 @@ export function BuyPanel({
     );
     const allowed = n > maxAllowed ? maxAllowed : n;
     setCount(allowed > 0n ? allowed : 1n);
+    setPendingCount(null);
   };
 
   return (
@@ -93,7 +101,10 @@ export function BuyPanel({
       <div className="stepper">
         <button
           type="button"
-          onClick={() => setCount((c) => clamp(c - 1n))}
+          onClick={() => {
+            setCount((c) => clamp(c - 1n));
+            setPendingCount(null);
+          }}
           aria-label="One fewer seed"
         >
           –
@@ -106,11 +117,15 @@ export function BuyPanel({
           onChange={(e) => {
             const digits = e.target.value.replace(/\D/g, '');
             setCount(digits ? clamp(BigInt(digits)) : 1n);
+            setPendingCount(null);
           }}
         />
         <button
           type="button"
-          onClick={() => setCount((c) => clamp(c + 1n))}
+          onClick={() => {
+            setCount((c) => clamp(c + 1n));
+            setPendingCount(null);
+          }}
           aria-label="One more seed"
         >
           +
@@ -123,7 +138,10 @@ export function BuyPanel({
             key={n.toString()}
             type="button"
             aria-pressed={count === n}
-            onClick={() => setCount(clamp(n))}
+            onClick={() => {
+              setCount(clamp(n));
+              setPendingCount(null);
+            }}
           >
             {n.toString()}
           </button>
@@ -154,15 +172,47 @@ export function BuyPanel({
         />
       </div>
 
+      <div className="buy-reset-warning" data-testid="buy-reset-warning">
+        <strong>Fresh-purchase clock reset</strong>
+        <span>{resetDisclosure}</span>
+        {hasPosition && accruedRewardLamports > 0n ? (
+          <span>Accrued now: {formatSol(accruedRewardLamports, 6)} SOL.</span>
+        ) : null}
+      </div>
+
       <button
         type="button"
         className="primary"
         style={{ width: '100%' }}
         disabled={disabled || busy || !quote || count > maxAllowed}
-        onClick={() => quote && onBuy(quote.count)}
+        onClick={() => quote && setPendingCount(quote.count)}
       >
-        {busy ? 'Planting…' : `Plant ${count.toString()} seed${count === 1n ? '' : 's'}`}
+        {busy ? 'Planting…' : `Plant ${count.toString()} seed${count === 1n ? '' : 's'} · review`}
       </button>
+
+      {pendingCount !== null && quote ? (
+        <div className="confirm-sheet" data-testid="buy-confirm" aria-label="Confirm fresh planting">
+          <h3 className="section-title">Confirm fresh planting</h3>
+          <p className="note">{resetDisclosure}</p>
+          <div className="actions">
+            <button type="button" onClick={() => setPendingCount(null)} disabled={busy}>
+              Not now
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={disabled || busy || pendingCount > maxAllowed}
+              onClick={() => {
+                const confirmedCount = pendingCount;
+                setPendingCount(null);
+                onBuy(confirmedCount);
+              }}
+            >
+              {busy ? 'Planting…' : `Confirm plant · ${formatSol(quote.totalLamports, 4)} SOL`}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {closedReason ? <p className="note">{closedReason}</p> : null}
       {genesisRemaining !== null ? (

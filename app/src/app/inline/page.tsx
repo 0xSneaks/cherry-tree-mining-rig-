@@ -47,6 +47,9 @@ export default async function InlinePage({
     rigs: str(signed.rigs),
     compounded: str(signed.compounded),
     claimed: str(signed.claimed),
+    rooted: str(signed.rooted),
+    milestone: str(signed.milestone),
+    ref: str(signed.ref),
   };
 
   return (

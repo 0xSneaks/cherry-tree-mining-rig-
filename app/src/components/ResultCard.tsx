@@ -12,6 +12,9 @@ export type ResultParams = {
   rigs?: string;
   compounded?: string;
   claimed?: string;
+  rooted?: string;
+  milestone?: string;
+  ref?: string;
 };
 
 function safeBigInt(v: string | undefined): bigint | null {
@@ -25,15 +28,22 @@ function safeBigInt(v: string | undefined): bigint | null {
 
 export function ResultCard({ params }: { params: ResultParams }) {
   const rigs = safeBigInt(params.rigs);
+  const seedCount = rigs;
   const compounded = safeBigInt(params.compounded);
   const claimed = safeBigInt(params.claimed);
+  const milestone = params.milestone && /^[a-zA-Z0-9 .'-]{1,40}$/.test(params.milestone)
+    ? params.milestone
+    : null;
+  const rooted = params.rooted === 'yes';
 
   const headline =
     compounded !== null
       ? `+${formatCount(compounded)} SEEDS REPLANTED`
       : claimed !== null
         ? `${formatSol(claimed, 4)} SOL CLAIMED`
-        : PRODUCT_NAME;
+        : params.kind === 'progress' && seedCount !== null
+          ? `${formatCount(seedCount)} SEEDS · ${rooted ? 'ROOTED' : 'TENDING'}`
+          : PRODUCT_NAME;
 
   return (
     <main
@@ -61,9 +71,21 @@ export function ResultCard({ params }: { params: ResultParams }) {
             <span className="unit">SEEDS</span>
           </span>
         </div>
+        {params.kind === 'progress' ? (
+          <>
+            <div className="readout">
+              <span className="readout-label">Milestone</span>
+              <span className="readout-value">{milestone ?? 'Not available'}</span>
+            </div>
+            <div className="readout">
+              <span className="readout-label">Referral</span>
+              <span className="readout-value">{params.ref ? 'Available from planter' : 'Not included'}</span>
+            </div>
+          </>
+        ) : null}
         <p className="note" style={{ marginTop: 10 }}>
           Planting simulation with SOL-denominated rewards paid from a funded
-          reward vault. Read-only snapshot.
+          reward vault. Read-only snapshot of public position progress; no return estimate.
         </p>
       </div>
     </main>

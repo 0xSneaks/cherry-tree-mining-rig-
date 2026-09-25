@@ -30,6 +30,8 @@ export const EVENT_DISCRIMINATOR = {
   RewardsFunded: fromHex('54e9f5cbe493a55c'),
   ReferralBound: fromHex('0c1c989437d266be'),
   RigsPurchased: fromHex('20b3aae7f7f3026c'),
+  Claim: fromHex('856209ee85cfbf71'),
+  Compound: fromHex('a884a027a408ced1'),
   LaunchActivated: fromHex('b8d0a32ced6518a5'),
 } as const;
 
@@ -70,10 +72,35 @@ export type LaunchActivatedEvent = {
   totalLamports: bigint;
 };
 
+export type ClaimEvent = {
+  name: 'Claim';
+  owner: Address;
+  amount: bigint;
+  gross: bigint;
+  penalty: bigint;
+  penaltyBps: number;
+  userRigs: bigint;
+  totalRewardClaimed: bigint;
+};
+
+export type CompoundEvent = {
+  name: 'Compound';
+  owner: Address;
+  rigsMinted: bigint;
+  capitalLamports: bigint;
+  feeLamports: bigint;
+  totalLamports: bigint;
+  remainderLamports: bigint;
+  userRigs: bigint;
+  totalRigs: bigint;
+};
+
 export type ProgramEvent =
   | RewardsFundedEvent
   | ReferralBoundEvent
   | RigsPurchasedEvent
+  | ClaimEvent
+  | CompoundEvent
   | LaunchActivatedEvent;
 
 const decoders = {
@@ -97,6 +124,25 @@ const decoders = {
     ['capitalLamports', getU64Decoder()],
     ['feeLamports', getU64Decoder()],
     ['totalLamports', getU64Decoder()],
+    ['userRigs', getU64Decoder()],
+    ['totalRigs', getU64Decoder()],
+  ]),
+  Claim: getStructDecoder([
+    ['owner', getAddressDecoder()],
+    ['amount', getU64Decoder()],
+    ['gross', getU64Decoder()],
+    ['penalty', getU64Decoder()],
+    ['penaltyBps', getU16Decoder()],
+    ['userRigs', getU64Decoder()],
+    ['totalRewardClaimed', getU64Decoder()],
+  ]),
+  Compound: getStructDecoder([
+    ['owner', getAddressDecoder()],
+    ['rigsMinted', getU64Decoder()],
+    ['capitalLamports', getU64Decoder()],
+    ['feeLamports', getU64Decoder()],
+    ['totalLamports', getU64Decoder()],
+    ['remainderLamports', getU64Decoder()],
     ['userRigs', getU64Decoder()],
     ['totalRigs', getU64Decoder()],
   ]),

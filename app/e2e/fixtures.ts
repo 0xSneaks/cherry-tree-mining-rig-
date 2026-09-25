@@ -104,6 +104,8 @@ export type StubOptions = {
   sinceLaunch?: bigint | null;
   /** Pin this wallet as the founder instead of the fixture's. */
   founder?: string;
+  /** Personal event history response served by the RPC stub. */
+  activity?: 'populated' | 'empty' | 'failure';
 };
 
 function setAddress(bytes: Uint8Array, offset: number, b58: string): Uint8Array {
@@ -168,10 +170,58 @@ export async function stubRpc(page: Page, opts: StubOptions = {}): Promise<void>
               value: [
                 account(configBytes(opts), '14823000000'),
                 account(new Uint8Array(10), '14824000000'),
+                account(new Uint8Array(10), '9050000000'),
+                account(new Uint8Array(10), '250000000'),
                 ...(withMiner ? [account(minerBytes(), '2400000')] : [null]),
               ],
             },
           };
+        case 'getSignaturesForAddress':
+          if (opts.activity === 'failure') {
+            return {
+              jsonrpc: '2.0',
+              id: req.id,
+              error: { code: -32000, message: 'history unavailable' },
+            };
+          }
+          return {
+            jsonrpc: '2.0',
+            id: req.id,
+            result:
+              opts.activity === 'populated'
+                ? [{ signature: '2'.repeat(88), slot: 299_999_999, err: null, memo: null, blockTime: Number(now - 60n) }]
+                : [],
+          };
+        case 'getTransaction': {
+          const parts = [
+            Buffer.from('20b3aae7f7f3026c', 'hex'),
+            Buffer.from(getAddressEncoder().encode(address(WALLET))),
+            Buffer.from(Uint8Array.of(5, 0, 0, 0, 0, 0, 0, 0)),
+            Buffer.from(Uint8Array.of(0, 202, 154, 59, 0, 0, 0, 0)),
+            Buffer.from(Uint8Array.of(0, 0, 0, 0, 0, 0, 0, 0)),
+            Buffer.from(Uint8Array.of(0, 202, 154, 59, 0, 0, 0, 0)),
+            Buffer.from(Uint8Array.of(47, 0, 0, 0, 0, 0, 0, 0)),
+            Buffer.from(Uint8Array.of(47, 0, 0, 0, 0, 0, 0, 0)),
+          ];
+          const data = Buffer.concat(parts).toString('base64');
+          return {
+            jsonrpc: '2.0',
+            id: req.id,
+            result: {
+              blockTime: Number(now - 60n),
+              meta: {
+                err: null,
+                logMessages: [
+                  'Program C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt invoke [1]',
+                  `Program data: ${data}`,
+                  'Program C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt success',
+                ],
+              },
+              slot: 299_999_999,
+              transaction: { message: { accountKeys: [] }, signatures: ['2'.repeat(88)] },
+            },
+          };
+        }
         case 'getSlot':
           return { jsonrpc: '2.0', id: req.id, result: 300000000 };
         case 'getBlockTime':

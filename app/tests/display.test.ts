@@ -1,5 +1,5 @@
 /**
- * Display rules that the spec pins down explicitly: the grove-visual tier
+ * Display rules that the spec pins down explicitly: the rig-visual tier
  * thresholds (§10) and the number formatting the HUD depends on.
  */
 import { describe, expect, it } from 'vitest';
@@ -13,31 +13,31 @@ import {
   formatUtcInstant,
   shortAddress,
 } from '../src/lib/format';
-import { groveTier } from '../src/components/GroveVisual';
+import { rigTier } from '../src/components/RigVisual';
 
-describe('grove visual tiers', () => {
+describe('rig visual tiers', () => {
   it('matches the spec thresholds exactly', () => {
     const cases: [bigint, string][] = [
       [0n, 'empty'],
-      [1n, 'seedling'],
-      [4n, 'seedling'],
-      [5n, 'sapling'],
-      [24n, 'sapling'],
-      [25n, 'young'],
-      [99n, 'young'],
-      [100n, 'tree'],
-      [499n, 'tree'],
-      [500n, 'grove'],
-      [1_000_000n, 'grove'],
+      [1n, 'hand'],
+      [4n, 'hand'],
+      [5n, 'small'],
+      [24n, 'small'],
+      [25n, 'industrial'],
+      [99n, 'industrial'],
+      [100n, 'multi'],
+      [499n, 'multi'],
+      [500n, 'facility'],
+      [1_000_000n, 'facility'],
     ];
-    for (const [seeds, key] of cases) {
-      expect(groveTier(seeds).key, `${seeds} seeds`).toBe(key);
+    for (const [rigs, key] of cases) {
+      expect(rigTier(rigs).key, `${rigs} rigs`).toBe(key);
     }
   });
 
   it('is deterministic — the same count always renders the same tier', () => {
     for (const n of [1n, 7n, 42n, 137n, 900n]) {
-      expect(groveTier(n)).toEqual(groveTier(n));
+      expect(rigTier(n)).toEqual(rigTier(n));
     }
   });
 });

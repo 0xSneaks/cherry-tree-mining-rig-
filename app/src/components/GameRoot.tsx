@@ -32,7 +32,7 @@ export function GameRoot() {
       <main className="shell">
         <h1 className="wordmark">{PRODUCT_NAME}</h1>
         <p className="note" style={{ marginTop: 10 }}>
-          Waking the grove…
+          Spinning up the shaft…
         </p>
       </main>
     );

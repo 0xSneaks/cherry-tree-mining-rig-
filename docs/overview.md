@@ -2,9 +2,9 @@
 
 ## Plain English
 
-THE CHERRY TREE is a game loop built around Seeds and a funded reward stream. A purchase creates production capacity; it does not fund rewards owed to other users. Rewards exist only when an authorized funder deposits SOL into the reward vault and sets an emission window.
+THE CHERRY TREE is a game loop built around rigs and a funded reward stream. A purchase creates production capacity; it does not fund rewards owed to other users. Rewards exist only when an authorized funder deposits SOL into the reward vault and sets an emission window.
 
-Seeds cannot be sold back or redeemed. Users can claim settled rewards or compound them into whole additional Seeds.
+Rigs cannot be sold back or redeemed. Users can claim settled rewards or compound them into whole additional rigs.
 
 ## Technical detail
 

@@ -43,8 +43,6 @@
   --blossom-wash: color-mix(in srgb, var(--blossom) 8%, transparent);
   --blossom-wash-strong: color-mix(in srgb, var(--blossom) 16%, transparent);
   --blossom-glow: color-mix(in srgb, var(--blossom) 35%, transparent);
-  /* Bark, from the logo's trunk. Only the grove visual uses it. */
-  --bark: #5b4136;
   /* Kept as an alias so existing rules and any stray usage stay valid. */
   --amber: var(--blossom);
   --amber-dim: var(--blossom-dim);

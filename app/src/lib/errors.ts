@@ -49,7 +49,7 @@ export type AnchorErrorName = (typeof ANCHOR_ERROR_NAMES)[number];
 /** What the screen says instead of the raw Anchor error. */
 const PRODUCT_COPY: Partial<Record<AnchorErrorName, string>> = {
   NothingToClaim: 'No harvest is currently available.',
-  NothingToCompound: 'Not enough accrued rewards to plant another seed yet.',
+  NothingToCompound: 'Not enough accrued rewards to plant another rig yet.',
   ProgramPaused: 'Cherry Tree actions are temporarily paused.',
   SelfReferral: 'A wallet cannot refer itself.',
   ReferrerAlreadyBound: 'A referrer is already bound to this grove and is never replaced.',

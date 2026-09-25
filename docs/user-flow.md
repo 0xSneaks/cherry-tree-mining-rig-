@@ -2,9 +2,9 @@
 
 1. Connect through Cherry’s wallet bridge, or use the standalone wallet path.
 2. During launch gating, satisfy the applicable access rule.
-3. Plant whole Seeds; the quote separates capital and fee.
+3. Buy whole rigs; the quote separates capital and fee.
 4. Let an active funded schedule accrue rewards.
-5. Claim the eligible balance or compound it into whole Seeds.
+5. Claim the eligible balance or compound it into whole rigs.
 
 The embedded path is intended to arrive with a wallet and show no connect-wallet step. Standalone wallet behavior is implemented but real extension execution is not verified here.
 

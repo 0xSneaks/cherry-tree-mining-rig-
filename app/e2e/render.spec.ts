@@ -131,9 +131,9 @@ test.describe('embedded path', () => {
     await page.goto('/');
     // The room name appears twice — in the header line and in the leaderboard
     // heading — so both are asserted explicitly rather than by substring.
-    await expect(page.getByText('Blossom Hill · 412 members')).toBeVisible();
+    await expect(page.getByText('Mine Shaft · 412 members')).toBeVisible();
     await expect(page.getByText('This room')).toBeVisible();
-    await expect(page.getByText('Top planters in Blossom Hill')).toBeVisible();
+    await expect(page.getByText('Top planters in Mine Shaft')).toBeVisible();
   });
 
   /** §10 — the buy quote adds up on screen, fee included and disclosed. */

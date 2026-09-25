@@ -165,7 +165,7 @@ export function BuyPanel({
             <span className="unit">SOL</span>
           </span>
         </div>
-        {/* The rate these seeds would earn, after the dilution they cause. */}
+        {/* The rate these rigs would earn, after the dilution they cause. */}
         <Readout
           label="APR after planting"
           value={quote ? formatAprBps(aprBps(yieldInputs(config, chainTime), quote.count)) : '—'}

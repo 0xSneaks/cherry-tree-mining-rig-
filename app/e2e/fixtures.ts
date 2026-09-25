@@ -289,7 +289,7 @@ export async function stubCherryHost(
   page: Page,
   opts: { room?: { id: string; title: string; memberCount: number } } = {},
 ): Promise<void> {
-  const room = opts.room ?? { id: 'room-42', title: 'Blossom Hill', memberCount: 412 };
+  const room = opts.room ?? { id: 'room-42', title: 'Mine Shaft', memberCount: 412 };
 
   const b64url = (o: unknown) =>
     Buffer.from(JSON.stringify(o))

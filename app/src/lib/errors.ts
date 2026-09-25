@@ -40,6 +40,8 @@ export const ANCHOR_ERROR_NAMES = [
   'AccessDenied',
   'ActivationUnfunded',
   'MissingReferrerAccount',
+  'GenesisCapExceeded',
+  'MigrationRejected',
 ] as const;
 
 export type AnchorErrorName = (typeof ANCHOR_ERROR_NAMES)[number];
@@ -54,6 +56,7 @@ const PRODUCT_COPY: Partial<Record<AnchorErrorName, string>> = {
   InvalidReferrer: 'That referrer is not an existing planter — the link cannot be used.',
   AccessDenied: 'This wallet is not eligible during the current access phase.',
   ActivationUnfunded: 'The grove cannot be activated yet — the reward schedule needs funding first.',
+  GenesisCapExceeded: 'This purchase exceeds your remaining Genesis fresh-buy allowance.',
 };
 
 export type ExplainedError = {

@@ -27,6 +27,7 @@ import { address, type Address } from '@solana/kit';
 
 import { programAddresses } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
+import { MAX_TOTAL_RIGS } from '../../src/lib/program/constants';
 import { EXPECTED_FOUNDER } from '../../src/lib/launch/expected';
 import { initializeInstruction } from './admin-instructions';
 
@@ -60,6 +61,12 @@ async function main(): Promise<void> {
   const purchaseFeeBps = Number(
     requireEnv('CHERRY_TREE_PURCHASE_FEE_BPS', 'e.g. 300 for 3.00%.'),
   );
+  const genesisCapRigs = BigInt(
+    requireEnv(
+      'CHERRY_TREE_GENESIS_CAP_RIGS',
+      'Set an explicit per-wallet Genesis fresh-buy cap. There is no default.',
+    ),
+  );
 
   let founder: Address;
   try {
@@ -70,7 +77,7 @@ async function main(): Promise<void> {
   if (founder !== EXPECTED_FOUNDER && process.env.CHERRY_TREE_ALLOW_OTHER_FOUNDER !== '1') {
     fail(
       `CHERRY_TREE_FOUNDER ${founder} is not the founder activation wallet ` +
-        `${EXPECTED_FOUNDER}. The founder is pinned forever at initialize. ` +
+        `${EXPECTED_FOUNDER}. The founder has no setter in this program version. ` +
         'Set CHERRY_TREE_ALLOW_OTHER_FOUNDER=1 only for a devnet rehearsal wallet.',
     );
   }
@@ -90,6 +97,9 @@ async function main(): Promise<void> {
   if (!Number.isInteger(purchaseFeeBps) || purchaseFeeBps < 0 || purchaseFeeBps > 1000) {
     fail('CHERRY_TREE_PURCHASE_FEE_BPS must be an integer in 0..=1000 (the program caps it at 1000).');
   }
+  if (genesisCapRigs <= 0n || genesisCapRigs > MAX_TOTAL_RIGS) {
+    fail(`CHERRY_TREE_GENESIS_CAP_RIGS must be in 1..=${MAX_TOTAL_RIGS}.`);
+  }
 
   // Only the public key is ever printed.
   const authority = await loadSigner(walletPath, 'authority');
@@ -104,9 +114,10 @@ async function main(): Promise<void> {
   row('authority balance', `${sol(await lamportsOf(chain, authority.address))} SOL`);
   row('reward funder', rewardFunder);
   row('fee recipient', feeRecipient);
-  row('founder (pinned forever)', founder);
+  row('founder (no setter in this version)', founder);
   row('rig price', `${rigPriceLamports} lamports (${sol(rigPriceLamports)} SOL)`);
   row('purchase fee', `${purchaseFeeBps} bps (${(purchaseFeeBps / 100).toFixed(2)}%)`);
+  row('Genesis cap', `${genesisCapRigs} fresh seeds per wallet`);
   console.log();
   row('CONFIG PDA', pdas.config);
   row('CAPITAL VAULT PDA', pdas.capitalVault);
@@ -146,6 +157,7 @@ async function main(): Promise<void> {
       rewardFunder,
       feeRecipient,
       founder,
+      genesisCapRigs,
     }),
   );
   row('signature', signature);
@@ -159,6 +171,7 @@ async function main(): Promise<void> {
     ['reward_funder', config.rewardFunder, rewardFunder],
     ['fee_recipient', config.feeRecipient, feeRecipient],
     ['founder', config.founder, founder],
+    ['genesis_cap_rigs', config.genesisCapRigs, genesisCapRigs],
     ['launch_t0 (initialize must NOT activate)', config.launchT0, 0n],
     ['rig_price_lamports', config.rigPriceLamports, rigPriceLamports],
     ['purchase_fee_bps', config.purchaseFeeBps, purchaseFeeBps],
@@ -171,7 +184,7 @@ async function main(): Promise<void> {
     ['miner_count', config.minerCount, 0n],
     ['paused', config.paused, false],
     ['pending_authority', config.pendingAuthority, '11111111111111111111111111111111'],
-    ['version', config.version, 1],
+    ['version', config.version, 2],
   ];
 
   let bad = 0;

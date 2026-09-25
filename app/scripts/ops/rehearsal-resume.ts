@@ -64,7 +64,7 @@ export type ActivateResumeExpected = {
   activationCapital: bigint;
   /** Fees the activation purchase moved (capital × fee bps / 10 000). */
   activationFees: bigint;
-  /** One gated access window; the refusal checks are labelled `.skr phase`. */
+  /** The single gated 24-hour Genesis window. */
   accessWindowSeconds: bigint;
 };
 
@@ -215,8 +215,8 @@ export function activateResumeMismatches(
     `≥ ${owed}`,
   );
 
-  // The stage's refusal checks are labelled for the .skr phase; past that
-  // window the labels would lie, so a resume must not run there.
+  // The stage's refusal checks are labelled for the .skr Genesis phase; past
+  // the sole gated window the labels would lie, so resume must not run there.
   expect(
     observed.chainNow < observed.launchT0 + expected.accessWindowSeconds,
     'chain still inside the .skr window',

@@ -54,6 +54,8 @@ export type Config = {
   totalShares: bigint;
   /** Lamports forfeited by early claims and re-credited to other planters. */
   totalClaimPenalties: bigint;
+  /** Cumulative fresh-buy cap during [T0, T0 + 24h); ignored once Public. */
+  genesisCapRigs: bigint;
 };
 
 export type Miner = {
@@ -107,6 +109,7 @@ const configDecoder = getStructDecoder([
   ['launchT0', getI64Decoder()],
   ['totalShares', getU64Decoder()],
   ['totalClaimPenalties', getU64Decoder()],
+  ['genesisCapRigs', getU64Decoder()],
 ]);
 
 const minerDecoder = getStructDecoder([

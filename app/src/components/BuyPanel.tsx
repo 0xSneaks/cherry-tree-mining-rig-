@@ -24,6 +24,7 @@ export function BuyPanel({
   chainTime,
   walletLamports,
   disabled,
+  genesisRemaining = null,
   closedReason = null,
   referrer = null,
   busy,
@@ -34,6 +35,8 @@ export function BuyPanel({
   /** Spendable wallet balance, used only for the MAX button. */
   walletLamports: bigint | null;
   disabled: boolean;
+  /** Remaining cumulative fresh buys during Genesis; null once Public. */
+  genesisRemaining?: bigint | null;
   /** Why planting is closed, when the launch gate is what closes it. */
   closedReason?: string | null;
   /** Proposed referrer from the link, for a wallet with no position yet. */
@@ -55,8 +58,14 @@ export function BuyPanel({
     }
   }, [count, config.rigPriceLamports, config.purchaseFeeBps]);
 
+  const maxAllowed =
+    genesisRemaining === null
+      ? MAX_RIGS_PER_PURCHASE
+      : genesisRemaining < MAX_RIGS_PER_PURCHASE
+        ? genesisRemaining
+        : MAX_RIGS_PER_PURCHASE;
   const clamp = (n: bigint) =>
-    n < 1n ? 1n : n > MAX_RIGS_PER_PURCHASE ? MAX_RIGS_PER_PURCHASE : n;
+    maxAllowed === 0n ? 1n : n < 1n ? 1n : n > maxAllowed ? maxAllowed : n;
 
   const max = () => {
     if (walletLamports === null) return;
@@ -68,7 +77,8 @@ export function BuyPanel({
       config.rigPriceLamports,
       BigInt(config.purchaseFeeBps),
     );
-    setCount(n > 0n ? n : 1n);
+    const allowed = n > maxAllowed ? maxAllowed : n;
+    setCount(allowed > 0n ? allowed : 1n);
   };
 
   return (
@@ -108,7 +118,7 @@ export function BuyPanel({
             key={n.toString()}
             type="button"
             aria-pressed={count === n}
-            onClick={() => setCount(n)}
+            onClick={() => setCount(clamp(n))}
           >
             {n.toString()}
           </button>
@@ -143,13 +153,19 @@ export function BuyPanel({
         type="button"
         className="primary"
         style={{ width: '100%' }}
-        disabled={disabled || busy || !quote}
+        disabled={disabled || busy || !quote || count > maxAllowed}
         onClick={() => quote && onBuy(quote.count)}
       >
         {busy ? 'Planting…' : `Plant ${count.toString()} seed${count === 1n ? '' : 's'}`}
       </button>
 
       {closedReason ? <p className="note">{closedReason}</p> : null}
+      {genesisRemaining !== null ? (
+        <p className="note" data-testid="buy-genesis-allowance">
+          Genesis allowance remaining: {genesisRemaining.toString()} fresh seed
+          {genesisRemaining === 1n ? '' : 's'}. Replanting does not consume it.
+        </p>
+      ) : null}
       {referrer ? (
         <p className="note" data-testid="referral-note">
           Referred by {referrer.slice(0, 4)}…{referrer.slice(-4)}: a 1.05× reward

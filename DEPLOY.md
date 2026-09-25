@@ -139,6 +139,8 @@ CHERRY_TREE_REWARD_FUNDER=<public key of the funder>
 CHERRY_TREE_REWARD_FUNDER_KEYPAIR=/home/you/.config/solana/cherry-tree-funder.json
 CHERRY_TREE_RIG_PRICE_LAMPORTS=10000000
 CHERRY_TREE_PURCHASE_FEE_BPS=300
+# Explicit rehearsal value only; no production cap is chosen in this repo.
+CHERRY_TREE_GENESIS_CAP_RIGS=10000
 CHERRY_TREE_SMOKE_WALLET_A=/home/you/.config/solana/cherry-tree-smoke-a.json
 CHERRY_TREE_SMOKE_WALLET_B=/home/you/.config/solana/cherry-tree-smoke-b.json
 ```
@@ -193,14 +195,52 @@ the correct program keypair there.
 ./scripts/devnet-init.sh
 ```
 
-Prints the cluster, program ID, authority, reward funder, rig price, fee and
-all four PDAs **before** sending anything. Then it reads the state back and
-verifies every field it set — authority, reward funder, price, fee,
+Prints the cluster, program ID, authority, reward funder, rig price, fee,
+explicit `genesis_cap_rigs` and all four PDAs **before** sending anything.
+V2 `initialize` takes the cap as its final argument. The script then reads the
+state back and verifies every field it set — authority, reward funder, price, fee, cap, version 2,
 `total_rigs == 0`, `total_reward_funded == 0`, and that each vault PDA exists
 and is owned by the program. Any mismatch fails loudly.
 
 Initialization is one-shot: if the config PDA already exists, the script
 refuses rather than touching live state.
+
+## 4A. V1 → V2 migration (qualification and eventual controlled upgrade)
+
+V2 appends exactly one `u64 genesis_cap_rigs` field to Config: 321 → 329
+bytes. Miner and Vault layouts do not change. The authority calls:
+
+```
+migrate_v2(genesis_cap_rigs: u64)
+```
+
+The instruction receives Config as a raw unchecked account because a V2
+`Account<Config>` cannot deserialize the short V1 data. Before mutation it
+checks the canonical `config` PDA, program owner, exact size 321,
+discriminator, exact V1 decode with no trailing bytes, version 1, stored bump,
+stored authority signer, and cap bounds. It then transfers only the exact rent
+shortfall, reallocates to 329 with zero initialization, serializes all V1
+fields unchanged except version 1 → 2, appends the cap, preserves the
+discriminator, and emits `GenesisCapConfigured`.
+
+There is an intentional migration dead window: after the V2 upgrade and
+before successful migration, every typed Config instruction rejects the
+321-byte account. If migration fails, data and lamports remain unchanged.
+Recovery is a forward fix to V2 and a retried migration after diagnosing the
+failure. **Never roll back to V1 after migration:** V1 can read the trailing
+bytes but does not enforce the Genesis cap.
+
+The qualification-only command is:
+
+```bash
+CHERRY_TREE_QUALIFICATION=1 \
+CHERRY_TREE_QUALIFICATION_PROGRAM_ID=<disposable-devnet-id> \
+CHERRY_TREE_GENESIS_CAP_RIGS=<explicit-test-cap> \
+./scripts/devnet-migrate-v2.sh
+```
+
+It rejects the canonical program ID and verifies Devnet from the chain before
+sending. It is not a canonical migration command.
 
 ---
 
@@ -231,11 +271,11 @@ The rehearsal replaces it:
 # Init with a THROWAWAY devnet founder (never the mainnet founder):
 CHERRY_TREE_FOUNDER=<devnet founder pubkey> CHERRY_TREE_ALLOW_OTHER_FOUNDER=1 \
 CHERRY_TREE_RIG_PRICE_LAMPORTS=1000000 ./scripts/devnet-init.sh
-./scripts/devnet-fund.sh 1.0 259200          # must outlive T0 + 48h
+./scripts/devnet-fund.sh 1.0 172800          # must outlive T0 + 24h
 
 CHERRY_TREE_FOUNDER_KEYPAIR=<devnet founder keypair> \
 ./scripts/devnet-rehearsal.sh activate 60     # right away
-./scripts/devnet-rehearsal.sh public 60       # at or after T0 + 48h, fresh wallets A/B
+./scripts/devnet-rehearsal.sh public 60       # at or after exact T0 + 24h, fresh wallets A/B
 ```
 
 `activate` proves:
@@ -280,12 +320,55 @@ without `--resume` stays one-shot.
 - a claim inside 24h pays 25% and only the net leaves the reward vault;
 - the reward vault is solvent.
 
-`.skr` / `.sns` acceptance cannot run on devnet: those registries are
-mainnet-only. They are covered by `programs/sol-rigs/tests/launch.rs` and
-`app/tests/identity.test.ts`.
+`.skr` acceptance cannot run on devnet because the registry is mainnet-only;
+it is covered by `programs/sol-rigs/tests/launch.rs` and
+`app/tests/identity.test.ts`. `.sns` discovery remains tested for future use,
+but it does not participate in the V2 launch gate.
 
 The `devnet.yml` workflow runs the same thing (`stage: activate`, then
-`stage: public` two days later).
+`stage: public` at or after T0 + 24h).
+
+## Disposable V2 qualification lane (do not run against canonical Devnet)
+
+Qualification uses a fresh disposable Devnet program keypair and is explicit
+at every step. The canonical program
+`C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt` is rejected as a target.
+
+```bash
+export SOLANA_CLUSTER=devnet
+export SOLANA_RPC_URL=https://api.devnet.solana.com
+export CHERRY_TREE_QUALIFICATION=1
+export CHERRY_TREE_QUALIFICATION_PROGRAM_ID=<disposable-id>
+export CHERRY_TREE_QUALIFICATION_PROGRAM_KEYPAIR=<outside-repo-keypair>
+
+./scripts/qualification-build.sh v1
+./scripts/qualification-build.sh v2
+```
+
+The build script stages source beneath
+`target/qualification/<disposable-id>/{v1,v2}`. V1 is pinned to checkpoint
+`faf95124010c995504621b92882b0922926558b5`; V2 is pinned to committed HEAD.
+It changes program identity only inside those generated copies, requires the
+disposable keypair to match, reruns identity locks there, uses the pinned SBF
+toolchain, and leaves the canonical worktree untouched. The stage name and
+disposable ID make qualification artifacts distinguishable in CI.
+
+The future qualification execution order is fixed:
+
+1. Deploy staged V1 under the disposable ID.
+2. Initialize its exact 321-byte Config with T0 = 0.
+3. Upgrade that same disposable program to the staged V2 artifact.
+4. Run the qualification-only 321 → 329 migration with an explicit test cap.
+5. Fund externally, then activate with `A <= C`; verify T0 from block time.
+6. Exercise below/exact/over-cap fresh buys and cap-exhausted compounding.
+7. At exact T0 + 24h verify no-domain Public buying and cap removal.
+8. Verify claim, compound and all three vault/economic invariants.
+9. Archive source refs, toolchain versions, artifacts/hashes, program ID,
+   transaction signatures, account snapshots and boundary timestamps.
+
+Never deploy, upgrade, migrate, fund or activate the canonical V1 Devnet as
+part of qualification. This runbook prepares the lane; this Phase 13 work
+does not execute it.
 
 ---
 
@@ -303,20 +386,19 @@ The `inline:render` permission is required for blink sharing.
 
 ---
 
-## Vault behaviour in V1
+## Vault behaviour in V2
 
 | Vault | Receives | Pays out |
 |---|---|---|
-| CAPITAL | non-fee portion of rig purchases | **nothing** |
+| CAPITAL | non-fee portion of rig purchases | **nothing — locked in this program version** |
 | REWARD | `fund_rewards` only | user claims and compounds only |
 | FEE | disclosed purchase fee | `config.fee_recipient` only, triggered by the authority via `withdraw_fees` |
 
-The capital vault doing nothing is deliberate. The realized-yield / staking
-adapter is a separate phase that does not begin until a real devnet
-buy → accrue → claim → compound cycle is proven by step 6.
-
-There is no admin path out of the reward or capital vaults, and none is coming
-in V1.
+The capital vault doing nothing is deliberate. It has no withdrawal,
+reward-support or treasury-extraction instruction. Rigs are non-redeemable.
+REWARD is funded only by explicit external/non-purchase deposits; neither
+purchase proceeds nor purchase fees ever fund it. Pause stops buy, compound
+and claim, while deliberate reward funding remains open.
 
 ---
 

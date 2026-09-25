@@ -50,7 +50,8 @@ head -1 README.md | grep -q "THE CHERRY TREE" \
 # ---------------------------------------------------------------- scripts
 echo
 echo "--> deployment scripts present and executable"
-for s in devnet-deploy.sh devnet-init.sh devnet-fund.sh devnet-smoke.sh; do
+for s in devnet-deploy.sh devnet-init.sh devnet-fund.sh devnet-smoke.sh \
+         devnet-migrate-v2.sh qualification-build.sh; do
   if [[ -x "scripts/$s" ]]; then pass "scripts/$s"; else bad "scripts/$s missing or not executable"; fi
 done
 for s in app/scripts/ops/devnet-init.ts app/scripts/ops/devnet-fund.ts app/scripts/ops/devnet-smoke.ts; do
@@ -112,11 +113,29 @@ done
 echo
 echo "--> configuration documented"
 for v in SOLANA_CLUSTER SOLANA_RPC_URL ANCHOR_WALLET CHERRY_TREE_REWARD_FUNDER \
-         CHERRY_TREE_RIG_PRICE_LAMPORTS CHERRY_TREE_PURCHASE_FEE_BPS CHERRY_APP_ID; do
+         CHERRY_TREE_RIG_PRICE_LAMPORTS CHERRY_TREE_PURCHASE_FEE_BPS \
+         CHERRY_TREE_GENESIS_CAP_RIGS CHERRY_APP_ID; do
   grep -q "^# *$v=\|^$v=" .env.example && pass ".env.example documents $v" \
     || bad ".env.example does not document $v"
 done
 [[ -f DEPLOY.md ]] && pass "DEPLOY.md runbook present" || bad "DEPLOY.md runbook missing"
+
+# ---------------------------------------------------- qualification isolation
+echo
+echo "--> qualification lane is explicit and disposable"
+QUAL_SCRIPT="scripts/qualification-build.sh"
+grep -q 'CHERRY_TREE_QUALIFICATION.*==.*1' "$QUAL_SCRIPT" \
+  && pass "qualification requires explicit opt-in" \
+  || bad "qualification does not require explicit opt-in"
+grep -q 'canonical program ID is forbidden' "$QUAL_SCRIPT" \
+  && pass "qualification rejects canonical program ID" \
+  || bad "qualification does not reject canonical program ID"
+grep -q 'require_devnet' "$QUAL_SCRIPT" \
+  && pass "qualification is devnet-only" \
+  || bad "qualification is not devnet-only"
+grep -q 'target/qualification' "$QUAL_SCRIPT" \
+  && pass "qualification artifacts are isolated and CI-distinguishable" \
+  || bad "qualification artifact path is not isolated"
 
 # ---------------------------------------------------------------- no hardcoded wallets
 echo

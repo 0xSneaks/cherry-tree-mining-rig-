@@ -57,12 +57,13 @@ function baseConfig(over: Partial<Config>): Config {
     capitalVaultBump: 255,
     rewardVaultBump: 255,
     feeVaultBump: 255,
-    version: 1,
+    version: 2,
     bump: 255,
     founder: 'x' as never,
     launchT0: 0n,
     totalShares: 0n,
     totalClaimPenalties: 0n,
+    genesisCapRigs: 2_500n,
     ...over,
   };
 }

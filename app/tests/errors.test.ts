@@ -68,6 +68,7 @@ describe('explainActionError', () => {
       ['Error Code: NothingToClaim. Error Number: 6007.', /No harvest is currently available/i],
       ['Error Code: NothingToCompound. Error Number: 6008.', /Not enough accrued rewards to plant another rig yet/i],
       ['Error Code: ProgramPaused. Error Number: 6011.', /temporarily paused/i],
+      ['Error Code: GenesisCapExceeded. Error Number: 6025.', /Genesis fresh-buy allowance/i],
     ];
     for (const [text, copy] of cases) {
       const explained = explainActionError(new Error(text));

@@ -15,7 +15,7 @@ echo "==> cargo clippy"
 # the filter below fails the run on anything originating in our own code.
 cargo clippy --workspace --all-targets 2>&1 \
   | grep -E '^(warning|error)' \
-  | grep -vE 'anchor-debug|custom-panic|custom-heap|condition value: .solana|deprecated method|generated [0-9]+ warning' \
+  | grep -vE 'anchor-debug|custom-panic|custom-heap|condition value: .solana|deprecated method|generated [0-9]+ warning|following packages contain code that will be rejected by a future version of Rust' \
   && { echo "!! clippy findings in first-party code"; exit 1; }
 echo "    clean"
 
@@ -49,6 +49,9 @@ cd "$ROOT/app"
 
 echo "==> tsc --noEmit"
 npx tsc --noEmit
+
+echo "==> eslint"
+npm run lint
 
 echo "==> vitest"
 npx vitest run 2>&1 | tail -12

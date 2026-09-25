@@ -10,6 +10,7 @@ import {
   ACCESS_PHASES,
   accessPhase,
   formatCountdown,
+  genesisAllowance,
   purchaseAllowed,
   secondsToNextPhase,
 } from '../src/lib/program/launch';
@@ -48,6 +49,20 @@ describe('who may plant, per phase', () => {
       expect(purchaseAllowed(p, 'sns')).toBe(sns);
       expect(purchaseAllowed(p, 'none')).toBe(none);
     }
+  });
+
+  it('retains the legacy phase code but never returns it under V2', () => {
+    for (const [, now] of rows as bigint[][]) {
+      expect(accessPhase(1_000n, now!)).not.toBe('skrSnsEarly');
+    }
+  });
+});
+
+describe('Genesis fresh-buy allowance', () => {
+  it('is cumulative, floors at zero, and disappears exactly at +24h', () => {
+    expect(genesisAllowance(1_000n, 1_000n, 40n, 100n)).toBe(60n);
+    expect(genesisAllowance(1_000n, 1_000n + 86_399n, 101n, 100n)).toBe(0n);
+    expect(genesisAllowance(1_000n, 1_000n + 86_400n, 100n, 100n)).toBeNull();
   });
 });
 

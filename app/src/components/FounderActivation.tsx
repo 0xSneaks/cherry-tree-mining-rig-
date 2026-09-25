@@ -107,7 +107,7 @@ export function FounderActivation({
       <p className="note">
         Founder wallet connected. One deliberate first planting activates the
         grove. T0 is established when the founder activation transaction
-        confirms, and never changes.
+        confirms; no instruction in this program version can change it.
       </p>
 
       {stage !== 'sent' && stage !== 'failed' ? (

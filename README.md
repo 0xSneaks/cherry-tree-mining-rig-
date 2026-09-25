@@ -32,7 +32,7 @@ This is structural, not documentary. Three separate SOL vaults:
 
 | Vault       | Receives                            | Pays out                       |
 |-------------|-------------------------------------|--------------------------------|
-| **CAPITAL** | non-fee portion of rig purchases    | nothing in V1                  |
+| **CAPITAL** | non-fee portion of rig purchases    | nothing — locked in this version |
 | **REWARD**  | realized revenue via `fund_rewards` | user claims and compounds only |
 | **FEE**     | disclosed purchase fee              | authority withdrawal           |
 
@@ -99,7 +99,8 @@ owed, and it is asserted at the end of every instruction that touches reward
 state.
 
 **No admin path out of the reward or capital vaults.** The only admin money
-path in V1 is `withdraw_fees`, and it is seed-bound to the fee vault.
+path in this program version is `withdraw_fees`, and it is seed-bound to the
+fee vault.
 
 **Two-step authority handover,** so a typo cannot brick the program.
 

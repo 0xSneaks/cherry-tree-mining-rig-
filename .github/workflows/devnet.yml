@@ -3,7 +3,7 @@ name: Devnet deploy and end-to-end
 # THE CHERRY TREE — the real devnet path: build SBF, deploy, initialise, fund
 # a reward schedule, then rehearse the launch: founder activation, T0, the
 # access gate, claim penalty, replant, referral and solvency
-# (scripts/devnet-rehearsal.sh; two stages, the second at T0 + 48h).
+# (scripts/devnet-rehearsal.sh; two stages, the second at T0 + 24h).
 #
 # Why this exists as a workflow: the development container has no Solana
 # toolchain and cannot reach either `release.anza.xyz` or
@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       stage:
-        description: 'activate = deploy, init (throwaway devnet founder), fund, activate. public = run at/after T0 + 48h.'
+        description: 'activate = deploy, init (throwaway devnet founder), fund, activate. public = run at/after T0 + 24h.'
         required: true
         type: choice
         options: [activate, public]
@@ -40,7 +40,7 @@ on:
         required: true
         default: '1.0'
       reward_duration_seconds:
-        description: 'Length of the reward schedule in seconds (must outlive T0 + 48h for stage public)'
+        description: 'Length of the reward schedule in seconds (must outlive T0 + 24h for stage public)'
         required: true
         default: '259200'
       wait_seconds:
@@ -250,6 +250,8 @@ jobs:
           CHERRY_TREE_ALLOW_OTHER_FOUNDER=1
           CHERRY_TREE_FOUNDER_KEYPAIR=$RUNNER_TEMP/keys/founder.json
           CHERRY_TREE_PURCHASE_FEE_BPS=300
+          # Explicit Devnet rehearsal value only; not a production-cap choice.
+          CHERRY_TREE_GENESIS_CAP_RIGS=10000
           CHERRY_TREE_SMOKE_WALLET_A=$RUNNER_TEMP/keys/smoke-a.json
           CHERRY_TREE_SMOKE_WALLET_B=$RUNNER_TEMP/keys/smoke-b.json
           EOF

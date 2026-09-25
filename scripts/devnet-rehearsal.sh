@@ -8,7 +8,7 @@
 # the TypeScript, so neither path can be bypassed.
 #
 #   ./scripts/devnet-rehearsal.sh activate [waitSeconds] [maxReplantWaitSeconds]
-#   ./scripts/devnet-rehearsal.sh public   [waitSeconds] [maxReplantWaitSeconds]   # >= T0 + 48h
+#   ./scripts/devnet-rehearsal.sh public   [waitSeconds] [maxReplantWaitSeconds]   # >= T0 + 24h
 #
 #   ./scripts/devnet-rehearsal.sh activate [waitSeconds] [maxReplantWaitSeconds] \
 #                  --resume --expect-t0 <unixSeconds>

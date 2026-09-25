@@ -17,7 +17,12 @@ import { estimatedOutputPerDay } from '../lib/program/accrual';
 import { quoteClaim } from '../lib/program/penalty';
 import { quotePurchase, rigsAffordable } from '../lib/program/pricing';
 import { discoverIdentity } from '../lib/program/identity';
-import { accessPhase, purchaseAllowed, type Identity } from '../lib/program/launch';
+import {
+  accessPhase,
+  genesisAllowance,
+  purchaseAllowed,
+  type Identity,
+} from '../lib/program/launch';
 import { useLiveAccrual } from '../hooks/useLiveAccrual';
 import { useRigsState, type LifecycleSource } from '../hooks/useRigsState';
 import type { RigsSigner } from '../lib/signer';
@@ -144,6 +149,15 @@ export function Game({ host }: { host: Host }) {
   // (app/scripts/ops/first-buy.ts), with preflight and explicit confirmation.
   const phase = config ? accessPhase(config.launchT0, chainTime) : 'preLaunch';
   const plantOpen = phase !== 'preLaunch' && purchaseAllowed(phase, identity ?? 'none');
+  const genesisRemaining = config
+    ? genesisAllowance(
+        config.launchT0,
+        chainTime,
+        miner?.lifetimeRigsBought ?? 0n,
+        config.genesisCapRigs,
+      )
+    : null;
+  const freshBuyOpen = plantOpen && (genesisRemaining === null || genesisRemaining > 0n);
   const referrer = !miner ? referrerFromUrl(host.address) : null;
   const claimQuote = miner ? quoteClaim(claimable, miner.lastPlantedAt, chainTime) : null;
 
@@ -283,6 +297,7 @@ export function Game({ host }: { host: Host }) {
             chainTime={chainTime}
             wallet={host.address}
             identity={identity}
+            lifetimeRigsBought={miner?.lifetimeRigsBought ?? 0n}
           />
 
           {phase === 'preLaunch' &&
@@ -394,14 +409,17 @@ export function Game({ host }: { host: Host }) {
             config={config}
             chainTime={chainTime}
             walletLamports={walletLamports}
-            disabled={!canAct || !plantOpen}
+            disabled={!canAct || !freshBuyOpen}
             closedReason={
-              plantOpen
+              freshBuyOpen
                 ? null
+                : genesisRemaining === 0n
+                  ? 'This wallet has used its Genesis fresh-buy allowance. Replanting remains available.'
                 : phase === 'preLaunch'
                   ? 'Planting opens when the founder activates the grove.'
                   : 'Planting is not open to this wallet in the current access phase.'
             }
+            genesisRemaining={genesisRemaining}
             referrer={referrer}
             busy={busy === 'buy'}
             onBuy={onBuy}

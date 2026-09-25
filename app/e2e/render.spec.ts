@@ -613,23 +613,25 @@ test.describe('launch activation and access phases', () => {
     await expect(page.getByTestId('founder-activation')).toHaveCount(0);
   });
 
-  test('genesis: .skr access with a countdown to SNS from chain time', async ({ page }) => {
+  test('genesis: .skr access with a countdown to Public from chain time', async ({ page }) => {
     await stubCherryHost(page);
     await stubRpc(page, { now: NOW, sinceLaunch: 3_600n });
     await page.goto('/');
     await expect(page.getByTestId('launch-panel')).toContainText('Genesis is live');
     await expect(page.getByTestId('launch-panel')).toContainText('.SKR genesis access');
-    await expect(page.getByTestId('launch-countdown')).toContainText('.sns early access in 22:59:');
+    await expect(page.getByTestId('launch-countdown')).toContainText('Public access in 22:59:');
+    await expect(page.getByTestId('genesis-allowance')).toContainText('2470 remaining');
     // This wallet has no .skr name in the stub: planting stays closed to it.
     await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
   });
 
-  test('.sns early access, then public', async ({ page }) => {
+  test('exactly T0 + 24h is Public with no second gate', async ({ page }) => {
     await stubCherryHost(page);
     await stubRpc(page, { now: NOW, sinceLaunch: 86_400n + 60n });
     await page.goto('/');
-    await expect(page.getByTestId('launch-panel')).toContainText('.sns early access');
-    await expect(page.getByTestId('launch-countdown')).toContainText('Public in 23:59:');
+    await expect(page.getByTestId('launch-panel')).toContainText('The grove is open');
+    await expect(page.getByTestId('launch-countdown')).toHaveCount(0);
+    expect(await phaseOf(page)).toBe('public');
   });
 
   test('public: the grove is open', async ({ page }) => {

@@ -36,10 +36,11 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 }
 
 /**
- * `initialize(rig_price_lamports, purchase_fee_bps, reward_funder, fee_recipient, founder)`.
+ * `initialize(rig_price_lamports, purchase_fee_bps, reward_funder,
+ * fee_recipient, founder, genesis_cap_rigs)`.
  *
- * `founder` is pinned forever: the only wallet whose purchase can activate
- * launch. There is no setter.
+ * `founder` is pinned for this program version: the only wallet whose purchase
+ * can activate launch. There is no setter.
  *
  * `feeRecipient` is a payout destination pinned into config, not a signer:
  * `withdraw_fees` may pay it and nothing else, and it never has to sign.
@@ -53,6 +54,7 @@ export function initializeInstruction(
     rewardFunder: Address;
     feeRecipient: Address;
     founder: Address;
+    genesisCapRigs: bigint;
   },
 ): Instruction {
   return {
@@ -72,6 +74,27 @@ export function initializeInstruction(
       new Uint8Array(getAddressEncoder().encode(args.rewardFunder)),
       new Uint8Array(getAddressEncoder().encode(args.feeRecipient)),
       new Uint8Array(getAddressEncoder().encode(args.founder)),
+      new Uint8Array(getU64Encoder().encode(args.genesisCapRigs)),
+    ),
+  };
+}
+
+/** Raw-account `migrate_v2(genesis_cap_rigs)`, authority-only and one-shot. */
+export function migrateV2Instruction(
+  authority: Address,
+  config: Address,
+  genesisCapRigs: bigint,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.WRITABLE_SIGNER },
+      { address: config, role: AccountRole.WRITABLE },
+      { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.migrateV2,
+      new Uint8Array(getU64Encoder().encode(genesisCapRigs)),
     ),
   };
 }

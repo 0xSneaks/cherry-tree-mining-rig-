@@ -64,6 +64,8 @@ function state(over: Partial<FirstBuyState> = {}, c: Partial<Config> = {}, m: Pa
     config: {
       rigPriceLamports: 10_000_000n,
       purchaseFeeBps: 300,
+      version: 2,
+      genesisCapRigs: 2_500n,
       founder: EXPECTED_FOUNDER,
       launchT0: T0,
       totalRigs: SEEDS,
@@ -77,6 +79,7 @@ function state(over: Partial<FirstBuyState> = {}, c: Partial<Config> = {}, m: Pa
     } as Config,
     miner: {
       rigs: SEEDS,
+      lifetimeRigsBought: SEEDS,
       weight: 100,
       referrer: '11111111111111111111111111111111',
       ...m,
@@ -93,7 +96,7 @@ function state(over: Partial<FirstBuyState> = {}, c: Partial<Config> = {}, m: Pa
 const expected = { founder: EXPECTED_FOUNDER, seeds: SEEDS };
 
 describe('verify first buy', () => {
-  it('passes a correct activation and reports ~24h to SNS', () => {
+  it('passes a correct activation and reports ~24h to Public', () => {
     const r = evaluateFirstBuy(tx(), state(), expected);
     expect(r.checks.filter((c) => !c.pass)).toEqual([]);
     expect(r.countdown).toBe(86_400n - 60n);
@@ -114,6 +117,7 @@ describe('verify first buy', () => {
     ['fee not routed exactly', tx({ postBalances: tx().postBalances.map((b, i) => (i === 4 ? b - 1n : b)) }), state()],
     ['reward vault touched', tx({ postBalances: tx().postBalances.map((b, i) => (i === 5 ? b - 1n : b)) }), state()],
     ['wrong seeds credited', tx(), state({}, {}, { rigs: 9n })],
+    ['activation above cap', tx(), state({}, { genesisCapRigs: SEEDS - 1n })],
     ['miner not program-owned', tx(), state({ minerAccountOwner: address('11111111111111111111111111111111') })],
     ['referral on activation', tx(), state({}, {}, { weight: 105 })],
     ['insolvent', tx(), state({ rewardVaultDistributable: 1n })],

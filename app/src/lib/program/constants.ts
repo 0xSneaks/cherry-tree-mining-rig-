@@ -22,6 +22,8 @@ export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export const BPS_DENOMINATOR = 10_000n;
 /** Matches `rigs_engine::pricing::MAX_RIGS_PER_PURCHASE`. */
 export const MAX_RIGS_PER_PURCHASE = 1_000_000n;
+/** Matches `rigs_engine::pricing::MAX_TOTAL_RIGS`. */
+export const MAX_TOTAL_RIGS = 1_000_000_000_000n;
 /** Matches `rigs_engine::accumulator::PRECISION`. */
 export const PRECISION = 1_000_000_000_000n;
 
@@ -44,6 +46,7 @@ function fromHex(hex: string): Uint8Array {
 export const IX_DISCRIMINATOR = {
   initialize: fromHex('afaf6d1f0d989bed'),
   fundRewards: fromHex('7240a370afa71379'),
+  migrateV2: fromHex('bbcb121fceedfe29'),
   buyRigs: fromHex('0cfa7948abf4e5a3'),
   claim: fromHex('3ec6d6c1d59f6cd2'),
   compound: fromHex('a5d0fb4ef2a08d2f'),
@@ -60,6 +63,6 @@ export const ACCOUNT_DISCRIMINATOR = {
 
 /** Byte length of each account, discriminator included. */
 export const ACCOUNT_SIZE = {
-  config: 321,
+  config: 329,
   miner: 171,
 } as const;

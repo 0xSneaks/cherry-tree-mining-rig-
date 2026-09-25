@@ -28,7 +28,7 @@
  *             `activate` (without --resume) stays one-shot and refuses a
  *             non-zero T0.
  *
- *   public    run at or after T0 + 48h (the schedule must still be live):
+ *   public    run at or after T0 + 24h (the schedule must still be live):
  *               - wallet A plants (weight 100)
  *               - wallet B plants referred by A (weight 105, referrer bound)
  *               - B naming a referrer again is refused (ReferrerAlreadyBound)
@@ -451,8 +451,7 @@ async function stageActivate(
   );
   await solvency(chain, pdas);
 
-  row('.skr + .sns phase from', t0 + ACCESS_WINDOW_SECONDS);
-  row('public phase from (run stage "public")', t0 + 2n * ACCESS_WINDOW_SECONDS);
+  row('public phase from (run stage "public")', t0 + ACCESS_WINDOW_SECONDS);
 }
 
 async function stagePublic(
@@ -473,9 +472,9 @@ async function stagePublic(
   const cfg0 = (await fetchConfig(chain)) ?? fail('not initialised.');
   const now = await chainTime(chain);
   if (cfg0.launchT0 === 0n) fail('not activated. Run stage "activate" first.');
-  if (now < cfg0.launchT0 + 2n * ACCESS_WINDOW_SECONDS) {
+  if (now < cfg0.launchT0 + ACCESS_WINDOW_SECONDS) {
     fail(
-      `public phase opens at ${cfg0.launchT0 + 2n * ACCESS_WINDOW_SECONDS}; chain time is ${now}.`,
+      `public phase opens at ${cfg0.launchT0 + ACCESS_WINDOW_SECONDS}; chain time is ${now}.`,
     );
   }
   if (now >= cfg0.rewardPeriodFinish) fail('the reward schedule has finished. Fund it first.');

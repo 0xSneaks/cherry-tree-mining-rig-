@@ -98,6 +98,12 @@ export function evaluateFirstBuy(
     `launch_t0 ${t0}, block time ${tx.blockTime}`,
   );
   add('founder pinned', c.founder === expected.founder, `config.founder ${c.founder}`);
+  add('V2 config', c.version === 2, `config.version ${c.version}`);
+  add(
+    'activation within Genesis cap',
+    expected.seeds <= c.genesisCapRigs,
+    `${expected.seeds} <= ${c.genesisCapRigs}`,
+  );
 
   const quote = quotePurchase(expected.seeds, c.rigPriceLamports, BigInt(c.purchaseFeeBps));
   const feeD = delta(tx, s.pdas.feeVault);
@@ -117,8 +123,11 @@ export function evaluateFirstBuy(
   const m = s.miner;
   add(
     'expected seeds credited',
-    m !== null && m.rigs === expected.seeds && c.totalRigs === expected.seeds,
-    `miner ${m?.rigs ?? 'none'}, global ${c.totalRigs}`,
+    m !== null &&
+      m.rigs === expected.seeds &&
+      m.lifetimeRigsBought === expected.seeds &&
+      c.totalRigs === expected.seeds,
+    `miner ${m?.rigs ?? 'none'}, fresh bought ${m?.lifetimeRigsBought ?? 'none'}, global ${c.totalRigs}`,
   );
   add('miner account owned by the program', s.minerAccountOwner === PROGRAM_ID, `owner ${s.minerAccountOwner}`);
   add(
@@ -142,7 +151,7 @@ export function evaluateFirstBuy(
   const countdown = secondsToNextPhase(t0, s.chainTime);
   add('access phase = .SKR GENESIS', phase === 'skrGenesis', phase);
   add(
-    'countdown ≈ 24h to .sns access',
+    'countdown ≈ 24h to Public',
     countdown !== null && countdown > 0n && countdown <= 86_400n,
     `${countdown} s`,
   );

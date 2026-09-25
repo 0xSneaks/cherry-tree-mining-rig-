@@ -25,6 +25,7 @@ import type { ProgramAddresses } from '../src/lib/program/pdas';
 import {
   fundRewardsInstruction,
   initializeInstruction,
+  migrateV2Instruction,
   setFeeRecipientInstruction,
   withdrawFeesInstruction,
 } from '../scripts/ops/admin-instructions';
@@ -98,6 +99,22 @@ describe('requireDevnet', () => {
   it('accepts a local validator', () => {
     set('devnet', 'http://127.0.0.1:8899');
     expect(requireDevnet().rpcUrl).toBe('http://127.0.0.1:8899');
+  });
+});
+
+describe('migrate_v2 instruction', () => {
+  const ix = migrateV2Instruction(AUTHORITY, PDAS.config, 2_500n);
+
+  it('uses raw migration account order and appends the cap', () => {
+    expect(ix.accounts!.map((a) => a.address)).toEqual([
+      AUTHORITY,
+      PDAS.config,
+      SYSTEM_PROGRAM_ID,
+    ]);
+    expect(ix.accounts![0]!.role).toBe(AccountRole.WRITABLE_SIGNER);
+    expect(ix.data!.length).toBe(16);
+    expect(Array.from(ix.data!.slice(0, 8))).toEqual(Array.from(IX_DISCRIMINATOR.migrateV2));
+    expect(new DataView(ix.data!.buffer, ix.data!.byteOffset + 8, 8).getBigUint64(0, true)).toBe(2_500n);
   });
 });
 
@@ -216,6 +233,7 @@ describe('initialize instruction', () => {
     rewardFunder: FUNDER,
     feeRecipient: FEE_RECIPIENT,
     founder: FEE_RECIPIENT,
+    genesisCapRigs: 2_500n,
   });
 
   it('targets the program', () => {
@@ -234,18 +252,19 @@ describe('initialize instruction', () => {
     expect(ix.accounts![0]!.role).toBe(AccountRole.WRITABLE_SIGNER);
   });
 
-  it('encodes u64 price, u16 bps and three 32-byte pubkeys after the discriminator', () => {
+  it('encodes V2 initialize args with the cap appended last', () => {
     const data = ix.data!;
     expect(Array.from(data.slice(0, 8))).toEqual(Array.from(IX_DISCRIMINATOR.initialize));
     // 10_000_000 little-endian u64
     expect(Array.from(data.slice(8, 16))).toEqual([128, 150, 152, 0, 0, 0, 0, 0]);
     // 300 little-endian u16
     expect(Array.from(data.slice(16, 18))).toEqual([44, 1]);
-    // reward_funder, fee_recipient, founder
-    expect(data.length).toBe(8 + 8 + 2 + 32 + 32 + 32);
+    // reward_funder, fee_recipient, founder, genesis_cap_rigs
+    expect(data.length).toBe(8 + 8 + 2 + 32 + 32 + 32 + 8);
+    expect(new DataView(data.buffer, data.byteOffset + data.length - 8, 8).getBigUint64(0, true)).toBe(2_500n);
   });
 
-  it('carries the fee recipient as the final argument, after the reward funder', () => {
+  it('carries the fee recipient after the reward funder', () => {
     const data = ix.data!;
     const encode = (a: string) =>
       Array.from(new Uint8Array(getAddressEncoder().encode(address(a))));

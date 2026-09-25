@@ -29,7 +29,7 @@ import type { RigsSigner } from '../lib/signer';
 import { BuyPanel } from './BuyPanel';
 import { ClaimConfirm } from './ClaimConfirm';
 import { GroveRecord } from './GroveRecord';
-import { RigVisual } from './RigVisual';
+import { GroveVisual } from './GroveVisual';
 import { RoomLeaderboard } from './RoomLeaderboard';
 import { ProgressShareCard, ShareCard, type SharePayload } from './ShareCard';
 import { TransparencyPanel } from './TransparencyPanel';
@@ -345,8 +345,8 @@ export function Game({ host }: { host: Host }) {
             claimable={claimable}
           />
 
-          {/* The centerpiece: the grove itself, from the real rig count. */}
-          <RigVisual rigs={rigs} running={scheduleLive && !paused} />
+          {/* The centerpiece: the grove itself, from the real seed count. */}
+          <GroveVisual seeds={rigs} running={scheduleLive && !paused} />
 
           <YieldPanel
             config={config}

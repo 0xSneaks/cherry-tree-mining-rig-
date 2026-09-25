@@ -66,7 +66,7 @@ describe('explainActionError', () => {
     const cases: Array<[string, RegExp]> = [
       ['Error Code: AccessDenied. Error Number: 6023.', /not eligible during the current access phase/i],
       ['Error Code: NothingToClaim. Error Number: 6007.', /No harvest is currently available/i],
-      ['Error Code: NothingToCompound. Error Number: 6008.', /Not enough accrued rewards to plant another rig yet/i],
+      ['Error Code: NothingToCompound. Error Number: 6008.', /Not enough accrued rewards to plant another seed yet/i],
       ['Error Code: ProgramPaused. Error Number: 6011.', /temporarily paused/i],
       ['Error Code: GenesisCapExceeded. Error Number: 6025.', /Genesis fresh-buy allowance/i],
     ];

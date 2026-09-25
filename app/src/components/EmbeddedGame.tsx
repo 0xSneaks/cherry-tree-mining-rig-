@@ -107,7 +107,7 @@ export function EmbeddedGame() {
       <main className="shell">
         <h1 className="wordmark">{PRODUCT_NAME}</h1>
         <p className="note" style={{ marginTop: 10 }}>
-          Spinning up the shaft…
+          Waking the grove…
         </p>
       </main>
     );

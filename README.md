@@ -4,9 +4,9 @@
   <img src="docs/assets/cherry-tree-hero.png" alt="The Cherry Tree" width="300">
 </p>
 
-THE CHERRY TREE is a Solana-native mining simulation. Users buy non-redeemable rigs, receive a share of a transparently funded SOL reward stream, and may claim rewards or compound them into additional rigs.
+THE CHERRY TREE is a Solana-native mining simulation. Users buy non-redeemable seeds, receive a share of a transparently funded SOL reward stream, and may claim rewards or compound them into additional seeds.
 
-> This is a simulation. Rigs do not mine SOL, participate in Solana consensus, or represent a deposit or redeemable principal.
+> This is a simulation. Seeds do not mine SOL, participate in Solana consensus, or represent a deposit or redeemable principal.
 
 ## Documentation
 

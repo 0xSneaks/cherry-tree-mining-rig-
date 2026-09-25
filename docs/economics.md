@@ -1,10 +1,10 @@
 # Economics
 
-For `n` rigs: capital = `n × rig_price_lamports`; fee = `floor(capital × purchase_fee_bps / 10,000)`; total paid = capital + fee. The fee is capped at 10% and a single purchase at 1,000,000 rigs. Repository examples of 0.01 SOL and 3% are rehearsal values, not a live promise.
+For `n` Seeds: capital = `n × rig_price_lamports`; fee = `floor(capital × purchase_fee_bps / 10,000)`; total paid = capital + fee. The fee is capped at 10% and a single purchase at 1,000,000 Seeds. Repository examples of 0.01 SOL and 3% are rehearsal values, not a live promise.
 
 Rewards come only from `fund_rewards(amount, duration)`, which must back the schedule. When the window ends, APR is zero; existing liabilities remain accounted for. Mid-schedule funding rolls the remaining schedule into the new one.
 
-APR uses the funded rate, 365-day annualization, fee-inclusive cost, and weighted total shares. More rigs dilute each rig’s share of the same emission. Phases are labels derived from state:
+APR uses the funded rate, 365-day annualization, fee-inclusive cost, and weighted total shares. More Seeds dilute each Seed’s share of the same emission. Phases are labels derived from state:
 
 | Phase | Base APR |
 |---|---:|

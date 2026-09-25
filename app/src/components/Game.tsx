@@ -10,16 +10,20 @@ import { isAddress, type Address } from '@solana/kit';
 import { buyRigs, claim, compound } from '../lib/actions';
 import { PRODUCT_NAME, PRODUCT_NAME_SHORT } from '../lib/brand';
 import { rpc } from '../lib/chain';
+import { CLUSTER } from '../lib/env';
+import { explainActionError } from '../lib/errors';
 import { formatCount, formatSol } from '../lib/format';
 import { estimatedOutputPerDay } from '../lib/program/accrual';
 import { quoteClaim } from '../lib/program/penalty';
-import { rigsAffordable } from '../lib/program/pricing';
+import { quotePurchase, rigsAffordable } from '../lib/program/pricing';
 import { discoverIdentity } from '../lib/program/identity';
 import { accessPhase, purchaseAllowed, type Identity } from '../lib/program/launch';
 import { useLiveAccrual } from '../hooks/useLiveAccrual';
 import { useRigsState, type LifecycleSource } from '../hooks/useRigsState';
 import type { RigsSigner } from '../lib/signer';
 import { BuyPanel } from './BuyPanel';
+import { ClaimConfirm } from './ClaimConfirm';
+import { GroveRecord } from './GroveRecord';
 import { OreBin } from './OreBin';
 import { Readout } from './Readout';
 import { RigVisual } from './RigVisual';
@@ -91,6 +95,7 @@ export function Game({ host }: { host: Host }) {
 
   const [busy, setBusy] = useState<null | 'buy' | 'claim' | 'compound'>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmingClaim, setConfirmingClaim] = useState(false);
   const [walletLamports, setWalletLamports] = useState<bigint | null>(null);
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
 
@@ -155,6 +160,22 @@ export function Game({ host }: { host: Host }) {
     }
   }, [claimable, config]);
 
+  // What those replanted seeds cost out of the accrued harvest, and what
+  // stays behind — the same `quotePurchase` port the buy panel shows.
+  const compoundQuote = useMemo(() => {
+    if (!config || compoundPreview === 0n) return null;
+    try {
+      const quote = quotePurchase(
+        compoundPreview,
+        config.rigPriceLamports,
+        BigInt(config.purchaseFeeBps),
+      );
+      return { quote, remainder: claimable - quote.totalLamports };
+    } catch {
+      return null;
+    }
+  }, [claimable, compoundPreview, config]);
+
   const run = useCallback(
     async (kind: 'buy' | 'claim' | 'compound', fn: () => Promise<unknown>) => {
       if (!host.signer) return;
@@ -165,7 +186,11 @@ export function Game({ host }: { host: Host }) {
         // Reconcile against the chain before anything on screen moves.
         await refresh();
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
+        // Expected protocol errors are said in product language on screen;
+        // the raw error stays in the developer console, never hidden.
+        const explained = explainActionError(e);
+        console.error(`[cherry-tree] ${kind} failed:`, explained.raw);
+        setActionError(explained.message);
       } finally {
         setBusy(null);
       }
@@ -226,6 +251,11 @@ export function Game({ host }: { host: Host }) {
           <span className="status-dot" />
           {statusLabel}
         </span>
+        {/* The cluster this build talks to, from the environment — during
+            rehearsal that is Devnet, and the screen says so. */}
+        <span className="cluster" data-testid="cluster">
+          {CLUSTER.toUpperCase()}
+        </span>
       </div>
 
       {host.room ? (
@@ -261,6 +291,9 @@ export function Game({ host }: { host: Host }) {
           host.signer ? (
             <FounderActivation founder={host.address} signer={host.signer} onDone={refresh} />
           ) : null}
+
+          {/* The centerpiece: the grove itself, from the real rig count. */}
+          <RigVisual rigs={rigs} running={scheduleLive && !paused} />
 
           <YieldPanel
             config={config}
@@ -324,14 +357,36 @@ export function Game({ host }: { host: Host }) {
             <button
               type="button"
               className="primary"
-              onClick={onClaim}
+              onClick={() => setConfirmingClaim(true)}
               disabled={!canAct || claimable === 0n}
             >
               {busy === 'claim' ? 'Claiming…' : 'Claim SOL'}
             </button>
           </div>
 
-          <RigVisual rigs={rigs} running={scheduleLive && !paused} />
+          {compoundQuote ? (
+            <p className="note" data-testid="compound-preview">
+              Replant plants {formatCount(compoundQuote.quote.count)} more{' '}
+              seed{compoundQuote.quote.count === 1n ? '' : 's'} for{' '}
+              {formatSol(compoundQuote.quote.totalLamports, 6)} SOL of your accrued
+              harvest — {formatSol(compoundQuote.remainder, 6)} SOL stays ready to
+              harvest.
+            </p>
+          ) : null}
+
+          {confirmingClaim && claimQuote ? (
+            <ClaimConfirm
+              quote={claimQuote}
+              busy={busy === 'claim'}
+              onConfirm={() => {
+                setConfirmingClaim(false);
+                onClaim();
+              }}
+              onCancel={() => setConfirmingClaim(false)}
+            />
+          ) : null}
+
+          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
 
           <hr className="rule" />
 

@@ -168,8 +168,11 @@ body {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
   padding: 7px 0;
+  /* A wide value (the full-lamport hero) wraps under its label instead of
+     pushing the page wider than a phone. */
+  flex-wrap: wrap;
 }
 
 .readout-label {
@@ -190,6 +193,7 @@ body {
   font-size: 26px;
   letter-spacing: -0.01em;
   color: var(--blossom);
+  overflow-wrap: anywhere;
 }
 
 /* The moving lamport digits: present and real, but not shouting. */
@@ -302,7 +306,8 @@ button.primary:disabled {
   min-width: 48px;
   padding: 9px 4px;
   font-size: 11px;
-  min-height: 0;
+  /* Touch-safe on a phone: 44px is the minimum comfortable target. */
+  min-height: 44px;
 }
 
 .quick button[aria-pressed='true'] {
@@ -579,4 +584,32 @@ button.primary:disabled {
   line-height: 1.6;
   color: var(--text-faint);
   margin-top: 20px;
+}
+
+/* The cluster this build talks to — DEVNET during rehearsal. */
+.cluster {
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--steel);
+  white-space: nowrap;
+}
+
+/* Harvest confirmation: shown in flow, touch-safe, no hover dependency. */
+.confirm-sheet {
+  margin-top: 14px;
+  border: 1px solid var(--blossom);
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: var(--bg-inset);
+}
+.confirm-sheet .actions {
+  margin-top: 10px;
+}
+.confirm-sheet .readout--total {
+  border-top: 1px solid var(--rule);
+  margin-top: 5px;
+  padding-top: 8px;
 }

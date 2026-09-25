@@ -41,6 +41,7 @@ import {
   EMBED_NONCE_ROUTE,
   EMBED_TOKEN_ROUTE,
   cherryChatConfig,
+  cherryChatEnabled,
 } from '../lib/cherryChat';
 
 /** What this component uses from the SDK, narrowed. */
@@ -254,7 +255,10 @@ export function CommunityChat({
   onConnectRequested?: () => void;
 }) {
   const { isEmbedded } = useCherryEnvironment({ strict: true });
-  if (isEmbedded) return null;
+  // Unconfigured, the chat is absent — and the sign-message hook below must
+  // not run at all: a wallet without `solana:signMessage` would throw during
+  // render and take the whole connected page down with it.
+  if (isEmbedded || !cherryChatEnabled()) return null;
 
   return account ? (
     <SignedChat account={account} onConnectRequested={onConnectRequested} />

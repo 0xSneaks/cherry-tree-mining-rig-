@@ -184,6 +184,35 @@ export async function stubRpc(page: Page, opts: StubOptions = {}): Promise<void>
             id: req.id,
             result: { ...ctx, value: 4_000_000_000 },
           };
+        // The transaction lifecycle a wallet-driven action needs: a blockhash
+        // to build with and a confirmed status to stop polling on.
+        case 'getLatestBlockhash':
+          return {
+            jsonrpc: '2.0',
+            id: req.id,
+            result: {
+              context: ctx.context,
+              value: {
+                blockhash: 'EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUdkDPTKN1N',
+                lastValidBlockHeight: 300_000_100,
+              },
+            },
+          };
+        case 'getSignatureStatuses':
+          return {
+            jsonrpc: '2.0',
+            id: req.id,
+            result: {
+              context: ctx.context,
+              value: [
+                {
+                  slot: 300_000_000,
+                  confirmationStatus: 'confirmed',
+                  err: null,
+                },
+              ],
+            },
+          };
         default:
           return { jsonrpc: '2.0', id: req.id, result: null };
       }
@@ -271,9 +300,14 @@ export async function stubCherryHost(
         setTimeout(init, 0);
       }
       // The SDK buffers an init that arrives before it starts listening, but
-      // repeating it keeps the stub robust to load-order changes.
-      setTimeout(init, 150);
-      setTimeout(init, 600);
+      // under a loaded parallel run its listener can mount seconds after the
+      // page does — so keep offering the init for the SDK's own full 10s
+      // handshake window rather than a fixed couple of retries.
+      let attempts = 0;
+      const id = setInterval(() => {
+        init();
+        if (++attempts >= 20) clearInterval(id);
+      }, 500);
 
       // Lets a test push a lifecycle event the way the host would.
       (window as unknown as { __cherryEmit: (e: string) => void }).__cherryEmit = (
@@ -281,6 +315,107 @@ export async function stubCherryHost(
       ) => post({ type: 'cherry:event', event });
     },
     { token },
+  );
+}
+
+/**
+ * Impersonate a Wallet Standard wallet — the standalone (and Solana Mobile
+ * in-app-browser) connection path.
+ *
+ * Registers through the wallet-standard event protocol itself: the page
+ * dispatches `wallet-standard:register-wallet`, and re-registers whenever the
+ * app announces `wallet-standard:app-ready`. `signAndSendTransaction` either
+ * returns a signature or throws `failWith`, so action flows can be driven to
+ * success or to a specific on-chain refusal without touching app code.
+ */
+export async function stubWalletStandard(
+  page: Page,
+  opts: { failWith?: string } = {},
+): Promise<void> {
+  await page.addInitScript(
+    ({ failWith, walletAddress }) => {
+      const chains = ['solana:devnet'];
+      const features = [
+        'standard:connect',
+        'standard:events',
+        'solana:signAndSendTransaction',
+        'solana:signMessage',
+      ];
+      const account = {
+        address: walletAddress,
+        chains,
+        features,
+        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
+        label: 'Test Account',
+        publicKey: Uint8Array.from(Array(32).fill(9)),
+      };
+      const wallet = {
+        version: '1.0.0',
+        name: 'Seeker Test Wallet',
+        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
+        chains,
+        features: {
+          'standard:connect': {
+            version: '1.0.0',
+            // The react layer destructures `{ accounts }` from the result.
+            connect: async () => ({ accounts: [account] }),
+            disconnect: async () => {},
+          },
+          'standard:events': {
+            version: '1.0.0',
+            on: () => () => {},
+          },
+          'solana:signAndSendTransaction': {
+            version: '1.0.0',
+            supportedTransports: ['keys'],
+            // Returns one result per input; the react layer destructures
+            // `const [result]` from it.
+            async signAndSendTransaction() {
+              if (failWith) throw new Error(failWith);
+              return [{ signature: Uint8Array.from(Array(64).fill(1)) }];
+            },
+          },
+          'solana:signMessage': {
+            version: '1.0.0',
+            supportedTransports: ['keys'],
+            async signMessage(...inputs: Array<{ message: Uint8Array }>) {
+              return inputs.map(({ message }) => ({
+                signedMessage: message,
+                signature: Uint8Array.from(Array(64).fill(2)),
+              }));
+            },
+          },
+        },
+        accounts: [account],
+      };
+
+      // The app side of the handshake: it dispatches `app-ready` with its
+      // `{ register }` API in `detail`, and listens for `register-wallet`
+      // events whose `detail` is a callback receiving that same API.
+      const registerWith = (api: { register(w: unknown): void }) => {
+        try {
+          api.register(wallet);
+        } catch {
+          /* already registered */
+        }
+      };
+      const dispatch = () =>
+        window.dispatchEvent(
+          new CustomEvent('wallet-standard:register-wallet', { detail: registerWith }),
+        );
+      window.addEventListener('wallet-standard:app-ready', (event) =>
+        registerWith((event as CustomEvent<{ register(w: unknown): void }>).detail),
+      );
+      dispatch();
+      // Belt and braces for load-order changes: keep offering the wallet
+      // until the app has picked it up.
+      let tries = 0;
+      const id = setInterval(() => {
+        dispatch();
+        if (++tries > 25) clearInterval(id);
+      }, 200);
+    },
+    { failWith: opts.failWith ?? null, walletAddress: WALLET },
   );
 }
 

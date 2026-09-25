@@ -241,13 +241,35 @@ CHERRY_TREE_FOUNDER_KEYPAIR=<devnet founder keypair> \
 `activate` proves:
 
 - a non-founder purchase before T0 is refused (`AccessDenied`);
-- the founder purchase writes T0 = its block time, and a second founder
-  purchase leaves T0 unchanged;
+- the founder purchase writes T0 = its block time;
+- a post-T0 founder purchase without `.skr` proof is refused
+  (`AccessDenied`) and leaves T0 unchanged — the immutability proof: after
+  T0 the founder is an ordinary wallet under the access gate, and a refused
+  purchase writes nothing;
 - a wallet with no domain is refused in the `.skr` phase;
 - a founder replant pays no penalty and keeps the planting clock;
-- a founder claim inside 24h pays 25%, and a sole planter's penalty stays
-  in the reward vault as dust;
+- a founder claim pays the penalty band its planting age earns (25% inside
+  24h of the latest purchase), and a sole planter's penalty stays in the
+  reward vault as dust;
 - the fee and capital vaults are untouched, and the reward vault is solvent.
+
+If `activate` dies mid-way it is continued, never repeated. The resume path
+is guarded by a strict fingerprint of the interrupted state:
+
+```bash
+CHERRY_TREE_FOUNDER_KEYPAIR=<devnet founder keypair> \
+CHERRY_TREE_SMOKE_WALLET_A=<wallet A keypair> CHERRY_TREE_SMOKE_WALLET_B=<wallet B keypair> \
+ANCHOR_WALLET=<authority keypair> CHERRY_TREE_REWARD_FUNDER=<funder pubkey> \
+./scripts/devnet-rehearsal.sh activate 60 --resume --expect-t0 <T0 on chain>
+```
+
+`--resume` refuses to run unless the chain is exactly at the state an
+interrupted `activate` leaves behind — T0 already written by the founder
+activation purchase, every counter still at its post-activation value, no
+claim or compound, wallets A/B untouched, schedule still live — and then
+continues from the T0-immutability probe. It never re-funds, never
+re-activates and never replays the activation purchase; ordinary `activate`
+without `--resume` stays one-shot.
 
 `public` proves:
 

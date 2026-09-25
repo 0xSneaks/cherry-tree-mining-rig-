@@ -10,6 +10,11 @@
 #   ./scripts/devnet-rehearsal.sh activate [waitSeconds] [maxReplantWaitSeconds]
 #   ./scripts/devnet-rehearsal.sh public   [waitSeconds] [maxReplantWaitSeconds]   # >= T0 + 48h
 #
+#   ./scripts/devnet-rehearsal.sh activate [waitSeconds] [maxReplantWaitSeconds] \
+#                  --resume --expect-t0 <unixSeconds>
+#         Continue an interrupted activate run — fingerprint-checked against
+#         the exact partial state; never re-funds or re-activates.
+#
 # The implementation lives in app/scripts/ops/ so it resolves @solana/kit and
 # reuses the same PDA derivation, decoders and pricing the frontend uses —
 # one implementation, no second copy to drift.

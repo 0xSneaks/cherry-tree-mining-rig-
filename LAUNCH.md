@@ -41,7 +41,8 @@ The purchase then runs and the fully-funded check passes. Only after that is
   writes nothing. Initialising, funding and connecting never touch T0.
 - **T0 is immutable.** It is written only while unset. No instruction resets
   it, re-initialisation is impossible, and a second founder purchase is an
-  ordinary purchase.
+  ordinary purchase — after T0 the founder faces the access gate like any
+  other wallet, so without a domain proof it is refused and writes nothing.
 - **Concurrency and replay.** Writes to Config are serialised, so concurrent
   attempts produce exactly one T0. A byte-identical replay is de-duplicated by
   signature.

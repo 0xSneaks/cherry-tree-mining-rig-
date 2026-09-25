@@ -8,12 +8,25 @@
  *             pinned at init (CHERRY_TREE_ALLOW_OTHER_FOUNDER=1):
  *               - a non-founder purchase before T0 is refused (AccessDenied)
  *               - the founder purchase activates; T0 = its block time
- *               - a second founder purchase leaves T0 unchanged
+ *               - a post-T0 founder purchase without `.skr` proof is refused
+ *                 (AccessDenied) and leaves T0 unchanged — the immutability
+ *                 proof. After T0 the founder is an ordinary wallet under the
+ *                 access gate; the refusal writes nothing, so T0 cannot move.
  *               - a wallet with no domain is refused in the .skr phase
- *               - founder claim pays the 25% penalty; a sole planter's penalty
- *                 stays in the reward vault as dust; fee/capital vaults untouched
+ *               - founder claim pays the penalty band its planting age earns;
+ *                 a sole planter's penalty stays in the reward vault as dust;
+ *                 fee/capital vaults untouched
  *               - founder replant pays no penalty and keeps the clock
  *               - reward-vault solvency
+ *
+ *   activate --resume --expect-t0 <unix>
+ *             continue an interrupted activate run, but ONLY from exactly the
+ *             state an interrupted run leaves behind (strict fingerprint in
+ *             ./rehearsal-resume): T0 already written by the founder
+ *             activation purchase, nothing else landed. Never re-funds, never
+ *             re-activates, never replays the activation purchase; ordinary
+ *             `activate` (without --resume) stays one-shot and refuses a
+ *             non-zero T0.
  *
  *   public    run at or after T0 + 48h (the schedule must still be live):
  *               - wallet A plants (weight 100)
@@ -63,6 +76,9 @@ import { minerPda, programAddresses } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
 import { projectedClaimable } from '../../src/lib/program/accrual';
 import { quotePurchase } from '../../src/lib/program/pricing';
+import { claimPenaltyBps } from '../../src/lib/program/penalty';
+import { activateResumeMismatches } from './rehearsal-resume';
+import type { Config } from '../../src/lib/program/accounts';
 
 /** Anchor custom error codes: 6000 + position in `error.rs` (see the test). */
 export const ERR = {
@@ -137,7 +153,12 @@ async function blockTimeOf(chain: Chain, sig: string): Promise<bigint | null> {
   return tx?.blockTime == null ? null : BigInt(tx.blockTime);
 }
 
-/** Claim for `who`; returns (net, penalty, bps) and checks vault isolation. */
+/**
+ * Claim for `who`; returns (net, penalty, bps, expectedBps) and checks vault
+ * isolation. The expected band comes from the position's planting age — the
+ * same pure function the program mirrors — so the assertion holds for any
+ * claim time, not just the fresh-flow 25% case.
+ */
 async function claimChecked(chain: Chain, pdas: Pdas, who: KeyPairSigner, label: string) {
   const before = {
     cfg: (await fetchConfig(chain))!,
@@ -146,6 +167,8 @@ async function claimChecked(chain: Chain, pdas: Pdas, who: KeyPairSigner, label:
     fee: await lamportsOf(chain, pdas.feeVault),
     capital: await lamportsOf(chain, pdas.capitalVault),
   };
+  const claimNow = await chainTime(chain);
+  const expectedBps = claimPenaltyBps(before.miner.lastPlantedAt, claimNow);
   await submit(chain, who, claimInstruction(who.address, await minerPda(who.address), pdas));
   const cfg = (await fetchConfig(chain))!;
   const miner = (await fetchMiner(chain, who.address))!;
@@ -169,7 +192,7 @@ async function claimChecked(chain: Chain, pdas: Pdas, who: KeyPairSigner, label:
     miner.lastPlantedAt === before.miner.lastPlantedAt,
     `last_planted_at ${miner.lastPlantedAt}`,
   );
-  return { net, penalty, bps, before, cfg };
+  return { net, penalty, bps, expectedBps, before, cfg };
 }
 
 /** Poll the chain until `who` can afford one seed from rewards, or give up. */
@@ -241,11 +264,109 @@ async function solvency(chain: Chain, pdas: Pdas): Promise<void> {
   );
 }
 
+/** What `activate --resume` was told to expect about the interrupted run. */
+type ResumeOptions = { expectT0: bigint };
+
+/**
+ * Verify the chain is EXACTLY at the state an interrupted activate run leaves
+ * behind, then hand control back to continue from the immutability probe.
+ * Any mismatch is fatal: never guess where to resume.
+ */
+async function resumeActivate(
+  chain: Chain,
+  pdas: Pdas,
+  cfg: Config,
+  who: { founder: Address; walletA: Address },
+  expectT0: bigint,
+): Promise<bigint> {
+  const walletB = await loadSigner(
+    requireEnv('CHERRY_TREE_SMOKE_WALLET_B', 'Devnet wallet B keypair.'),
+    'wallet B',
+  );
+  const authority = await loadSigner(
+    requireEnv(
+      'ANCHOR_WALLET',
+      'Authority keypair path — its address must match config.authority.',
+    ),
+    'authority',
+  );
+  const rewardFunder = requireEnv(
+    'CHERRY_TREE_REWARD_FUNDER',
+    'PUBLIC KEY of the reward funder — must match config.reward_funder.',
+  );
+
+  const configOwner =
+    (await chain.rpc.getAccountInfo(pdas.config, { encoding: 'base64' }).send()).value?.owner ??
+    'account absent';
+  const miner = await fetchMiner(chain, who.founder);
+  const mismatches = activateResumeMismatches(
+    {
+      configOwner,
+      founder: cfg.founder,
+      authority: cfg.authority,
+      rewardFunder: cfg.rewardFunder,
+      launchT0: cfg.launchT0,
+      paused: cfg.paused,
+      totalRigs: cfg.totalRigs,
+      totalShares: cfg.totalShares,
+      minerCount: cfg.minerCount,
+      totalCapitalReceived: cfg.totalCapitalReceived,
+      totalProtocolFees: cfg.totalProtocolFees,
+      totalRewardFunded: cfg.totalRewardFunded,
+      totalRewardClaimed: cfg.totalRewardClaimed,
+      totalRewardCompounded: cfg.totalRewardCompounded,
+      rewardRate: cfg.rewardRate,
+      rewardPeriodFinish: cfg.rewardPeriodFinish,
+      founderMiner: miner && {
+        rigs: miner.rigs,
+        weight: miner.weight,
+        createdAt: miner.createdAt,
+        lastActionAt: miner.lastActionAt,
+        lastPlantedAt: miner.lastPlantedAt,
+        lifetimeSolClaimed: miner.lifetimeSolClaimed,
+      },
+      walletAMinerExists: (await fetchMiner(chain, who.walletA)) !== null,
+      walletBMinerExists: (await fetchMiner(chain, walletB.address)) !== null,
+      capitalVaultExcess: await vaultDistributable(chain, pdas.capitalVault),
+      feeVaultExcess: await vaultDistributable(chain, pdas.feeVault),
+      rewardVaultDistributable: await vaultDistributable(chain, pdas.rewardVault),
+      chainNow: await chainTime(chain),
+    },
+    {
+      programId: PROGRAM_ID,
+      founder: who.founder,
+      authority: authority.address,
+      rewardFunder,
+      expectT0,
+      activationSeeds: 10n,
+      activationCapital: cfg.rigPriceLamports * 10n,
+      activationFees: (cfg.rigPriceLamports * 10n * BigInt(cfg.purchaseFeeBps)) / 10_000n,
+      accessWindowSeconds: ACCESS_WINDOW_SECONDS,
+    },
+  );
+  if (mismatches.length) {
+    fail(
+      `activate --resume: the chain is not the interrupted activate state. ` +
+        `${mismatches.length} mismatch(es):\n    - ${mismatches.join('\n    - ')}`,
+    );
+  }
+  check(
+    'resume fingerprint: exactly the interrupted activate state',
+    true,
+    `T0 ${cfg.launchT0}, rigs ${cfg.totalRigs}, shares ${cfg.totalShares}, ` +
+      `capital ${cfg.totalCapitalReceived}, fees ${cfg.totalProtocolFees}, ` +
+      `claimed 0, compounded 0, schedule live`,
+  );
+  row('resuming', 'after the fingerprinted activation purchase, at the T0 probe');
+  return cfg.launchT0;
+}
+
 async function stageActivate(
   chain: Chain,
   pdas: Pdas,
   waitSeconds: number,
   maxWaitSeconds: number,
+  resume: ResumeOptions | null,
 ): Promise<void> {
   const founder = await loadSigner(
     requireEnv(
@@ -262,28 +383,51 @@ async function stageActivate(
   if (cfg0.founder !== founder.address) {
     fail(`config.founder is ${cfg0.founder}, not the rehearsal founder ${founder.address}.`);
   }
-  if (cfg0.launchT0 !== 0n)
-    fail(`already activated (T0 ${cfg0.launchT0}). Stage "activate" runs once.`);
 
-  section('before T0');
-  const [pre, preDetail] = await rejectedWith(buy(chain, pdas, walletA, 1n), ERR.AccessDenied);
-  check('non-founder purchase before T0 is refused', pre, preDetail);
+  let t0: bigint;
+  if (resume) {
+    section('resume: strict state fingerprint');
+    t0 = await resumeActivate(
+      chain,
+      pdas,
+      cfg0,
+      { founder: founder.address, walletA: walletA.address },
+      resume.expectT0,
+    );
+  } else {
+    if (cfg0.launchT0 !== 0n)
+      fail(
+        `already activated (T0 ${cfg0.launchT0}). Stage "activate" runs once. ` +
+          'To continue an interrupted run: activate --resume --expect-t0 <unixSeconds>',
+      );
 
-  section('founder activation');
-  const sig = await buy(chain, pdas, founder, 10n);
-  const cfg1 = (await fetchConfig(chain))!;
-  const bt = await blockTimeOf(chain, sig);
-  row('activation signature', sig);
-  row('T0', cfg1.launchT0);
-  check('T0 written by the founder purchase', cfg1.launchT0 > 0n, `launch_t0 ${cfg1.launchT0}`);
-  check('T0 = activation block time', bt !== null && bt === cfg1.launchT0, `block time ${bt}`);
+    section('before T0');
+    const [pre, preDetail] = await rejectedWith(buy(chain, pdas, walletA, 1n), ERR.AccessDenied);
+    check('non-founder purchase before T0 is refused', pre, preDetail);
 
-  await buy(chain, pdas, founder, 1n);
-  const cfg2 = (await fetchConfig(chain))!;
+    section('founder activation');
+    const sig = await buy(chain, pdas, founder, 10n);
+    const cfg1 = (await fetchConfig(chain))!;
+    const bt = await blockTimeOf(chain, sig);
+    row('activation signature', sig);
+    row('T0', cfg1.launchT0);
+    check('T0 written by the founder purchase', cfg1.launchT0 > 0n, `launch_t0 ${cfg1.launchT0}`);
+    check('T0 = activation block time', bt !== null && bt === cfg1.launchT0, `block time ${bt}`);
+    t0 = cfg1.launchT0;
+  }
+
+  // The T0-immutability proof. After T0 the founder is an ordinary wallet:
+  // without `.skr` proof the access gate refuses the purchase (AccessDenied)
+  // and nothing lands, so T0 cannot move. A SUCCESSFUL second founder
+  // purchase would prove the gate open, not that T0 is pinned.
+  section('post-T0 founder probe (no .skr proof)');
+  const cfgP0 = (await fetchConfig(chain))!;
+  const [imm, immDetail] = await rejectedWith(buy(chain, pdas, founder, 1n), ERR.AccessDenied);
+  const cfgP1 = (await fetchConfig(chain))!;
   check(
-    'T0 is immutable (second founder purchase)',
-    cfg2.launchT0 === cfg1.launchT0,
-    `launch_t0 ${cfg2.launchT0}`,
+    'POST-T0 FOUNDER WITHOUT .SKR REFUSED + T0 UNCHANGED',
+    imm && cfgP1.launchT0 === cfgP0.launchT0,
+    `${immDetail}; launch_t0 ${cfgP1.launchT0} (was ${cfgP0.launchT0})`,
   );
 
   const [gen, genDetail] = await rejectedWith(buy(chain, pdas, walletA, 1n), ERR.AccessDenied);
@@ -296,9 +440,9 @@ async function stageActivate(
   const dust0 = (await fetchConfig(chain))!.undistributedDust;
   const c = await claimChecked(chain, pdas, founder, 'founder claim');
   check(
-    'founder claim inside 24h pays the 25% band',
-    c.bps === 2_500n || c.bps === 2_499n,
-    `${c.bps} bps`,
+    'founder claim pays the band its planting age earns',
+    c.bps === BigInt(c.expectedBps) || c.bps === BigInt(c.expectedBps) - 1n,
+    `${c.bps} bps, band ${c.expectedBps} bps`,
   );
   check(
     'sole planter: penalty stays in the vault as dust',
@@ -307,7 +451,6 @@ async function stageActivate(
   );
   await solvency(chain, pdas);
 
-  const t0 = cfg1.launchT0;
   row('.skr + .sns phase from', t0 + ACCESS_WINDOW_SECONDS);
   row('public phase from (run stage "public")', t0 + 2n * ACCESS_WINDOW_SECONDS);
 }
@@ -372,21 +515,56 @@ async function stagePublic(
   await sleep(waitSeconds * 1000);
   const c = await claimChecked(chain, pdas, walletB, 'B claim');
   check(
-    'B claim inside 24h pays the 25% band',
-    c.bps === 2_500n || c.bps === 2_499n,
-    `${c.bps} bps`,
+    'B claim pays the band its planting age earns',
+    c.bps === BigInt(c.expectedBps) || c.bps === BigInt(c.expectedBps) - 1n,
+    `${c.bps} bps, band ${c.expectedBps} bps`,
   );
   await solvency(chain, pdas);
 }
 
+function parseArgs(argv: string[]): {
+  stage: string;
+  waitSeconds: number;
+  maxWaitSeconds: number;
+  resume: ResumeOptions | null;
+} {
+  const stage = argv[0];
+  const rest = argv.slice(1);
+  let wantsResume = false;
+  let expectT0 = 0n;
+  const positional: string[] = [];
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i]!;
+    if (arg === '--resume') {
+      wantsResume = true;
+    } else if (arg === '--expect-t0') {
+      const value = rest[++i];
+      if (value === undefined || !/^\d+$/.test(value)) {
+        fail('--expect-t0 needs the T0 (unix seconds) already on chain, e.g. --expect-t0 1790293911');
+      }
+      expectT0 = BigInt(value);
+    } else {
+      positional.push(arg);
+    }
+  }
+  if (stage !== 'activate' && stage !== 'public')
+    fail(
+      'usage: devnet-rehearsal.ts activate|public [waitSeconds] [maxReplantWaitSeconds] ' +
+        '[activate only: --resume --expect-t0 <unixSeconds>]',
+    );
+  if (wantsResume && stage !== 'activate') fail('--resume applies to the activate stage only.');
+  const resume = wantsResume ? { expectT0 } : null;
+  if (resume && expectT0 <= 0n)
+    fail('--resume needs --expect-t0 <unixSeconds>: the T0 the interrupted activation wrote.');
+  const waitSeconds = Number(positional[0] ?? '45');
+  const maxWaitSeconds = Number(positional[1] ?? '1800');
+  if (!Number.isFinite(waitSeconds) || waitSeconds < 5) fail('waitSeconds must be at least 5');
+  return { stage, waitSeconds, maxWaitSeconds, resume };
+}
+
 async function main(): Promise<void> {
   loadEnv();
-  const stage = process.argv[2];
-  const waitSeconds = Number(process.argv[3] ?? '45');
-  const maxWaitSeconds = Number(process.argv[4] ?? '1800');
-  if (stage !== 'activate' && stage !== 'public')
-    fail('usage: devnet-rehearsal.ts activate|public [waitSeconds] [maxReplantWaitSeconds]');
-  if (!Number.isFinite(waitSeconds) || waitSeconds < 5) fail('waitSeconds must be at least 5');
+  const { stage, waitSeconds, maxWaitSeconds, resume } = parseArgs(process.argv.slice(2));
 
   header(`THE CHERRY TREE — devnet rehearsal: ${stage}`);
   const { rpcUrl } = requireDevnet();
@@ -395,7 +573,8 @@ async function main(): Promise<void> {
   row('program ID', PROGRAM_ID);
   const pdas = await programAddresses();
 
-  if (stage === 'activate') await stageActivate(chain, pdas, waitSeconds, maxWaitSeconds);
+  if (stage === 'activate')
+    await stageActivate(chain, pdas, waitSeconds, maxWaitSeconds, resume);
   else await stagePublic(chain, pdas, waitSeconds, maxWaitSeconds);
 
   const failed = results.filter((r) => !r.pass);

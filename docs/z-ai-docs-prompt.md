@@ -6,6 +6,8 @@ hero copy, page list, and the full current docs content are all inline.
 Why a custom site instead of more GitBook: GitBook's free plan only lets you
 set a logo and one accent colour. A static site costs nothing, ships on the
 GitHub Pages deploy this repo already runs, and can match the app exactly.
+The live GitBook (https://the-cherry-tree.gitbook.io/the-cherry-tree-docs/)
+stays up meanwhile; this prompt uses its "Seeds" wording.
 
 ---
 
@@ -172,11 +174,11 @@ edge. Below it, centred, on `--bg`:
    `SOLANA · PLANTING SIMULATION · FUNDED SOL REWARDS`
 4. Hero message, `--text`, max-width 60ch:
    > THE CHERRY TREE is a Solana-native mining simulation. Users buy
-   > non-redeemable rigs, receive a share of a transparently funded SOL reward
-   > stream, and may claim rewards or compound them into additional rigs.
+   > non-redeemable seeds, receive a share of a transparently funded SOL reward
+   > stream, and may claim rewards or compound them into additional seeds.
 5. Disclaimer callout directly under it, styled with the `--alert` left
    border:
-   > This is a simulation. Rigs do not mine SOL, participate in Solana
+   > This is a simulation. Seeds do not mine SOL, participate in Solana
    > consensus, or represent a deposit or redeemable principal.
 6. Two buttons: primary **Read the docs →** (links to the Overview section
    below) with `--blossom` text, `--blossom-dim` border and the faint wash;
@@ -195,7 +197,7 @@ text. Disable entirely under `prefers-reduced-motion: reduce`. Keep it under
 Under the hero, a **"Core invariant"** strip styled like a terminal readout:
 
 ```
-BUYING RIGS != FUNDING EXISTING MINER REWARDS
+PLANTING SEEDS != FUNDING EXISTING MINER REWARDS
 ```
 
 then a 3-column vault card row (stacks on mobile) — CAPITAL / REWARD / FEE —
@@ -204,7 +206,7 @@ each card: uppercase tracked title, one line "Receives: …", one line
 
 | Vault   | Receives                            | Pays out                       |
 |---------|-------------------------------------|--------------------------------|
-| CAPITAL | non-fee portion of rig purchases    | nothing in V1                  |
+| CAPITAL | non-fee portion of Seed purchases    | nothing in V1                  |
 | REWARD  | realized revenue via `fund_rewards` | user claims and compounds only |
 | FEE     | disclosed purchase fee              | authority withdrawal           |
 
@@ -244,6 +246,12 @@ with one, render it as a callout with a small uppercase pill:
 | **INFERENCE**              | `--steel` |
 | **INCOMPLETE / UNCONFIRMED** | `--alert` |
 
+**Terminology:** the product unit is the **Seed** (users *plant* Seeds), never
+"rig", in any prose, heading, button or label. Identifiers in `code` keep their
+original on-chain names (`buy_rigs`, `rig_price_lamports`, `rigs-engine`,
+`sol-rigs`) — do not rename those. "PDA seeds" means Solana address seeds,
+not the product unit.
+
 Never soften, drop, or reword these. Never add yield, APR, "earn",
 "passive income", or price claims that are not in the content. Do not invent
 features, numbers, addresses or links.
@@ -279,9 +287,9 @@ not rewrite facts. Code identifiers in backticks stay as `code`.
 
 ## Plain English
 
-THE CHERRY TREE is a game loop built around rigs and a funded reward stream. A purchase creates production capacity; it does not fund rewards owed to other users. Rewards exist only when an authorized funder deposits SOL into the reward vault and sets an emission window.
+THE CHERRY TREE is a game loop built around Seeds and a funded reward stream. A purchase creates production capacity; it does not fund rewards owed to other users. Rewards exist only when an authorized funder deposits SOL into the reward vault and sets an emission window.
 
-Rigs cannot be sold back or redeemed. Users can claim settled rewards or compound them into whole additional rigs.
+Seeds cannot be sold back or redeemed. Users can claim settled rewards or compound them into whole additional Seeds.
 
 ## Technical detail
 
@@ -296,9 +304,9 @@ Three program-owned vaults are separate: CAPITAL receives non-fee purchase proce
 
 1. Connect through Cherry’s wallet bridge, or use the standalone wallet path.
 2. During launch gating, satisfy the applicable access rule.
-3. Buy whole rigs; the quote separates capital and fee.
+3. Plant whole Seeds; the quote separates capital and fee.
 4. Let an active funded schedule accrue rewards.
-5. Claim the eligible balance or compound it into whole rigs.
+5. Claim the eligible balance or compound it into whole Seeds.
 
 The embedded path is intended to arrive with a wallet and show no connect-wallet step. Standalone wallet behavior is implemented but real extension execution is not verified here.
 
@@ -323,7 +331,7 @@ The canonical program identity in the primary source is `C9fJ8nRCXNE2iZPNkuyARyR
 
 # Protocol
 
-`initialize` creates configuration/vaults; `migrate_v2` appends the Genesis cap; `fund_rewards` deposits and schedules emissions; `buy_rigs` purchases whole rigs and may bind a referrer; `claim` pays settled net rewards; `compound` converts affordable whole rigs and preserves the remainder. Authority instructions pause, change configuration, hand over authority, and withdraw fees.
+`initialize` creates configuration/vaults; `migrate_v2` appends the Genesis cap; `fund_rewards` deposits and schedules emissions; `buy_rigs` purchases whole Seeds and may bind a referrer; `claim` pays settled net rewards; `compound` converts affordable whole Seeds and preserves the remainder. Authority instructions pause, change configuration, hand over authority, and withdraw fees.
 
 PDAs, defined in `programs/sol-rigs/src/constants.rs`:
 
@@ -335,15 +343,15 @@ PDAs, defined in `programs/sol-rigs/src/constants.rs`:
 | Reward vault | `reward_vault` |
 | Fee vault | `fee_vault` |
 
-`Config` stores authority, funder, fee recipient, pause state, pricing, accumulator, launch, referral, penalty, and cap state. `Miner` stores rigs, reward watermark, pending rewards, lifetime counters, weight, referrer, and planting time. The engine uses integer lamports and checked `u128` intermediates. Purchase lamports cannot reach REWARD because `buy_rigs` treats it as read-only.
+`Config` stores authority, funder, fee recipient, pause state, pricing, accumulator, launch, referral, penalty, and cap state. `Miner` stores Seeds, reward watermark, pending rewards, lifetime counters, weight, referrer, and planting time. The engine uses integer lamports and checked `u128` intermediates. Purchase lamports cannot reach REWARD because `buy_rigs` treats it as read-only.
 
 # Economics
 
-For `n` rigs: capital = `n × rig_price_lamports`; fee = `floor(capital × purchase_fee_bps / 10,000)`; total paid = capital + fee. The fee is capped at 10% and a single purchase at 1,000,000 rigs. Repository examples of 0.01 SOL and 3% are rehearsal values, not a live promise.
+For `n` Seeds: capital = `n × rig_price_lamports`; fee = `floor(capital × purchase_fee_bps / 10,000)`; total paid = capital + fee. The fee is capped at 10% and a single purchase at 1,000,000 Seeds. Repository examples of 0.01 SOL and 3% are rehearsal values, not a live promise.
 
 Rewards come only from `fund_rewards(amount, duration)`, which must back the schedule. When the window ends, APR is zero; existing liabilities remain accounted for. Mid-schedule funding rolls the remaining schedule into the new one.
 
-APR uses the funded rate, 365-day annualization, fee-inclusive cost, and weighted total shares. More rigs dilute each rig’s share of the same emission. Phases are labels derived from state:
+APR uses the funded rate, 365-day annualization, fee-inclusive cost, and weighted total shares. More Seeds dilute each Seed’s share of the same emission. Phases are labels derived from state:
 
 | Phase | Base APR |
 |---|---:|
@@ -385,7 +393,7 @@ Scripts under `scripts/` and `app/scripts/ops/` cover initialization, funding, s
 
 - **APR:** annualized current reward rate from funded chain state; not a promise.
 - **Capital vault:** non-fee purchase proceeds; locked in this version.
-- **Compound:** convert settled rewards into whole rigs and retain the remainder.
+- **Compound:** convert settled rewards into whole Seeds and retain the remainder.
 - **Genesis cap:** per-wallet fresh-purchase limit during the first 24 hours after T0.
 - **Miner PDA:** owner-specific position account.
 - **REWARD vault:** funded source for claims and compounding.

@@ -64,8 +64,12 @@ echo "==> next build"
 npx next build 2>&1 | tail -3
 
 echo "==> playwright"
-PLAYWRIGHT_CHROMIUM_PATH="${PLAYWRIGHT_CHROMIUM_PATH:-/opt/pw-browsers/chromium}" \
-  npx playwright test 2>&1 | tail -6
+# An explicit override wins; otherwise use the pinned Chromium only where it
+# exists, else let Playwright launch its own installed browser.
+if [ -z "${PLAYWRIGHT_CHROMIUM_PATH:-}" ] && [ -x /opt/pw-browsers/chromium ]; then
+  export PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium
+fi
+npx playwright test 2>&1 | tail -6
 
 cd "$ROOT"
 echo "==> deploy readiness"

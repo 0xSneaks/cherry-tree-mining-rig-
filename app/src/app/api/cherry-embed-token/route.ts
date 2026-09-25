@@ -21,6 +21,7 @@ import {
 } from '../../../lib/server/embedToken';
 import { json } from '../../../lib/server/launchToken';
 import { rateLimit } from '../../../lib/server/rateLimit';
+import { StoreUnavailableError } from '../../../lib/server/stores';
 import { verifyWalletProof, WalletProofError } from '../../../lib/server/walletProof';
 
 export const runtime = 'nodejs';
@@ -42,7 +43,15 @@ export async function POST(req: Request): Promise<Response> {
   // Rate-limited before the signature check, so verification is never the
   // work an unauthenticated caller can force.
   const who = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'anon';
-  const limited = rateLimit(`embed-token:${who}`, 20, 60_000);
+  let limited;
+  try {
+    limited = await rateLimit(`embed-token:${who}`, 20, 60_000);
+  } catch (e) {
+    if (e instanceof StoreUnavailableError) {
+      return json({ error: 'server storage is not configured' }, 503);
+    }
+    throw e;
+  }
   if (!limited.ok) {
     return json({ error: 'rate limited' }, 429, {
       'retry-after': String(limited.retryAfterSeconds),

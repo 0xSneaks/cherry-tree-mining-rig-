@@ -30,10 +30,20 @@ const level = (env: Record<string, string | undefined>, key: string) =>
   checkProductionEnv(env).filter((f) => f.key.startsWith(key)).map((f) => f.level);
 
 describe('production env check', () => {
-  it('passes a complete configuration', () => {
+  it('passes a complete configuration; the server-store choice stays an external decision', () => {
     const s = summarize(checkProductionEnv(good));
     expect(s.ok).toBe(true);
-    expect(s.external).toBe(0);
+    // CHERRY_SERVER_STORE: no durable backend has been chosen, and the env
+    // check tracks that as a founder decision rather than inventing a vendor.
+    expect(s.external).toBe(1);
+  });
+
+  it('server stores: unacknowledged is EXTERNAL, acknowledged in-process is WARN', () => {
+    expect(level(good, 'CHERRY_SERVER_STORE')).toEqual(['EXTERNAL']);
+    expect(level({ ...good, CHERRY_ALLOW_INPROCESS_STORE: '1' }, 'CHERRY_ALLOW_INPROCESS_STORE')).toEqual(['WARN']);
+    // The acknowledgment removes the open decision from the list.
+    expect(level({ ...good, CHERRY_ALLOW_INPROCESS_STORE: '1' }, 'CHERRY_SERVER_STORE')).toEqual([]);
+    expect(summarize(checkProductionEnv({ ...good, CHERRY_ALLOW_INPROCESS_STORE: '1' })).external).toBe(0);
   });
 
   it('CHERRY_APP_ID absent is an EXTERNAL action, never invented', () => {

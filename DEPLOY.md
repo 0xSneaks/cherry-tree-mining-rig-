@@ -458,10 +458,10 @@ interaction with a `securitypolicyviolation` listener attached, so a
 directive that breaks the app fails the suite rather than degrading
 production quietly.
 
-What ships:
+What ships on a Node deployment:
 
 ```
-default-src 'self'; script-src 'self' 'unsafe-inline';
+default-src 'self'; script-src 'self' 'nonce-<per request>' 'strict-dynamic';
 style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:;
 connect-src 'self' <your RPC> <its wss> https://chat.cherry.fun;
 frame-ancestors 'self' https://chat.cherry.fun;
@@ -470,12 +470,35 @@ base-uri 'self'; worker-src 'self'; manifest-src 'self';
 upgrade-insecure-requests
 ```
 
-The policy lives in `app/src/lib/csp.ts` and has exactly two consumers:
-`next.config.ts`, which serves it as real response headers on a Node
-deployment, and `app/scripts/emit-static-headers.ts`, which writes the same
-policy into the static export's `_headers` file for a host that reads one
-(Cloudflare Pages, Netlify). Two hand-maintained copies of a security policy
-is how they drift, so there is one.
+The policy lives in `app/src/lib/csp.ts`, and every emitter reads it from
+there — `src/proxy.ts` mints the nonce and serves the policy per request on a
+Node deployment, `next.config.ts` serves the nonce-free headers on the same
+deployment, and `app/scripts/emit-static-headers.ts` writes a hash-based
+variant into the static export's `_headers` file for a host that reads one
+(Cloudflare Pages, Netlify). Hand-maintained copies of a security policy are
+how they drift, so there is one builder.
+
+`script-src` carries **no `'unsafe-inline'`** — `buildCsp` throws on it, so it
+cannot quietly come back. The inline scripts in every document are Next.js's
+own (the bootstrap and the RSC flight data), and each deployment mode admits
+them its own way:
+
+- **Node** — `src/proxy.ts` (the Next 16 proxy convention, formerly
+  middleware) mints a nonce per request, sets the CSP on both the request
+  (where Next parses the nonce out and stamps it on every script it emits)
+  and the response (where the browser enforces it), and marks the document
+  `Cache-Control: private, no-store` so a nonce can never be replayed from a
+  cache. The root layout opts HTML routes into per-request rendering for the
+  same reason: a build-time prerender cannot carry a nonce, and Next 16 will
+  happily serve the stale prerender under a fresh nonce header — every script
+  in it blocked. The browser tests in `e2e/render.spec.ts` pin the nonce
+  shape, its rotation, and that the document's scripts carry the nonce the
+  header minted.
+- **Static export** — no server exists to mint anything, so the emitter
+  hashes every inline script the export baked into each page and writes one
+  `_headers` rule per document with those digests, computed at emit time
+  from the exported HTML. The `/*` fallback admits nothing: a page the
+  scanner missed fails closed rather than falling back to a blanket allow.
 
 A host that sends no headers at all — GitHub Pages — cannot satisfy
 `frame-ancestors`, and a `<meta http-equiv>` tag is not equivalent: the
@@ -493,20 +516,24 @@ additional origins for deployments behind a proxy; it is still an allowlist.
 `'unsafe-eval'` is gone from production and kept only for the dev server,
 which needs it for React Refresh.
 
-### Still open: `script-src 'unsafe-inline'`
+### Resolved: `script-src 'unsafe-inline'` is gone
 
-Next.js inlines a bootstrap script into every document. Removing
-`'unsafe-inline'` means serving that script under a per-request nonce, which
-forces **every page to render dynamically** — and the embedded path's
-prerendered first paint is the single thing the spec is most insistent about.
-The trade is not worth making for devnet. Before mainnet, either accept
-dynamic rendering for `/` or move the bootstrap behind a hash-based
-`script-src`.
+The trade this section used to track was made for production hardening:
+inline scripts are admitted by per-request nonce on a Node deployment and by
+build-time hash on a static host (see above). The cost on the Node side is
+that HTML routes render per request instead of being served from a build-time
+prerender — first paint is still server-rendered HTML on first byte, and the
+embedded path is unaffected functionally: the browser suite drives it end to
+end under the nonce policy with a violation listener attached.
 
 ## Other pre-mainnet hardening
 
-Tracked, not done, deliberately out of scope for devnet readiness:
-
-- Rate-limit and attribution stores are in-memory; a deployment needs real ones.
+- Rate limiting and room attribution now run behind an explicit storage
+  boundary (`app/src/lib/server/stores.ts`): in-process memory outside
+  production, and in production **fail closed** — the affected endpoints
+  answer 503 — until either a durable store is chosen or
+  `CHERRY_ALLOW_INPROCESS_STORE=1` acknowledges a single-process deployment.
+  No durable backend is implemented yet: which one to buy is a **founder
+  decision** the readiness check surfaces as `CHERRY_SERVER_STORE`.
 - A program upgrade-authority policy (multisig or burn) before any mainnet
   consideration.

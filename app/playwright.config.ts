@@ -43,6 +43,10 @@ export default defineConfig({
       env: {
         CHERRY_APP_ID: 'sol-rigs-e2e',
         CHERRY_JWKS_URL: 'http://127.0.0.1:3519/jwks.json',
+        // The E2E server is one process, so the in-process rate-limit and
+        // attribution stores are real here — but production defaults to
+        // failing closed, so the acknowledgment must be explicit.
+        CHERRY_ALLOW_INPROCESS_STORE: '1',
       },
     },
   ],

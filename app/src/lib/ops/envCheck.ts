@@ -109,6 +109,13 @@ export function checkProductionEnv(env: Env, opts: { protocolVaults?: string[] }
   for (const k of (env.CHERRY_TREE_EXCLUDED_REFERRERS ?? '').split(/[\s,]+/).filter(Boolean)) {
     if (!isAddress(k)) add('FAIL', 'CHERRY_TREE_EXCLUDED_REFERRERS', `${k} is not an address`);
   }
+
+  // ---- server-side stores (rate limiting, room attribution)
+  if (env.CHERRY_ALLOW_INPROCESS_STORE === '1') {
+    add('WARN', 'CHERRY_ALLOW_INPROCESS_STORE', 'in-process stores acknowledged — correct only for a single-process deployment');
+  } else {
+    add('EXTERNAL', 'CHERRY_SERVER_STORE', 'no durable server store chosen — rate-limited endpoints and room attribution fail closed in production. Founder decision.');
+  }
   return out;
 }
 

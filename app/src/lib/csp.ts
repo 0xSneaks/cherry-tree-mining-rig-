@@ -1,11 +1,20 @@
 /**
  * Content Security Policy — the single source.
  *
- * Two consumers read from here, which is the point: `next.config.ts` serves
- * these as real response headers on a Node deployment, and
- * `scripts/emit-static-headers.ts` writes the same policy into the static
- * export's `_headers` file for a header-capable static host. Hand-maintaining
- * two copies of a security policy is how they drift.
+ * Three consumers read from here, which is the point: `src/proxy.ts` serves
+ * a nonce-based policy per request on a Node deployment,
+ * `next.config.ts` serves the static (nonce-free) headers on the same
+ * deployment, and `scripts/emit-static-headers.ts` writes a hash-based
+ * policy into the static export's `_headers` file for a header-capable
+ * static host. Hand-maintaining several copies of a security policy is how
+ * they drift.
+ *
+ * `script-src` never carries `'unsafe-inline'`. The inline scripts in every
+ * document are Next.js's own — the bootstrap and the RSC flight data — so
+ * the policy admits them by nonce on a deployment that can compute one per
+ * request, and by build-time hash on a static host that cannot. The throw
+ * in `buildCsp` exists so no future emitter can quietly reintroduce the
+ * blanket allowance.
  *
  * Cherry embeds the mini-app in an iframe on Cherry web, so every HTML
  * response needs `frame-ancestors` naming chat.cherry.fun (SDK skill step 2b).
@@ -59,21 +68,46 @@ function connectSrc(): string[] {
   return [...sources];
 }
 
-export function buildCsp({ dev }: { dev: boolean }): string {
-  const scriptSrc = [
-    "'self'",
-    // Next.js inlines a bootstrap script into the document. Serving it under
-    // a nonce would force every page to render dynamically, which costs the
-    // embedded path its prerendered first paint — the one thing the spec is
-    // most insistent about. Tracked in DEPLOY.md as pre-mainnet hardening.
-    "'unsafe-inline'",
+/**
+ * The sources `script-src` admits, supplied by the caller because only it
+ * knows which kind of deployment is serving the policy: the request-time
+ * proxy passes a nonce, the static emitter passes build-time hashes.
+ */
+export type ScriptSrcSources = string[];
+
+/**
+ * The nonce sources for a Node deployment, where `src/proxy.ts` mints one
+ * per request and Next.js stamps it on every script it emits. The format is
+ * the base64-value token Next's own parser accepts (`getScriptNonceFromHeader`);
+ * anything else makes Next silently drop the nonce and the page then fails
+ * closed under the policy below, so a malformed nonce throws instead.
+ *
+ * `'strict-dynamic'` lets Next's nonced bootstrap load its chunk graph
+ * without listing every chunk. `'self'` is the fallback for browsers that
+ * predate strict-dynamic — modern ones ignore it.
+ */
+export function nonceScriptSources(nonce: string): ScriptSrcSources {
+  if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(nonce)) {
+    throw new Error(`refusing to serve a CSP with a malformed nonce: ${JSON.stringify(nonce)}`);
+  }
+  return ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"];
+}
+
+export function buildCsp({ dev, scriptSrc }: { dev: boolean; scriptSrc: ScriptSrcSources }): string {
+  if (scriptSrc.includes("'unsafe-inline'")) {
+    throw new Error(
+      "script-src 'unsafe-inline' is banned: inline scripts must be admitted by nonce or hash",
+    );
+  }
+  const scriptSources = [
+    ...scriptSrc,
     // Only the dev server needs eval (React Refresh). Production does not.
     ...(dev ? ["'unsafe-eval'"] : []),
   ];
 
   return [
     "default-src 'self'",
-    `script-src ${scriptSrc.join(' ')}`,
+    `script-src ${scriptSources.join(' ')}`,
     // React sets element styles through the `style` attribute throughout the
     // UI, which CSP counts as inline style.
     "style-src 'self' 'unsafe-inline'",
@@ -95,18 +129,35 @@ export function buildCsp({ dev }: { dev: boolean }): string {
 }
 
 /**
- * Every security header a response should carry, in one list. `next.config.ts`
- * turns these into `headers()` entries; the static emitter writes the same
- * pairs into `_headers`.
+ * Headers that carry no per-request value — static on every host, so they
+ * belong in `next.config.ts` (Node) and in the static export's `_headers`
+ * alike. The CSP is deliberately absent: a Node deployment serves it from
+ * `src/proxy.ts`, where the nonce lives.
  */
-export function securityHeaders({ dev }: { dev: boolean }): Array<{
+export const staticSecurityHeaders: Array<{ key: string; value: string }> = [
+  { key: 'Referrer-Policy', value: 'no-referrer' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+];
+
+/**
+ * Every security header a response should carry, in one list, for emitters
+ * that know their script sources — the static-export writer. The proxy sets
+ * the CSP itself (see `src/proxy.ts`) and takes the rest from
+ * `staticSecurityHeaders`.
+ */
+export function securityHeaders({
+  dev,
+  scriptSrc,
+}: {
+  dev: boolean;
+  scriptSrc: ScriptSrcSources;
+}): Array<{
   key: string;
   value: string;
 }> {
   return [
-    { key: 'Content-Security-Policy', value: buildCsp({ dev }) },
-    { key: 'Referrer-Policy', value: 'no-referrer' },
-    { key: 'X-Content-Type-Options', value: 'nosniff' },
-    { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+    { key: 'Content-Security-Policy', value: buildCsp({ dev, scriptSrc }) },
+    ...staticSecurityHeaders,
   ];
 }

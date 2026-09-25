@@ -465,6 +465,33 @@ test.describe('content security policy', () => {
       expect(csp, directive).toContain(directive);
     }
   });
+
+  test("script-src admits scripts by nonce, never 'unsafe-inline'", async ({ page }) => {
+    const response = await page.goto('/');
+    const csp = response!.headers()['content-security-policy'] ?? '';
+    const directive = csp.match(/script-src ([^;]*)/)?.[1] ?? '';
+
+    // The nonce is minted per request by src/proxy.ts; the shape is pinned so
+    // neither a stale prerender nor a hand-edit can reintroduce the blanket
+    // allowance that used to cover Next's inline bootstrap and flight data.
+    expect(directive).toMatch(/^'self' 'nonce-[A-Za-z0-9_-]+' 'strict-dynamic'$/);
+    expect(directive).not.toContain("'unsafe-inline'");
+
+    // The nonce the header minted is the one Next stamped on the document's
+    // own scripts. Checked in the response body, not the DOM: the browser
+    // hides nonce content attributes after parse (nonce-hiding), and a
+    // mismatch here would mean the page is served unhydrated.
+    const nonce = directive.match(/'nonce-([^']+)'/)![1];
+    const body = await response!.text();
+    expect(body).toMatch(new RegExp(`<script[^>]*nonce="${nonce}">(self\\.)?__next_f`));
+    // Every script tag in the document carries it — inline or external.
+    expect(body.match(/<script(?![^>]*nonce=)[^>]*>/)).toBeNull();
+
+    // And a second load mints a fresh one.
+    const second = await page.goto('/');
+    const secondCsp = second!.headers()['content-security-policy'] ?? '';
+    expect(secondCsp.match(/'nonce-([^']+)'/)?.[1]).not.toBe(nonce);
+  });
 });
 
 /**

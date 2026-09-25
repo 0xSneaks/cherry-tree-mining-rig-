@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 import { cherryChatEnabled } from './src/lib/cherryChat';
-import { securityHeaders } from './src/lib/csp';
+import { staticSecurityHeaders } from './src/lib/csp';
 
 /**
  * Static-export mode, used by the GitHub Pages workflow.
@@ -84,9 +84,13 @@ const nextConfig: NextConfig = {
       }
     : {
         // `headers()` has no effect in a static export — the host sends them.
+        // The CSP is absent on purpose: it carries a per-request nonce, so
+        // `src/proxy.ts` serves it. A CSP built here would be nonce-less, and
+        // serving both would enforce their intersection — the static one's
+        // `'unsafe-inline'`-free script-src would block everything the proxy
+        // just nonced, or vice versa.
         async headers() {
-          const dev = process.env.NODE_ENV !== 'production';
-          return [{ source: '/(.*)', headers: securityHeaders({ dev }) }];
+          return [{ source: '/(.*)', headers: staticSecurityHeaders }];
         },
       }),
 };

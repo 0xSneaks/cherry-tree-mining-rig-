@@ -1,26 +1,34 @@
 /**
- * The CSP is shared by two emitters — `next.config.ts` (real response headers
- * on a Node deployment) and `scripts/emit-static-headers.ts` (the `_headers`
- * file in the static export). These assert the directives that Cherry and the
- * wallet session actually depend on, so a policy edit that breaks the embed
- * fails here rather than in a chat room.
+ * The CSP is shared by the emitters — `src/proxy.ts` (nonce, per request, on
+ * a Node deployment) and `scripts/emit-static-headers.ts` (sha-256 hashes,
+ * per page, in the static export's `_headers` file). These assert the
+ * directives that Cherry and the wallet session actually depend on, so a
+ * policy edit that breaks the embed fails here rather than in a chat room.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { CHERRY_EMBED_ORIGIN } from '../src/lib/cherryChat';
-import { buildCsp, CHERRY_HOST, securityHeaders } from '../src/lib/csp';
+import {
+  buildCsp,
+  CHERRY_HOST,
+  nonceScriptSources,
+  securityHeaders,
+} from '../src/lib/csp';
 
 describe('content security policy', () => {
-  const csp = buildCsp({ dev: false });
+  // A nonce the proxy might have minted; the value is arbitrary because
+  // every assertion is about the policy around it, never the nonce itself.
+  const csp = buildCsp({ dev: false, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') });
 
   it('lets Cherry web frame the app', () => {
     expect(csp).toContain(`frame-ancestors 'self' ${CHERRY_HOST}`);
   });
 
   it('never sets X-Frame-Options, which would block the iframe', () => {
-    expect(securityHeaders({ dev: false }).map((h) => h.key.toLowerCase())).not.toContain(
-      'x-frame-options',
-    );
+    expect(
+      securityHeaders({ dev: false, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') })
+        .map((h) => h.key.toLowerCase()),
+    ).not.toContain('x-frame-options');
   });
 
   it('keeps connect-src an allowlist rather than a scheme wildcard', () => {
@@ -35,12 +43,58 @@ describe('content security policy', () => {
 
   it('allows eval only for the dev server', () => {
     expect(csp).not.toContain("'unsafe-eval'");
-    expect(buildCsp({ dev: true })).toContain("'unsafe-eval'");
+    expect(
+      buildCsp({ dev: true, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') }),
+    ).toContain("'unsafe-eval'");
   });
 
   it('upgrades insecure requests in production only', () => {
     expect(csp).toContain('upgrade-insecure-requests');
-    expect(buildCsp({ dev: true })).not.toContain('upgrade-insecure-requests');
+    expect(
+      buildCsp({ dev: true, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') }),
+    ).not.toContain('upgrade-insecure-requests');
+  });
+});
+
+/** The script-src directive alone — `style-src` keeps 'unsafe-inline' for React's inline styles. */
+const scriptSrc = (csp: string): string => csp.match(/script-src ([^;]*)/)?.[1] ?? '';
+
+describe("script-src no longer admits 'unsafe-inline'", () => {
+  it('serves a nonce policy on a Node deployment', () => {
+    const csp = buildCsp({ dev: false, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') });
+    expect(scriptSrc(csp)).toBe(
+      "'self' 'nonce-ZHVtbXlub25jZQ' 'strict-dynamic'",
+    );
+  });
+
+  it('serves a hash policy on a static host', () => {
+    const csp = buildCsp({
+      dev: false,
+      scriptSrc: ["'self'", "'sha256-ZHVtbXloYXNoZXRvbnVtYmVy'"],
+    });
+    expect(scriptSrc(csp)).toBe("'self' 'sha256-ZHVtbXloYXNoZXRvbnVtYmVy'");
+  });
+
+  it('refuses to build a policy that carries unsafe-inline, in either mode', () => {
+    expect(() =>
+      buildCsp({ dev: false, scriptSrc: ["'self'", "'unsafe-inline'"] }),
+    ).toThrow(/unsafe-inline.*banned/);
+  });
+
+  it('refuses a malformed nonce, which would silently admit nothing', () => {
+    // A nonce containing characters outside base64 makes Next's parser drop
+    // it; the page then fails closed. Throwing at build time names the bug.
+    expect(() => nonceScriptSources('not a nonce!')).toThrow(/malformed nonce/);
+    expect(() => nonceScriptSources('')).toThrow(/malformed nonce/);
+  });
+
+  it("never widens script-src beyond 'self' plus one nonce or hashes", () => {
+    const directive = scriptSrc(
+      buildCsp({ dev: false, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') }),
+    );
+    expect(directive).not.toContain("'unsafe-inline'");
+    expect(directive).not.toMatch(/https:(?!\/)/);
+    expect(directive).not.toContain('*');
   });
 });
 
@@ -61,7 +115,7 @@ describe('frame-src follows the chat embed', () => {
 
   function frameSrc(): string {
     return (
-      buildCsp({ dev: false })
+      buildCsp({ dev: false, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') })
         .split('; ')
         .find((d) => d.startsWith('frame-src')) ?? ''
     );
@@ -88,8 +142,8 @@ describe('frame-src follows the chat embed', () => {
 
   it('leaves frame-ancestors alone — Cherry web must still be able to frame us', () => {
     Object.assign(process.env, ENABLED);
-    expect(buildCsp({ dev: false })).toContain(
-      `frame-ancestors 'self' ${CHERRY_HOST}`,
-    );
+    expect(
+      buildCsp({ dev: false, scriptSrc: nonceScriptSources('ZHVtbXlub25jZQ') }),
+    ).toContain(`frame-ancestors 'self' ${CHERRY_HOST}`);
   });
 });

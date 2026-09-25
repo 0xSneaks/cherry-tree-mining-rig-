@@ -191,7 +191,7 @@ trusted to stay in step by hand:
 | 23 | Ticker halts on suspend, re-anchors on resume | `accrual.test.ts` re-anchor test + `render.spec.ts` freeze test. **Partial:** the "matches chain within tolerance after a 5-minute suspend" half needs a live chain |
 | 24 | `walletDisconnected` disables actions, keeps state | `render.spec.ts` — the event is pushed through the host stub |
 | 25 | Standalone buy → compound → claim | **Not verified.** Needs a real wallet extension and a live cluster |
-| 26 | Loads in an iframe with CSP set | `render.spec.ts` asserts `frame-ancestors`, the absence of `X-Frame-Options`, that `connect-src` is an allowlist rather than `https:`, and — in four separate tests with a `securitypolicyviolation` listener attached — that the app raises no violations under it |
+| 26 | Loads in an iframe with CSP set | `render.spec.ts` asserts `frame-ancestors`, the absence of `X-Frame-Options`, that `connect-src` is an allowlist rather than `https:`, that `script-src` is nonce-based and carries no `'unsafe-inline'`, and — in four separate tests with a `securitypolicyviolation` listener attached — that the app raises no violations under it |
 | 27 | Blink renders from signed params; tampering is inert | `blink.spec.ts` — five tests against a real keypair, including override/append/reorder tamper attempts |
 | 28 | Interpolation reconciles to chain | `accrual.test.ts` — parity with the engine at every fixture timestamp |
 | 29 | Quoted total equals lamports debited | `t29_quote_matches_debit` + `pricing.test.ts` over 336 Rust-generated vectors + a UI test |

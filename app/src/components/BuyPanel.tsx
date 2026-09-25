@@ -15,6 +15,7 @@ import type { Config } from '../lib/program/accounts';
 import { MAX_RIGS_PER_PURCHASE } from '../lib/program/constants';
 import { quotePurchase, rigsAffordable } from '../lib/program/pricing';
 import { aprBps, formatAprBps, yieldInputs } from '../lib/program/yield';
+import { projectionsAllowed } from '../lib/growth/runway';
 import { Readout } from './Readout';
 
 const QUICK = [1n, 5n, 10n, 25n];
@@ -26,7 +27,8 @@ export function BuyPanel({
   disabled,
   genesisRemaining = null,
   closedReason = null,
-  referrer = null,
+  referralNote = null,
+  officialFallback = false,
   busy,
   onBuy,
 }: {
@@ -39,12 +41,15 @@ export function BuyPanel({
   genesisRemaining?: bigint | null;
   /** Why planting is closed, when the launch gate is what closes it. */
   closedReason?: string | null;
-  /** Proposed referrer from the link, for a wallet with no position yet. */
-  referrer?: string | null;
+  /** Pre-signing disclosure of what referral (if any) this planting binds. */
+  referralNote?: string | null;
+  /** True when the referral shown is the official Cherry Tree fallback. */
+  officialFallback?: boolean;
   busy: boolean;
   onBuy: (count: bigint) => void;
 }) {
   const [count, setCount] = useState<bigint>(10n);
+  const emissionLive = projectionsAllowed(config, chainTime);
 
   const quote = useMemo(() => {
     try {
@@ -166,11 +171,20 @@ export function BuyPanel({
           {genesisRemaining === 1n ? '' : 's'}. Replanting does not consume it.
         </p>
       ) : null}
-      {referrer ? (
-        <p className="note" data-testid="referral-note">
-          Referred by {referrer.slice(0, 4)}…{referrer.slice(-4)}: a 1.05× reward
-          weight on your first planting, if the referrer is an existing planter.
-          It takes a larger slice of the same funded emission — not extra APR.
+      {referralNote ? (
+        <p
+          className={officialFallback ? 'banner' : 'note'}
+          data-testid="referral-note"
+          data-official-fallback={officialFallback ? 'true' : 'false'}
+        >
+          {referralNote}
+        </p>
+      ) : null}
+      {!emissionLive ? (
+        <p className="note" data-testid="buy-dormant-note">
+          No funded emission right now. Seeds planted now earn nothing until a new
+          schedule is separately funded — planting does not restart emission, and
+          no refill is promised.
         </p>
       ) : null}
 

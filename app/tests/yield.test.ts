@@ -196,9 +196,11 @@ describe('hypothetical planting', () => {
 describe('yield copy never promises a return', () => {
   it('uses no guarantee language anywhere in the UI', async () => {
     const { readdirSync, readFileSync: read } = await import('node:fs');
-    const dir = join(import.meta.dirname, '..', 'src', 'components');
-    for (const f of readdirSync(dir)) {
-      const text = read(join(dir, f), 'utf8').toLowerCase();
+    const dirs = ['components', 'lib/growth'].map((d) => join(import.meta.dirname, '..', 'src', d));
+    for (const f of dirs.flatMap((dir) => readdirSync(dir).map((x) => join(dir, x)))) {
+      // seasons.ts names the banned words in the validator that rejects them.
+      if (f.endsWith('seasons.ts')) continue;
+      const text = read(f, 'utf8').toLowerCase();
       for (const banned of ['guarantee', 'risk-free', 'risk free', 'fixed return', 'assured']) {
         expect(text, `${f} contains "${banned}"`).not.toContain(banned);
       }

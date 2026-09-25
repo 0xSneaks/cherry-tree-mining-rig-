@@ -5,7 +5,7 @@
  * the `host` prop, so there is exactly one implementation of the loop.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { isAddress, type Address } from '@solana/kit';
+import type { Address } from '@solana/kit';
 
 import { buyRigs, claim, compound } from '../lib/actions';
 import { PRODUCT_NAME, PRODUCT_NAME_SHORT } from '../lib/brand';
@@ -38,16 +38,29 @@ import { TransparencyPanel } from './TransparencyPanel';
 import { FounderActivation } from './FounderActivation';
 import { LaunchPanel } from './LaunchPanel';
 import { YieldPanel } from './YieldPanel';
+import { DilutionPanel } from './DilutionPanel';
+import { DistributionPanel } from './DistributionPanel';
+import { GroveStatus } from './GroveStatus';
+import { MilestonesPanel } from './MilestonesPanel';
+import { ReferralPanel } from './ReferralPanel';
+import { usePlanterStatus } from '../hooks/usePlanterStatus';
+import {
+  OFFICIAL_REFERRER,
+  referralCandidates,
+  referralDisclosure,
+  referrerToSend,
+  resolveReferral,
+  suppliedReferral,
+} from '../lib/growth/referral';
 
 /**
  * `?ref=<wallet>` — a proposed referrer, nothing more. The program decides
- * whether it binds (first purchase only, an existing planter, not yourself).
+ * whether it binds (first purchase only, an existing planter, not yourself);
+ * `lib/growth/referral.ts` decides what the app proposes and discloses.
  */
-function referrerFromUrl(self: Address | null): Address | null {
+function suppliedFromUrl(): string | null {
   if (typeof window === 'undefined') return null;
-  const raw = new URLSearchParams(window.location.search).get('ref');
-  if (!raw || !isAddress(raw) || raw === self) return null;
-  return raw as Address;
+  return suppliedReferral(window.location.search);
 }
 
 export type CherryRoomInfo = { id: string; title: string; memberCount: number };
@@ -158,7 +171,31 @@ export function Game({ host }: { host: Host }) {
       )
     : null;
   const freshBuyOpen = plantOpen && (genesisRemaining === null || genesisRemaining > 0n);
-  const referrer = !miner ? referrerFromUrl(host.address) : null;
+  // Referral: explicit link wins; the official fallback only with no link and
+  // no position, verified on chain first. Nothing binds on a later purchase.
+  const [supplied] = useState<string | null>(suppliedFromUrl);
+  const hasPosition = !!miner;
+  const candidates = referralCandidates({
+    supplied,
+    self: host.address,
+    hasPosition,
+    official: OFFICIAL_REFERRER,
+  });
+  const suppliedIsPlanter = usePlanterStatus(snap ? candidates.supplied : null);
+  const officialIsPlanter = usePlanterStatus(snap ? candidates.official : null);
+  const referral = snap
+    ? resolveReferral({
+        supplied,
+        self: host.address,
+        hasPosition,
+        boundReferrer: miner?.referrer ?? null,
+        official: OFFICIAL_REFERRER,
+        suppliedIsPlanter,
+        officialIsPlanter,
+      })
+    : null;
+  const referrer = referral ? referrerToSend(referral) : null;
+  const referralNote = referral ? referralDisclosure(referral) : null;
   const claimQuote = miner ? quoteClaim(claimable, miner.lastPlantedAt, chainTime) : null;
 
   const compoundPreview = useMemo(() => {
@@ -307,6 +344,13 @@ export function Game({ host }: { host: Host }) {
             <FounderActivation founder={host.address} signer={host.signer} onDone={refresh} />
           ) : null}
 
+          <GroveStatus
+            config={config}
+            rewardVaultLamports={snap.rewardVaultDistributable}
+            chainTime={chainTime}
+            claimable={claimable}
+          />
+
           {/* The centerpiece: the grove itself, from the real rig count. */}
           <RigVisual rigs={rigs} running={scheduleLive && !paused} />
 
@@ -402,6 +446,8 @@ export function Game({ host }: { host: Host }) {
           ) : null}
 
           {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
+          {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
 
           <hr className="rule" />
 
@@ -420,7 +466,8 @@ export function Game({ host }: { host: Host }) {
                   : 'Planting is not open to this wallet in the current access phase.'
             }
             genesisRemaining={genesisRemaining}
-            referrer={referrer}
+            referralNote={referralNote}
+            officialFallback={referral?.kind === 'official'}
             busy={busy === 'buy'}
             onBuy={onBuy}
           />
@@ -437,6 +484,11 @@ export function Game({ host }: { host: Host }) {
               />
             </>
           ) : null}
+
+          <hr className="rule" />
+
+          <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
+          <DistributionPanel viewer={host.address} />
 
           <hr className="rule" />
 

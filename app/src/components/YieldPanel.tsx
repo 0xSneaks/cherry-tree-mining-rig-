@@ -26,6 +26,7 @@ import {
   yieldInputs,
   type YieldPhase,
 } from '../lib/program/yield';
+import { projectionsAllowed } from '../lib/growth/runway';
 import { Readout } from './Readout';
 
 const DAY = 86_400n;
@@ -103,7 +104,7 @@ export function YieldPanel({
   } else if (threshold.kind === 'windowEnds') {
     nextLabel = `Window closes ${formatUtcInstant(threshold.at)}`;
   } else {
-    nextLabel = 'Awaiting new funding';
+    nextLabel = 'No funded emission · none scheduled';
   }
 
   return (
@@ -118,7 +119,7 @@ export function YieldPanel({
       <div className="yield-readouts">
         <Readout
           label={apyLabel}
-          value={projection ? formatAprBps(projection.yieldBps) : '—'}
+          value={projection && projectionsAllowed(config, chainTime) ? formatAprBps(projection.yieldBps) : '—'}
         />
         <Readout label="Next decay" value={nextLabel} />
         <Readout

@@ -29,6 +29,8 @@ const files = [
   ...walk(join(root, 'components')),
   ...walk(join(root, 'app')).filter((f) => f.endsWith('.tsx')),
   join(root, 'lib', 'brand.ts'),
+  // Growth-layer copy (Dormant, dilution, referral disclosures) renders in the UI.
+  ...walk(join(root, 'lib', 'growth')),
 ];
 
 function copyOf(source: string): string[] {

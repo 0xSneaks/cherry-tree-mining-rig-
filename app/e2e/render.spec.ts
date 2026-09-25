@@ -578,7 +578,14 @@ test.describe('genesis yield', () => {
     await page.goto('/');
     await expect(page.getByTestId('yield-apr')).toContainText('0.0%');
     await expect(page.getByTestId('yield-panel')).toContainText('Dormant yield');
-    await expect(page.getByTestId('yield-panel')).toContainText('Awaiting new funding');
+    await expect(page.getByTestId('yield-panel')).toContainText('No funded emission · none scheduled');
+    // Dormant is a first-class state: runway 0, accrued still claimable, and
+    // nothing implies planting restarts emission or a refill is coming.
+    const status = page.getByTestId('grove-status');
+    await expect(status).toHaveAttribute('data-status', 'dormant');
+    await expect(status).toContainText('Planting new seeds does not restart emission');
+    await expect(status).toContainText('none is promised');
+    await expect(page.getByTestId('buy-dormant-note')).toBeVisible();
   });
 
   test('fits a phone without horizontal scroll', async ({ page }) => {

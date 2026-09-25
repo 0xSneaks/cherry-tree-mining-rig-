@@ -16,7 +16,7 @@ import {
   type Address,
 } from '@solana/kit';
 
-import { decodeConfig, decodeMiner, type Config } from '../program/accounts';
+import { decodeConfig, decodeMiner, type Config, type Miner } from '../program/accounts';
 import { ACCOUNT_DISCRIMINATOR, ACCOUNT_SIZE, PROGRAM_ID } from '../program/constants';
 import { programAddresses } from '../program/pdas';
 
@@ -62,6 +62,43 @@ export async function allMiners(): Promise<MinerRow[]> {
       rigs: miner.rigs,
     };
   });
+}
+
+/**
+ * Every Miner position, fully decoded — referral binding, weight, creation
+ * time and lifetime ledger included. Cached for `POSITIONS_TTL_MS` so public
+ * analytics endpoints cannot turn into one `getProgramAccounts` per request.
+ */
+const POSITIONS_TTL_MS = 30_000;
+let positionsCache: { at: number; rows: Miner[] } | null = null;
+
+export async function allMinerPositions(): Promise<Miner[]> {
+  if (positionsCache && Date.now() - positionsCache.at < POSITIONS_TTL_MS) return positionsCache.rows;
+  const discriminator = getBase58Decoder().decode(ACCOUNT_DISCRIMINATOR.miner);
+  const accounts = await client()
+    .getProgramAccounts(PROGRAM_ID, {
+      encoding: 'base64',
+      filters: [
+        { dataSize: BigInt(ACCOUNT_SIZE.miner) },
+        { memcmp: { offset: 0n, bytes: discriminator as never, encoding: 'base58' } },
+      ],
+    })
+    .send();
+  const rows = accounts.map((a) => decodeMiner(b64(a.account.data[0])));
+  positionsCache = { at: Date.now(), rows };
+  return rows;
+}
+
+/** The chain's own clock, for anything time-dependent on the server. */
+export async function chainNow(): Promise<bigint> {
+  const rpc = client();
+  const slot = await rpc.getSlot({ commitment: 'confirmed' }).send();
+  return BigInt(await rpc.getBlockTime(slot).send());
+}
+
+/** The server's RPC client, for read-only history lookups. */
+export function serverRpc() {
+  return client();
 }
 
 export async function globalStats(): Promise<{

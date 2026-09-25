@@ -7,6 +7,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+echo "==> qualification operation guards (offline)"
+./scripts/tests/qualification-guards.sh
+./scripts/tests/qualification-upgrade.sh
+
 echo "==> cargo fmt --check"
 cargo fmt --all -- --check
 

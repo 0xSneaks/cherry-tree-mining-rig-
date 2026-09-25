@@ -230,17 +230,21 @@ Recovery is a forward fix to V2 and a retried migration after diagnosing the
 failure. **Never roll back to V1 after migration:** V1 can read the trailing
 bytes but does not enforce the Genesis cap.
 
-The qualification-only command is:
+The qualification-only command must be run from the staged V2 source tree so
+the wrapper can prove that all four staged identity locks equal the disposable
+target:
 
 ```bash
+cd target/qualification/<disposable-devnet-id>/v2/source
 CHERRY_TREE_QUALIFICATION=1 \
 CHERRY_TREE_QUALIFICATION_PROGRAM_ID=<disposable-devnet-id> \
 CHERRY_TREE_GENESIS_CAP_RIGS=<explicit-test-cap> \
 ./scripts/devnet-migrate-v2.sh
 ```
 
-It rejects the canonical program ID and verifies Devnet from the chain before
-sending. It is not a canonical migration command.
+It rejects the canonical program ID, refuses canonical or mismatched staged
+source, and verifies Devnet from the chain before sending. It is not a
+canonical migration command.
 
 ---
 
@@ -353,12 +357,56 @@ disposable keypair to match, reruns identity locks there, uses the pinned SBF
 toolchain, and leaves the canonical worktree untouched. The stage name and
 disposable ID make qualification artifacts distinguishable in CI.
 
+The reviewed artifacts are 398,168 bytes for V1 and 426,920 bytes for V2, a
+28,752-byte increase. Before the V2 upgrade, explicitly add 32,768 bytes to
+the disposable program's ProgramData account. That covers the increase with
+4,016 bytes to spare; do not rely on `solana program deploy` to auto-extend.
+Run the guarded upgrade owner from the staged V2 source tree:
+
+```bash
+cd target/qualification/$CHERRY_TREE_QUALIFICATION_PROGRAM_ID/v2/source
+
+SOLANA_CLUSTER=devnet \
+SOLANA_RPC_URL=https://api.devnet.solana.com \
+CHERRY_TREE_QUALIFICATION=1 \
+CHERRY_TREE_QUALIFICATION_PROGRAM_ID="$CHERRY_TREE_QUALIFICATION_PROGRAM_ID" \
+ANCHOR_WALLET=/path/to/disposable-upgrade-authority.json \
+./scripts/qualification-upgrade-v2.sh
+```
+
+The script verifies the RPC's genesis hash, staged identity, target, on-chain
+upgrade authority and current capacity before it sends anything. Its explicit
+extension is equivalent to:
+
+```bash
+solana program extend "$CHERRY_TREE_QUALIFICATION_PROGRAM_ID" 32768 \
+  --url "$SOLANA_RPC_URL" \
+  --keypair "$ANCHOR_WALLET"
+```
+
+It then reads `dataLen` back with `solana program show --output json`, requires
+the capacity to have increased by exactly 32,768 bytes and to fit the V2
+artifact, and upgrades with explicit `--url`, `--upgrade-authority`,
+`--keypair`, `--fee-payer`, and `--no-auto-extend` arguments. It never changes
+global Solana CLI configuration.
+
+After upgrade, the script dumps the deployed program and verifies it with
+`scripts/verify-program-dump.sh`. ProgramData extension can cause that dump to
+contain unused zero padding. Verification therefore hashes exactly the first
+426,920 bytes (more generally, the staged artifact's measured byte length),
+compares that SHA-256 with the staged artifact, and separately requires every
+remaining dumped byte to be zero. A whole-file hash comparison between a
+padded dump and the unpadded artifact is intentionally not used.
+
 The future qualification execution order is fixed:
 
 1. Deploy staged V1 under the disposable ID.
 2. Initialize its exact 321-byte Config with T0 = 0.
-3. Upgrade that same disposable program to the staged V2 artifact.
-4. Run the qualification-only 321 → 329 migration with an explicit test cap.
+3. From staged V2, run `qualification-upgrade-v2.sh` to extend ProgramData by
+   32,768 bytes, verify capacity, upgrade with auto-extension disabled, and
+   verify the artifact prefix plus zero-only padding.
+4. From staged V2, run `devnet-migrate-v2.sh` for the qualification-only
+   321 → 329 migration with an explicit test cap.
 5. Fund externally, then activate with `A <= C`; verify T0 from block time.
 6. Exercise below/exact/over-cap fresh buys and cap-exhausted compounding.
 7. At exact T0 + 24h verify no-domain Public buying and cap removal.

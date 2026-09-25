@@ -51,7 +51,8 @@ head -1 README.md | grep -q "THE CHERRY TREE" \
 echo
 echo "--> deployment scripts present and executable"
 for s in devnet-deploy.sh devnet-init.sh devnet-fund.sh devnet-smoke.sh \
-         devnet-migrate-v2.sh qualification-build.sh; do
+         devnet-migrate-v2.sh qualification-build.sh \
+         qualification-upgrade-v2.sh verify-program-dump.sh; do
   if [[ -x "scripts/$s" ]]; then pass "scripts/$s"; else bad "scripts/$s missing or not executable"; fi
 done
 for s in app/scripts/ops/devnet-init.ts app/scripts/ops/devnet-fund.ts app/scripts/ops/devnet-smoke.ts; do
@@ -61,7 +62,8 @@ done
 # ---------------------------------------------------------------- mainnet refusal
 echo
 echo "--> scripts refuse mainnet"
-for s in devnet-deploy.sh devnet-init.sh devnet-fund.sh devnet-smoke.sh; do
+for s in devnet-deploy.sh devnet-init.sh devnet-fund.sh devnet-smoke.sh \
+         devnet-migrate-v2.sh qualification-upgrade-v2.sh; do
   if SOLANA_CLUSTER=mainnet-beta "./scripts/$s" >/dev/null 2>&1; then
     bad "scripts/$s did NOT refuse mainnet-beta"
   else
@@ -124,6 +126,8 @@ done
 echo
 echo "--> qualification lane is explicit and disposable"
 QUAL_SCRIPT="scripts/qualification-build.sh"
+MIGRATE_SCRIPT="scripts/devnet-migrate-v2.sh"
+UPGRADE_SCRIPT="scripts/qualification-upgrade-v2.sh"
 grep -q 'CHERRY_TREE_QUALIFICATION.*==.*1' "$QUAL_SCRIPT" \
   && pass "qualification requires explicit opt-in" \
   || bad "qualification does not require explicit opt-in"
@@ -136,6 +140,17 @@ grep -q 'require_devnet' "$QUAL_SCRIPT" \
 grep -q 'target/qualification' "$QUAL_SCRIPT" \
   && pass "qualification artifacts are isolated and CI-distinguishable" \
   || bad "qualification artifact path is not isolated"
+grep -q 'CANONICAL_PROGRAM_ID=' "$MIGRATE_SCRIPT" \
+  && grep -q 'EXPECTED_PROGRAM_ID.*CHERRY_TREE_QUALIFICATION_PROGRAM_ID' "$MIGRATE_SCRIPT" \
+  && pass "qualification migration separates canonical deny-list from staged identity" \
+  || bad "qualification migration identity guards are incomplete"
+grep -q 'program extend.*EXTEND_BYTES' "$UPGRADE_SCRIPT" \
+  && grep -q -- '--no-auto-extend' "$UPGRADE_SCRIPT" \
+  && pass "qualification upgrade explicitly extends before deploying" \
+  || bad "qualification upgrade does not own explicit ProgramData extension"
+grep -q 'verify-program-dump.sh' "$UPGRADE_SCRIPT" \
+  && pass "qualification upgrade verifies padded deployed bytes safely" \
+  || bad "qualification upgrade does not verify the deployed program dump"
 
 # ---------------------------------------------------------------- no hardcoded wallets
 echo

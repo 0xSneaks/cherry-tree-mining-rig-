@@ -24,26 +24,45 @@ const good = {
   NEXT_PUBLIC_CHERRY_TREE_OFFICIAL_REFERRER: WALLET_3,
   CHERRY_TREE_REFERRAL_MIN_FRESH_SEEDS: '5',
   CHERRY_TREE_REFERRAL_MIN_HOLD_HOURS: '72',
+  // Example values, not credentials — the readiness check only inspects shape.
+  UPSTASH_REDIS_REST_URL: 'https://example-rules-2890.upstash.io',
+  UPSTASH_REDIS_REST_TOKEN: 'AX9zEXAMPLEnotreal0123456789abcdef',
 };
 
 const level = (env: Record<string, string | undefined>, key: string) =>
   checkProductionEnv(env).filter((f) => f.key.startsWith(key)).map((f) => f.level);
 
 describe('production env check', () => {
-  it('passes a complete configuration; the server-store choice stays an external decision', () => {
+  it('passes a complete configuration, durable store included', () => {
     const s = summarize(checkProductionEnv(good));
     expect(s.ok).toBe(true);
-    // CHERRY_SERVER_STORE: no durable backend has been chosen, and the env
-    // check tracks that as a founder decision rather than inventing a vendor.
-    expect(s.external).toBe(1);
+    expect(s.external).toBe(0);
   });
 
-  it('server stores: unacknowledged is EXTERNAL, acknowledged in-process is WARN', () => {
-    expect(level(good, 'CHERRY_SERVER_STORE')).toEqual(['EXTERNAL']);
-    expect(level({ ...good, CHERRY_ALLOW_INPROCESS_STORE: '1' }, 'CHERRY_ALLOW_INPROCESS_STORE')).toEqual(['WARN']);
-    // The acknowledgment removes the open decision from the list.
-    expect(level({ ...good, CHERRY_ALLOW_INPROCESS_STORE: '1' }, 'CHERRY_SERVER_STORE')).toEqual([]);
-    expect(summarize(checkProductionEnv({ ...good, CHERRY_ALLOW_INPROCESS_STORE: '1' })).external).toBe(0);
+  it('server stores: configured Upstash passes; everything else blocks or warns', () => {
+    expect(level(good, 'CHERRY_SERVER_STORE')).toEqual(['PASS']);
+    // Unset in production = endpoints fail closed, so a launch must not pass.
+    expect(level({ ...good, UPSTASH_REDIS_REST_URL: undefined, UPSTASH_REDIS_REST_TOKEN: undefined }, 'CHERRY_SERVER_STORE')).toEqual(['FAIL']);
+    // Half a pair is a typo that would otherwise surface as mystery 503s.
+    expect(level({ ...good, UPSTASH_REDIS_REST_TOKEN: undefined }, 'CHERRY_SERVER_STORE')).toEqual(['FAIL']);
+    expect(level({ ...good, UPSTASH_REDIS_REST_URL: undefined }, 'CHERRY_SERVER_STORE')).toEqual(['FAIL']);
+    // A token sent over plain http travels in every request — never allowed.
+    expect(level({ ...good, UPSTASH_REDIS_REST_URL: 'http://redis.example/' }, 'UPSTASH_REDIS_REST_URL')).toEqual(['FAIL']);
+    // The acknowledged single-process escape hatch stays available, and warns.
+    const acked = {
+      ...good,
+      UPSTASH_REDIS_REST_URL: undefined,
+      UPSTASH_REDIS_REST_TOKEN: undefined,
+      CHERRY_ALLOW_INPROCESS_STORE: '1',
+    };
+    expect(level(acked, 'CHERRY_ALLOW_INPROCESS_STORE')).toEqual(['WARN']);
+    expect(level(acked, 'CHERRY_SERVER_STORE')).toEqual([]);
+  });
+
+  it('flags a Redis credential renamed into the browser bundle', () => {
+    expect(
+      level({ ...good, NEXT_PUBLIC_UPSTASH_REDIS_REST_TOKEN: 'x' }, 'NEXT_PUBLIC_UPSTASH_REDIS_REST_TOKEN'),
+    ).toEqual(['FAIL']);
   });
 
   it('CHERRY_APP_ID absent is an EXTERNAL action, never invented', () => {

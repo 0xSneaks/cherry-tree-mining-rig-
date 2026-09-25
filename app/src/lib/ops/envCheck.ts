@@ -69,7 +69,7 @@ export function checkProductionEnv(env: Env, opts: { protocolVaults?: string[] }
 
   // ---- secrets must never be public
   for (const k of Object.keys(env)) {
-    if (k.startsWith('NEXT_PUBLIC_') && /SECRET|PRIVATE|KEYPAIR|MNEMONIC|SEED_PHRASE/i.test(k)) {
+    if (k.startsWith('NEXT_PUBLIC_') && /SECRET|PRIVATE|KEYPAIR|MNEMONIC|SEED_PHRASE|TOKEN|PASSWORD/i.test(k)) {
       add('FAIL', k, 'a secret-looking variable is NEXT_PUBLIC_ and would ship in the browser bundle');
     }
   }
@@ -110,11 +110,27 @@ export function checkProductionEnv(env: Env, opts: { protocolVaults?: string[] }
     if (!isAddress(k)) add('FAIL', 'CHERRY_TREE_EXCLUDED_REFERRERS', `${k} is not an address`);
   }
 
-  // ---- server-side stores (rate limiting, room attribution)
-  if (env.CHERRY_ALLOW_INPROCESS_STORE === '1') {
+  // ---- server-side stores (rate limiting, room attribution) — Upstash Redis
+  const redisUrl = env.UPSTASH_REDIS_REST_URL?.trim();
+  const redisToken = env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (redisUrl && redisToken) {
+    if (!httpsUrl(redisUrl)) {
+      add('FAIL', 'UPSTASH_REDIS_REST_URL', 'must be an https URL — the REST token travels with every request');
+    } else {
+      try {
+        add('PASS', 'CHERRY_SERVER_STORE', `durable store: Upstash Redis (${new URL(redisUrl).host})`);
+      } catch {
+        add('FAIL', 'UPSTASH_REDIS_REST_URL', 'not a parseable URL');
+      }
+    }
+  } else if (redisUrl || redisToken) {
+    // The resolver deliberately treats a half pair as unconfigured; say so
+    // here, where it is actionable, rather than as mystery 503s.
+    add('FAIL', 'CHERRY_SERVER_STORE', 'Upstash Redis is half-configured — UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are both required');
+  } else if (env.CHERRY_ALLOW_INPROCESS_STORE === '1') {
     add('WARN', 'CHERRY_ALLOW_INPROCESS_STORE', 'in-process stores acknowledged — correct only for a single-process deployment');
   } else {
-    add('EXTERNAL', 'CHERRY_SERVER_STORE', 'no durable server store chosen — rate-limited endpoints and room attribution fail closed in production. Founder decision.');
+    add('FAIL', 'CHERRY_SERVER_STORE', 'no durable store configured (UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN) and no single-process acknowledgment — rate-limited endpoints and room attribution fail closed');
   }
   return out;
 }

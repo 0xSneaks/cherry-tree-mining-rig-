@@ -528,12 +528,30 @@ end under the nonce policy with a violation listener attached.
 
 ## Other pre-mainnet hardening
 
-- Rate limiting and room attribution now run behind an explicit storage
-  boundary (`app/src/lib/server/stores.ts`): in-process memory outside
-  production, and in production **fail closed** — the affected endpoints
-  answer 503 — until either a durable store is chosen or
-  `CHERRY_ALLOW_INPROCESS_STORE=1` acknowledges a single-process deployment.
-  No durable backend is implemented yet: which one to buy is a **founder
-  decision** the readiness check surfaces as `CHERRY_SERVER_STORE`.
+- Rate limiting and room attribution run behind an explicit storage
+  boundary (`app/src/lib/server/stores.ts`), with the durable backend now
+  chosen: **Upstash Redis**, spoken to over its REST protocol
+  (`app/src/lib/server/upstashRedis.ts` — dependency-free, one POST of a
+  JSON command array per command). Configuration is the official pair
+  `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` (both, or neither:
+  half a pair is treated as unconfigured). Setting the pair selects the
+  durable adapters in every environment, so staging can be pointed at a
+  real resource first.
+  - Rate limiting is one atomic Lua script per check — `INCR` + arming the
+    TTL on first hit + reading the remaining window — so the counter can
+    never outlive its TTL or race across instances. Keys are namespaced
+    `cherry-tree:rate:*`.
+  - Attribution claims atomically (`SET NX` on the wallet key, then the
+    room's member set, in one script), preserving first-write-wins across
+    instances. Keys: `cherry-tree:attr:*`.
+  - Redis unreachable/erroring — network, timeout (3 s), HTTP error, or a
+    rejected command — maps to the same `StoreUnavailableError` as having
+    no store, and the endpoints answer 503. Nothing falls back to memory.
+  - Outside production the boundary defaults to in-process memory; in
+    production without the Upstash pair it **fails closed** — 503 — unless
+    `CHERRY_ALLOW_INPROCESS_STORE=1` explicitly acknowledges a
+    single-process deployment. The readiness check (`CHERRY_SERVER_STORE`)
+    passes the configured pair, fails a half pair or a non-https URL, and
+    fails an unconfigured production.
 - A program upgrade-authority policy (multisig or burn) before any mainnet
   consideration.

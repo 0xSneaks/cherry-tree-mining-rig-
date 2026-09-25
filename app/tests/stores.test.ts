@@ -90,10 +90,10 @@ describe('resolveStores — production never silently runs on process memory', (
     expect(attribution).toBeInstanceOf(MemoryAttributionStore);
   });
 
-  it('names the founder decision in the failure, not a vendor', async () => {
+  it('names the remediation in the failure, never a vendor surprise', async () => {
     const { rateLimit } = resolveStores({ NODE_ENV: 'production' });
     const failure = rateLimit.take('k', 1, 1);
-    await expect(failure).rejects.toThrow(/founder decision/i);
+    await expect(failure).rejects.toThrow(/UPSTASH_REDIS_REST_URL/);
     await expect(failure).rejects.toThrow(/CHERRY_ALLOW_INPROCESS_STORE/);
   });
 });

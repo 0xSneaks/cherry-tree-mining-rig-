@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { UpstashRedis, UpstashRedisError } from './upstashRedis';
+
 /**
  * Server-side storage boundary: rate limiting and room attribution.
  *
@@ -10,15 +12,16 @@ import 'server-only';
  * budget and attribution forgets itself on redeploy. In production the
  * stores therefore fail closed rather than silently degrade to per-process
  * memory: the endpoints that need them answer 503 until the deployment
- * either configures a durable store or explicitly acknowledges running as a
- * single process.
+ * either configures the durable store or explicitly acknowledges running as
+ * a single process.
  *
- * No durable backend is implemented yet. That is deliberate: which one to
- * buy is a founder decision, not an engineering default, and this file is
- * the entire seam — when a vendor is chosen, its adapter implements these
- * interfaces, `resolveStores` wires it from configuration, and nothing
- * outside this module changes. `checkProductionEnv` surfaces the open
- * decision to the readiness tooling so a launch cannot miss it.
+ * The durable backend is Upstash Redis (the founder decision), driven over
+ * its REST protocol — see `upstashRedis.ts` — and configured by the official
+ * variable pair `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`. Both
+ * are required: half a configuration is treated as none, so a typo fails
+ * closed instead of half-working. Setting them selects the durable adapters
+ * in every environment, so staging can be exercised against a real resource
+ * before production depends on it.
  */
 
 /** Fixed-window counter. The Promise leaves room for a networked adapter. */
@@ -50,7 +53,8 @@ export interface AttributionStore {
 export class StoreUnavailableError extends Error {
   constructor(feature: string) {
     super(
-      `${feature} has no durable store: choose one (founder decision) or set ` +
+      `${feature} has no durable store: set UPSTASH_REDIS_REST_URL and ` +
+        'UPSTASH_REDIS_REST_TOKEN (Upstash Redis), or set ' +
         'CHERRY_ALLOW_INPROCESS_STORE=1 to acknowledge a single-process deployment',
     );
     this.name = 'StoreUnavailableError';
@@ -123,19 +127,144 @@ class ClosedAttributionStore implements AttributionStore {
   }
 }
 
+// ---- durable adapters (Upstash Redis) -------------------------------------
+//
+// Keys are namespaced `cherry-tree:` so this app can share a Redis with
+// others without colliding, and so rate-limit and attribution data cannot
+// collide with each other. Every multi-step operation runs as one Lua
+// script: Redis executes scripts atomically, which is what makes the
+// fixed-window counter race-free (INCR and its PEXPIRE cannot land apart)
+// and keeps attribution's first-write-wins true across both of its keys.
+
+const REDIS_NAMESPACE = 'cherry-tree:';
+
+/**
+ * Atomic fixed window: INCR, arm the TTL exactly once (on the first hit),
+ * and report both the count and the remaining window in one round trip.
+ */
+const RATE_LIMIT_LUA = [
+  "local current = redis.call('INCR', KEYS[1])",
+  "if current == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end",
+  "return {current, redis.call('PTTL', KEYS[1])}",
+].join('\n');
+
+/**
+ * Atomic first-write-wins attribution: claim the wallet→room key with SET NX
+ * and, only if the claim succeeded, add the wallet to the room's member set.
+ * A wallet that re-launches from another room changes nothing.
+ */
+const ATTRIBUTE_LUA = [
+  "if redis.call('SET', KEYS[1], ARGV[1], 'NX') then",
+  "  redis.call('SADD', KEYS[2], ARGV[2])",
+  '  return 1',
+  'end',
+  'return 0',
+].join('\n');
+
+export class RedisRateLimitStore implements RateLimitStore {
+  constructor(private redis: UpstashRedis) {}
+
+  async take(
+    key: string,
+    limit: number,
+    windowMs: number,
+  ): Promise<{ ok: boolean; retryAfterSeconds: number }> {
+    try {
+      // All REST arguments are strings; the count comes back as numbers.
+      const [current, ttl] = await this.redis.command<[number, number]>([
+        'EVAL',
+        RATE_LIMIT_LUA,
+        '1',
+        `${REDIS_NAMESPACE}rate:${key}`,
+        String(windowMs),
+      ]);
+      if (current <= limit) return { ok: true, retryAfterSeconds: 0 };
+      // PTTL of an armed key is always positive; anything else still denies
+      // with a short, deterministic retry rather than trusting a raw -1/-2.
+      return {
+        ok: false,
+        retryAfterSeconds: ttl > 0 ? Math.max(1, Math.ceil(ttl / 1000)) : 1,
+      };
+    } catch (e) {
+      throw mapRedisError(e);
+    }
+  }
+}
+
+export class RedisAttributionStore implements AttributionStore {
+  constructor(private redis: UpstashRedis) {}
+
+  async attribute(wallet: string, roomId: string): Promise<void> {
+    try {
+      await this.redis.command<number>([
+        'EVAL',
+        ATTRIBUTE_LUA,
+        '2',
+        `${REDIS_NAMESPACE}attr:wallet:${wallet}`,
+        `${REDIS_NAMESPACE}attr:room:${roomId}`,
+        roomId,
+        wallet,
+      ]);
+    } catch (e) {
+      throw mapRedisError(e);
+    }
+  }
+
+  async membersOf(roomId: string): Promise<string[]> {
+    try {
+      return await this.redis.command<string[]>([
+        'SMEMBERS',
+        `${REDIS_NAMESPACE}attr:room:${roomId}`,
+      ]);
+    } catch (e) {
+      throw mapRedisError(e);
+    }
+  }
+
+  async roomOf(wallet: string): Promise<string | null> {
+    try {
+      // REST GET answers {"result": null} for a missing key.
+      return await this.redis.command<string | null>([
+        'GET',
+        `${REDIS_NAMESPACE}attr:wallet:${wallet}`,
+      ]);
+    } catch (e) {
+      throw mapRedisError(e);
+    }
+  }
+}
+
+/** Redis being unreachable is the same condition as no store at all. */
+function mapRedisError(e: unknown): unknown {
+  return e instanceof UpstashRedisError
+    ? new StoreUnavailableError('the Upstash Redis store did not answer')
+    : e;
+}
+
 type Env = Record<string, string | undefined>;
 
 /**
  * Pure resolution, so tests can drive the whole matrix without rewiring the
- * process. In-process memory is the default everywhere except production,
- * where it must be acknowledged explicitly.
+ * process. The durable Upstash adapters are selected by their variable pair
+ * in every environment; in-process memory is the default everywhere else
+ * except production, where it must be acknowledged explicitly.
  */
 export function resolveStores(env: Env): {
   rateLimit: RateLimitStore;
   attribution: AttributionStore;
 } {
-  // No durable adapter exists yet; when one lands, its configuration branch
-  // goes first here and the in-process fallbacks stay for dev and tests.
+  const redisUrl = env.UPSTASH_REDIS_REST_URL?.trim();
+  const redisToken = env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  // Both halves or neither: a half configuration is a typo, and treating it
+  // as configured would fail every request; treating it as absent fails
+  // closed, which is the direction this module always errs in.
+  if (redisUrl && redisToken) {
+    const redis = new UpstashRedis(redisUrl, redisToken);
+    return {
+      rateLimit: new RedisRateLimitStore(redis),
+      attribution: new RedisAttributionStore(redis),
+    };
+  }
   const inProcess =
     env.NODE_ENV !== 'production' || env.CHERRY_ALLOW_INPROCESS_STORE === '1';
   return inProcess

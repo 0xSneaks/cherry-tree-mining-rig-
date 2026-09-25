@@ -1,0 +1,10 @@
+site:
+  title: THE CHERRY TREE
+  structure:
+    - type: space
+      key: cherry-tree-docs
+      title: THE CHERRY TREE
+      path: docs
+      default: true
+      content:
+        directory: ./

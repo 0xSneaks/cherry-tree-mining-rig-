@@ -11,8 +11,9 @@ pub const REWARD_VAULT_SEED: &[u8] = b"reward_vault";
 /// Seed for the FEE VAULT PDA.
 pub const FEE_VAULT_SEED: &[u8] = b"fee_vault";
 
-/// On-chain state layout version.
-pub const STATE_VERSION: u16 = 1;
+/// On-chain state layout version. V2 appends `Config.genesis_cap_rigs`
+/// (321 -> 329 bytes); Miner and Vault layouts are unchanged.
+pub const STATE_VERSION: u16 = 2;
 
 /// Marks which vault a [`crate::state::Vault`] account is, so a mis-wired
 /// account cannot pose as a different vault even before seed validation.

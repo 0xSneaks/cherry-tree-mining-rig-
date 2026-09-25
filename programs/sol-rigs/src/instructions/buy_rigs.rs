@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use rigs_engine::{
-    assert_fully_funded, gate_purchase, referral_weight, t0_after_success, PurchaseContext,
-    PurchaseGate, ReferrerCheck,
+    assert_fully_funded, gate_purchase, genesis_cap_check, referral_weight, t0_after_success,
+    PurchaseContext, PurchaseGate, ReferrerCheck,
 };
 
 use crate::constants::*;
@@ -102,6 +102,20 @@ pub fn handle_buy_rigs<'info>(
         })
         .anchor()?
     };
+
+    // --- Genesis cap ---
+    // Cumulative fresh purchases per wallet, gated period only ([T0, T0+24h),
+    // plus the activation itself). Checked before any state or money moves;
+    // `compound` never passes through here, so compounding never consumes
+    // allowance. A fresh Miner reads zero lifetime purchases.
+    genesis_cap_check(
+        ctx.accounts.config.launch_t0,
+        now,
+        ctx.accounts.miner.lifetime_rigs_bought,
+        count,
+        ctx.accounts.config.genesis_cap_rigs,
+    )
+    .anchor()?;
 
     // First purchase initialises the position.
     let miner = &mut ctx.accounts.miner;

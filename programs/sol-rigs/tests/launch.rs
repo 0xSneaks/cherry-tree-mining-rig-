@@ -252,42 +252,33 @@ async fn access_phases_enforced_on_chain_at_exact_boundaries() {
         env.erin.insecure_clone(),
     );
 
-    // Day 1, first second: .skr (direct and wrapped) yes; .sns no; none no.
+    // Genesis, first second: .skr (direct and wrapped) yes; .sns no; none no.
     env.buy(&carol, 1).await.unwrap();
     env.buy(&bob, 1).await.unwrap();
     for who in [&dave, &frank, &erin] {
         assert_rigs_error(env.buy(who, 1).await.unwrap_err(), RigsError::AccessDenied);
     }
 
-    // T0 + 24h − 1: still day 1.
+    // T0 + 24h − 1: the last gated second — still .skr only.
     env.set_time(t + DAY - 1).await;
     assert_rigs_error(
         env.buy(&frank, 1).await.unwrap_err(),
         RigsError::AccessDenied,
     );
+    assert_rigs_error(
+        env.buy(&erin, 1).await.unwrap_err(),
+        RigsError::AccessDenied,
+    );
 
-    // T0 + 24h: day 2 — .sns (direct and tokenized) join; .skr keeps access.
+    // Exact T0 + 24h: PUBLIC FOREVER — .sns, no-domain, everyone.
     env.set_time(t + DAY).await;
     env.buy(&frank, 1).await.unwrap();
     env.buy(&dave, 1).await.unwrap();
-    env.buy(&carol, 1).await.unwrap();
-    assert_rigs_error(
-        env.buy(&erin, 1).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
-
-    // T0 + 48h − 1: still day 2.
-    env.set_time(t + 2 * DAY - 1).await;
-    assert_rigs_error(
-        env.buy(&erin, 1).await.unwrap_err(),
-        RigsError::AccessDenied,
-    );
-
-    // T0 + 48h: public.
-    env.set_time(t + 2 * DAY).await;
     env.buy(&erin, 1).await.unwrap();
 
-    // Years later: still public.
+    // T0 + 24h + 1 and years later: still public.
+    env.set_time(t + DAY + 1).await;
+    env.buy(&erin, 1).await.unwrap();
     env.set_time(t + 5 * 365 * DAY).await;
     env.buy(&erin, 1).await.unwrap();
     assert_eq!(t0(&mut env).await, t);
@@ -297,7 +288,10 @@ async fn access_phases_enforced_on_chain_at_exact_boundaries() {
 async fn someone_elses_domain_proves_nothing() {
     let mut env = funded_env().await;
     let t = activate(&mut env).await;
-    env.set_time(t + DAY).await;
+    // During the Genesis window — the only phase where a proof matters.
+    // Under V2 a `.sns` account proves nothing at any gated second, and from
+    // T0 + 24h no proof is needed at all.
+    env.set_time(t).await;
     let erin = env.erin.insecure_clone();
     for holder in [
         env.bob.pubkey(),
@@ -385,8 +379,10 @@ fn tokenized_sns(
     ]
 }
 
-/// Every forgery of a `.skr` / `.sns` proof fails closed — `.skr` shapes on
-/// day 1, `.sns` shapes on day 2 (when a genuine one would pass).
+/// Every forgery of a `.skr` / `.sns` proof fails closed during the Genesis
+/// window — the only phase where any proof matters. Under V2 a `.sns` proof
+/// (forged or genuine) never opens the gate, and from T0 + 24h no proof is
+/// asked for at all.
 #[tokio::test]
 async fn forged_domain_proofs_fail_closed() {
     let sys = solana_sdk::system_program::ID;
@@ -521,7 +517,8 @@ async fn forged_domain_proofs_fail_closed() {
         env.initialize().await.unwrap();
         env.fund_rewards(10 * SOL, 30 * DAY as u64).await.unwrap();
         let t = activate(&mut env).await;
-        env.set_time(if is_sns { t + DAY } else { t }).await;
+        let _ = is_sns; // V2: no .sns-gated phase exists; every case runs gated.
+        env.set_time(t).await;
         let ix = env.buy_ix_with(&fk, 1, keys, None);
         let err = env.send(ix, &[&forger]).await.expect_err(label);
         assert_rigs_error(err, RigsError::AccessDenied);

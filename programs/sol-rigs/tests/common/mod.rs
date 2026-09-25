@@ -25,6 +25,9 @@ use sol_rigs::constants::*;
 pub const SOL: u64 = LAMPORTS_PER_SOL;
 pub const RIG_PRICE: u64 = SOL / 100; // 0.01 SOL — test fixture only
 pub const FEE_BPS: u16 = 300; // 3.00%
+/// Genesis fresh-purchase cap — an explicit safe test value, NOT the
+/// production number (that will come from founder simulations).
+pub const GENESIS_CAP: u64 = 10_000;
 
 /// THE CHERRY TREE protocol fee recipient — the Seeker fee-receiving wallet.
 ///
@@ -362,6 +365,15 @@ impl Env {
     // ---------------------------------------------------------- instructions
 
     pub async fn initialize(&mut self) -> Result<(), TransportError> {
+        self.initialize_with_cap(GENESIS_CAP).await
+    }
+
+    /// `initialize` with an explicit Genesis cap, so cap-specific tests can
+    /// pin tight values.
+    pub async fn initialize_with_cap(
+        &mut self,
+        genesis_cap_rigs: u64,
+    ) -> Result<(), TransportError> {
         let ix = Instruction {
             program_id: sol_rigs::ID,
             accounts: sol_rigs::accounts::Initialize {
@@ -379,11 +391,17 @@ impl Env {
                 reward_funder: self.funder.pubkey(),
                 fee_recipient: self.fee_recipient,
                 founder: self.founder.pubkey(),
+                genesis_cap_rigs,
             }
             .data(),
         };
         let auth = self.authority.insecure_clone();
         self.send(ix, &[&auth]).await
+    }
+
+    /// Raw on-chain account bytes (or `None`), for layout-level assertions.
+    pub async fn account_raw(&mut self, key: Pubkey) -> Option<solana_sdk::account::Account> {
+        self.ctx.banks_client.get_account(key).await.unwrap()
     }
 
     pub fn fund_rewards_ix(&self, funder: &Pubkey, amount: u64, duration: u64) -> Instruction {

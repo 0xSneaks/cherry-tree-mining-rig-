@@ -24,6 +24,10 @@ fn discriminators_match_the_typescript_client() {
             hex(sol_rigs::instruction::FundRewards::DISCRIMINATOR),
         ),
         (
+            "migrateV2",
+            hex(sol_rigs::instruction::MigrateV2::DISCRIMINATOR),
+        ),
+        (
             "buyRigs",
             hex(sol_rigs::instruction::BuyRigs::DISCRIMINATOR),
         ),
@@ -54,6 +58,7 @@ fn discriminators_match_the_typescript_client() {
     let expected: &[(&str, &str)] = &[
         ("initialize", "afaf6d1f0d989bed"),
         ("fundRewards", "7240a370afa71379"),
+        ("migrateV2", "bbcb121fceedfe29"),
         ("buyRigs", "0cfa7948abf4e5a3"),
         ("claim", "3ec6d6c1d59f6cd2"),
         ("compound", "a5d0fb4ef2a08d2f"),
@@ -110,7 +115,7 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         capital_vault_bump: 250,
         reward_vault_bump: 251,
         fee_vault_bump: 252,
-        version: 1,
+        version: 2,
         bump: 253,
         // The founder activation wallet the preflight expects.
         founder: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
@@ -118,6 +123,8 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         // 14,156 base rigs + 125 referred rigs.
         total_shares: 14_156 * 100 + 125 * 105,
         total_claim_penalties: 2_500_000,
+        // Production V2 field — an explicit safe fixture value.
+        genesis_cap_rigs: 2_500,
     };
     let miner = sol_rigs::state::Miner {
         owner: Pubkey::new_from_array([9u8; 32]),

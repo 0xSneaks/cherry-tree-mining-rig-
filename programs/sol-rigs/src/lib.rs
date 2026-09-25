@@ -23,7 +23,7 @@
 //!
 //! | Vault   | Receives                            | Pays out                        |
 //! |---------|-------------------------------------|---------------------------------|
-//! | CAPITAL | non-fee portion of rig purchases    | nothing in V1                   |
+//! | CAPITAL | non-fee portion of rig purchases    | nothing — locked in this version|
 //! | REWARD  | realized revenue via `fund_rewards` | user claims and compounds only  |
 //! | FEE     | disclosed purchase fee              | authority withdrawal            |
 //!
@@ -51,7 +51,8 @@ declare_id!("C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt");
 pub mod sol_rigs {
     use super::*;
 
-    /// Create the config PDA and the three vault PDAs.
+    /// Create the config PDA and the three vault PDAs, pinning the Genesis
+    /// fresh-purchase cap for the gated first 24 hours.
     pub fn initialize(
         ctx: Context<Initialize>,
         rig_price_lamports: u64,
@@ -59,6 +60,7 @@ pub mod sol_rigs {
         reward_funder: Pubkey,
         fee_recipient: Pubkey,
         founder: Pubkey,
+        genesis_cap_rigs: u64,
     ) -> Result<()> {
         instructions::initialize::handle_initialize(
             ctx,
@@ -67,7 +69,15 @@ pub mod sol_rigs {
             reward_funder,
             fee_recipient,
             founder,
+            genesis_cap_rigs,
         )
+    }
+
+    /// Migrate a live V1 Config (321 bytes) in place to V2 (329 bytes),
+    /// pinning the Genesis cap. Authority-only, one-shot, and validated
+    /// against the raw legacy account before a single byte moves.
+    pub fn migrate_v2(ctx: Context<MigrateV2>, genesis_cap_rigs: u64) -> Result<()> {
+        instructions::migrate_v2::handle_migrate_v2(ctx, genesis_cap_rigs)
     }
 
     /// Fund the reward vault and (re)write the emission schedule.

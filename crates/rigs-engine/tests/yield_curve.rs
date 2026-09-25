@@ -499,6 +499,7 @@ fn exploit_referral_has_no_payout_surface() {
             "compound",
             "fund_rewards",
             "initialize",
+            "migrate_v2",
             "set_fee_recipient",
             "set_paused",
             "set_pricing",

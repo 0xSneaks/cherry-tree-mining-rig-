@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
-use rigs_engine::validate_pricing;
+use rigs_engine::{validate_genesis_cap, validate_pricing};
 
 use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
-use crate::events::Initialized;
+use crate::events::{GenesisCapConfigured, Initialized};
 use crate::state::{Config, Vault};
 
 #[derive(Accounts)]
@@ -57,8 +57,10 @@ pub fn handle_initialize(
     reward_funder: Pubkey,
     fee_recipient: Pubkey,
     founder: Pubkey,
+    genesis_cap_rigs: u64,
 ) -> Result<()> {
     validate_pricing(rig_price_lamports, purchase_fee_bps).anchor()?;
+    validate_genesis_cap(genesis_cap_rigs).anchor()?;
     // The founder is pinned here and nowhere else. An unset founder would
     // make launch impossible to activate, so it is refused outright.
     require_keys_neq!(founder, Pubkey::default(), RigsError::InvalidConfig);
@@ -120,6 +122,7 @@ pub fn handle_initialize(
         launch_t0: rigs_engine::NOT_ACTIVATED,
         total_shares: 0,
         total_claim_penalties: 0,
+        genesis_cap_rigs,
     });
 
     emit!(Initialized {
@@ -130,5 +133,8 @@ pub fn handle_initialize(
         purchase_fee_bps,
         founder,
     });
+    // The cap rides its own event so the frozen V1 `Initialized` schema — and
+    // every historical decoder — stays byte-compatible.
+    emit!(GenesisCapConfigured { genesis_cap_rigs });
     Ok(())
 }

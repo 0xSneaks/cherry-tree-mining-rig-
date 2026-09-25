@@ -112,3 +112,11 @@ pub struct ReferralBound {
     pub referrer: Pubkey,
     pub weight: u16,
 }
+
+/// The cumulative per-wallet Genesis fresh-purchase cap was pinned: by a
+/// fresh V2 `initialize`, or by a successful V1 -> V2 `migrate_v2`. The
+/// historical V1 `Initialized` schema is frozen and never carries the cap.
+#[event]
+pub struct GenesisCapConfigured {
+    pub genesis_cap_rigs: u64,
+}

@@ -72,6 +72,13 @@ pub struct Config {
     /// Lamports forfeited by early claims, all still in the reward vault and
     /// re-credited to other planters (or dust). Never fee revenue.
     pub total_claim_penalties: u64,
+
+    // --- genesis cap (appended, Production V2) ---
+    /// Cumulative per-wallet fresh-purchase cap during the gated launch period
+    /// [T0, T0 + 24h). Pinned at `initialize` or `migrate_v2`; there is no
+    /// setter. Compounding never consumes allowance; from T0 + 24h (Public)
+    /// the cap no longer applies.
+    pub genesis_cap_rigs: u64,
 }
 
 impl Config {

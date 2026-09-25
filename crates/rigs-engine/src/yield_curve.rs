@@ -345,11 +345,9 @@ pub fn project_compounding(
         * rig_price_lamports as u128
         * (BPS_DENOMINATOR as u128 + purchase_fee_bps as u128)
         / BPS_DENOMINATOR as u128;
-    let yield_bps = if cost == 0 {
-        0
-    } else {
-        reward * BPS_DENOMINATOR as u128 / cost
-    };
+    let yield_bps = (reward * BPS_DENOMINATOR as u128)
+        .checked_div(cost)
+        .unwrap_or(0);
 
     Ok(Projection {
         horizon_seconds: horizon,

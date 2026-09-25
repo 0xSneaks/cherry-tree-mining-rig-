@@ -4,6 +4,7 @@ pub mod claim;
 pub mod compound;
 pub mod fund_rewards;
 pub mod initialize;
+pub mod migrate_v2;
 
 // Globbed so the `#[program]` macro can see the generated client-accounts
 // modules. Handlers are named per-instruction rather than `handler` so the
@@ -14,3 +15,4 @@ pub use claim::*;
 pub use compound::*;
 pub use fund_rewards::*;
 pub use initialize::*;
+pub use migrate_v2::*;

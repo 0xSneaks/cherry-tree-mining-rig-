@@ -62,6 +62,13 @@ pub enum RigsError {
     ActivationUnfunded,
     #[msg("A referrer was named but its miner account was not supplied")]
     MissingReferrerAccount,
+    // --- Production V2 (appended: existing codes are unchanged) ---
+    #[msg("Genesis cumulative fresh-purchase cap exceeded")]
+    GenesisCapExceeded,
+    #[msg(
+        "V1 -> V2 migration rejected: not an exact, unmigrated V1 Config signed by its authority"
+    )]
+    MigrationRejected,
 }
 
 impl From<EngineError> for RigsError {
@@ -83,6 +90,7 @@ impl From<EngineError> for RigsError {
             EngineError::InvalidReferrer => RigsError::InvalidReferrer,
             EngineError::AccessDenied => RigsError::AccessDenied,
             EngineError::ActivationUnfunded => RigsError::ActivationUnfunded,
+            EngineError::GenesisCapExceeded => RigsError::GenesisCapExceeded,
         }
     }
 }

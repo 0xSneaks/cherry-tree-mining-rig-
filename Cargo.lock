@@ -4176,6 +4176,7 @@ name = "sol-rigs"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
+ "borsh 0.10.4",
  "rigs-engine",
  "solana-program-test",
  "solana-sdk",

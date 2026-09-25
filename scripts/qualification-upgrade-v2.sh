@@ -50,7 +50,7 @@ echo "--> qualification cluster identity"
 assert_connected_to_devnet "$RPC_URL"
 
 echo "--> qualification ProgramData before extension"
-BEFORE_JSON=$(solana program show "$TARGET_ID" --url "$RPC_URL" --output json)
+BEFORE_JSON=$(solana program show "$TARGET_ID" --url "$RPC_URL" --keypair "$AUTHORITY" --output json)
 BEFORE_CAPACITY=$(printf '%s' "$BEFORE_JSON" | json_field dataLen) \
   || die "could not read ProgramData dataLen before extension"
 ON_CHAIN_AUTHORITY=$(printf '%s' "$BEFORE_JSON" | json_field authority) \
@@ -71,7 +71,7 @@ solana program extend "$TARGET_ID" "$EXTEND_BYTES" \
   --url "$RPC_URL" \
   --keypair "$AUTHORITY"
 
-AFTER_JSON=$(solana program show "$TARGET_ID" --url "$RPC_URL" --output json)
+AFTER_JSON=$(solana program show "$TARGET_ID" --url "$RPC_URL" --keypair "$AUTHORITY" --output json)
 AFTER_CAPACITY=$(printf '%s' "$AFTER_JSON" | json_field dataLen) \
   || die "could not read ProgramData dataLen after extension"
 [[ "$AFTER_CAPACITY" =~ ^[0-9]+$ ]] || die "invalid ProgramData dataLen: $AFTER_CAPACITY"
@@ -99,7 +99,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "--> verify deployed bytes"
-solana program dump "$TARGET_ID" "$DUMP_PATH" --url "$RPC_URL"
+solana program dump "$TARGET_ID" "$DUMP_PATH" --url "$RPC_URL" --keypair "$AUTHORITY"
 "$ROOT/scripts/verify-program-dump.sh" "$ARTIFACT" "$DUMP_PATH"
 
 green "UPGRADED: disposable qualification program $TARGET_ID on verified Devnet"

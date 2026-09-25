@@ -46,7 +46,7 @@ export function TransparencyPanel({
           value={live ? formatUtcInstant(config.rewardPeriodFinish) : 'schedule ended'}
         />
         <Readout label="Funded runway" value={formatDuration(runway)} />
-        <Readout label="Global rigs" value={formatCount(config.totalRigs)} />
+        <Readout label="Global seeds" value={formatCount(config.totalRigs)} />
         <Readout
           label="Your share"
           value={formatSharePercent(miner?.rigs ?? 0n, config.totalRigs)}

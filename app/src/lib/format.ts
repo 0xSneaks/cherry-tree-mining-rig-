@@ -15,7 +15,7 @@ export function formatSol(lamports: bigint, decimals = 6): string {
   return decimals > 0 ? `${sign}${whole}.${fracStr}` : `${sign}${whole}`;
 }
 
-/** Thousands separators for rig counts. */
+/** Thousands separators for seed counts. */
 export function formatCount(n: bigint | number): string {
   return n.toLocaleString('en-US');
 }

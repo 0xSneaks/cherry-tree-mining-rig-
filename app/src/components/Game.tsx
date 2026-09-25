@@ -199,7 +199,7 @@ export function Game({ host }: { host: Host }) {
         </div>
       ) : (
         <>
-          <Readout label="My hashpower" value={formatCount(rigs)} unit="RIGS" rigs />
+          <Readout label="My hashpower" value={formatCount(rigs)} unit="SEEDS" rigs />
           <Readout
             label="Current output"
             value={`≈ ${formatSol(outputPerDay, 5)}`}
@@ -208,7 +208,7 @@ export function Game({ host }: { host: Host }) {
           <OreBin lamports={claimable} />
 
           <p className="note">
-            Based on the current funded reward schedule and total rig count.
+            Based on the current funded reward schedule and total seed count.
             Changes when hashpower or reward funding changes.
           </p>
 
@@ -283,10 +283,10 @@ export function Game({ host }: { host: Host }) {
 
           <p className="disclosure">
             {PRODUCT_NAME_SHORT} is a mining <em>simulation</em>. SOL is not proof-of-work
-            mined: rigs do not participate in Solana consensus and do not
+            mined: seeds do not participate in Solana consensus and do not
             cryptographically produce new SOL. Rewards are paid from a funded
             reward vault, are denominated in SOL, and vary with total hashpower
-            and funding. Rig purchases are non-redeemable.
+            and funding. Seed purchases are non-redeemable.
           </p>
         </>
       )}

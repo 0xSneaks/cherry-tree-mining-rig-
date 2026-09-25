@@ -76,7 +76,7 @@ export function RoomLeaderboard({
           <p className="note">Reading the chain…</p>
         ) : entries.length === 0 ? (
           <p className="note">
-            No rigs mined from this room yet. Be the first shaft.
+            No seeds mined from this room yet. Be the first shaft.
           </p>
         ) : (
           <ol className="leaderboard">

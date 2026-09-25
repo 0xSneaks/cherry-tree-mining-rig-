@@ -1,9 +1,9 @@
 /**
  * The mine shaft: a cross-section, not a scene.
  *
- * Deterministic tier from the real rig count, cosmetic only — it never
+ * Deterministic tier from the real seed count, cosmetic only — it never
  * affects a number. Individual machines are deliberately not drawn: at 500
- * rigs that is a pointless render, and a tier reads faster anyway.
+ * seeds that is a pointless render, and a tier reads faster anyway.
  *
  * The canvas is sized to its content so a small operation does not sit in a
  * field of empty rock.
@@ -21,9 +21,9 @@ export function rigTier(rigs: bigint): RigTier {
   if (rigs >= 500n)
     return { key: 'facility', label: 'MAJOR MINING FACILITY', levels: 4, perLevel: 6 };
   if (rigs >= 100n)
-    return { key: 'multi', label: 'MULTI-RIG SHAFT', levels: 3, perLevel: 4 };
+    return { key: 'multi', label: 'MULTI-SEED SHAFT', levels: 3, perLevel: 4 };
   if (rigs >= 25n)
-    return { key: 'industrial', label: 'INDUSTRIAL RIG', levels: 2, perLevel: 3 };
+    return { key: 'industrial', label: 'INDUSTRIAL SEED', levels: 2, perLevel: 3 };
   if (rigs >= 5n)
     return { key: 'small', label: 'SMALL MINING MACHINE', levels: 1, perLevel: 2 };
   if (rigs >= 1n)

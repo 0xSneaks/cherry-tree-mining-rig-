@@ -46,7 +46,7 @@ test.describe('embedded path', () => {
     // 42 rigs, straight out of the Rust-serialised miner fixture.
     await expect(
       page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
+    ).toHaveText('42SEEDS');
     await expect(page.getByText('Ore bin · unclaimed SOL')).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeVisible();
   });
@@ -92,7 +92,7 @@ test.describe('embedded path', () => {
   test('the quick-select buttons change the quote', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Hire 25 rigs/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Plant 25 Seeds/i })).toBeVisible();
   });
 
   /** §2, §10 — honesty constraints and banned copy. */
@@ -110,7 +110,7 @@ test.describe('embedded path', () => {
     expect(text).toMatch(/funded reward vault/i);
     // The mandated sentence under the output estimate.
     expect(text).toMatch(
-      /Based on the current funded reward schedule and total rig count/i,
+      /Based on the current funded reward schedule and total seed count/i,
     );
 
     for (const pattern of BANNED) {
@@ -131,7 +131,7 @@ test.describe('embedded path', () => {
       'Current distribution',
       'Funded until',
       'Funded runway',
-      'Global rigs',
+      'Global seeds',
       'Your share',
       'Protocol fee',
     ]) {
@@ -168,12 +168,12 @@ test.describe('embedded path', () => {
     await expect(page.getByText(/Wallet disconnected/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
     await expect(page.getByRole('button', { name: /^Compound/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /Hire /i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Plant /i })).toBeDisabled();
 
     // Read-only state survives: the position is still rendered, not unmounted.
     await expect(
       page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
+    ).toHaveText('42SEEDS');
     await expect(page.getByText('Global mine')).toBeVisible();
     await expect(page.locator('.readout-value--hero')).toBeVisible();
   });
@@ -186,7 +186,7 @@ test.describe('embedded path', () => {
     await expect(page.getByText(/halted by its authority/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
     await expect(page.getByRole('button', { name: /^Compound/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /Hire /i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Plant /i })).toBeDisabled();
     // Read-only state stays on screen.
     await expect(page.getByText('My hashpower')).toBeVisible();
   });
@@ -236,7 +236,7 @@ test.describe('embedded path', () => {
 test.describe('blink result card', () => {
   test('renders purely from its params', async ({ page }) => {
     await page.goto('/result?kind=compound&rigs=54&compounded=12');
-    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    await expect(page.getByText('+12 SEEDS')).toBeVisible();
     await expect(page.getByText('54')).toBeVisible();
     await expect(page.getByText(/read-only snapshot/i)).toBeVisible();
   });
@@ -349,7 +349,7 @@ test.describe('CSP is survivable', () => {
     await expect(page.locator('.readout-value--hero')).toBeVisible();
     // A blocked event handler would only surface once something is clicked.
     await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Hire 25 rigs/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Plant 25 Seeds/i })).toBeVisible();
 
     expect(await collect()).toEqual([]);
   });
@@ -365,7 +365,7 @@ test.describe('CSP is survivable', () => {
   test('the blink card raises none', async ({ page }) => {
     const collect = await watchViolations(page);
     await page.goto('/result?kind=compound&rigs=54&compounded=12');
-    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    await expect(page.getByText('+12 SEEDS')).toBeVisible();
     expect(await collect()).toEqual([]);
   });
 
@@ -378,7 +378,7 @@ test.describe('CSP is survivable', () => {
     // and was not blocked by connect-src.
     await expect(
       page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
+    ).toHaveText('42SEEDS');
     expect(await collect()).toEqual([]);
   });
 });

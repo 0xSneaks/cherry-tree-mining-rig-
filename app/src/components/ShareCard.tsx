@@ -28,7 +28,7 @@ export function ShareCard({
 
   const headline =
     payload.kind === 'compound'
-      ? `+${formatCount(BigInt(payload.compounded))} RIGS`
+      ? `+${formatCount(BigInt(payload.compounded))} SEEDS`
       : `CLAIMED ${formatSol(BigInt(payload.claimed), 4)} SOL`;
 
   return (

@@ -4,35 +4,36 @@ A Solana-native mining **simulation** with SOL-denominated rewards, built as a
 [Cherry](https://chat.cherry.fun) mini-app.
 
 > **Naming.** The product is **THE CHERRY TREE**; "Cherry Tree" in prose and
-> `cherry-tree` as a slug. The crate and program keep their original technical
-> names (`rigs-engine`, `sol-rigs`, the `sol_rigs` module), as do the PDA seed
-> strings and the program ID — renaming those would change every instruction
-> and account discriminator and invalidate the deployed address for no
-> user-visible benefit. `app/src/lib/brand.ts` is the single source of the
-> display name.
+> `cherry-tree` as a slug. Product copy calls the production units **Seeds**
+> — players plant Seeds, not rigs. The crate and program keep their original
+> technical names (`rigs-engine`, `sol-rigs`, the `sol_rigs` module), as do
+> the PDA seed strings and the program ID — renaming those would change every
+> instruction and account discriminator and invalidate the deployed address
+> for no user-visible benefit. `app/src/lib/brand.ts` is the single source of
+> the display name.
 
-Buy rigs → rigs produce hashpower → SOL accrues → claim it or compound it into
-more rigs. The classic ROI-miner loop with the payout engine replaced by a
-fully-funded reward stream.
+Plant Seeds → Seeds produce hashpower → SOL accrues → claim it or compound it
+into more Seeds. The classic ROI-miner loop with the payout engine replaced by
+a fully-funded reward stream.
 
-SOL is not proof-of-work mined. Rigs do not participate in Solana consensus and
-do not cryptographically produce new SOL. The mining metaphor governs the game
-loop and nothing else. Rig purchases buy game production capacity and are
-**non-redeemable** — they are not a deposit.
+SOL is not proof-of-work mined. Seeds do not participate in Solana consensus
+and do not cryptographically produce new SOL. The mining metaphor governs the
+game loop and nothing else. Seed purchases buy game production capacity and
+are **non-redeemable** — they are not a deposit.
 
 ---
 
 ## The core invariant
 
 ```
-BUYING RIGS != FUNDING EXISTING MINER REWARDS
+PLANTING SEEDS != FUNDING EXISTING MINER REWARDS
 ```
 
 This is structural, not documentary. Three separate SOL vaults:
 
 | Vault       | Receives                            | Pays out                       |
 |-------------|-------------------------------------|--------------------------------|
-| **CAPITAL** | non-fee portion of rig purchases    | nothing in V1                  |
+| **CAPITAL** | non-fee portion of Seed purchases   | nothing in V1                  |
 | **REWARD**  | realized revenue via `fund_rewards` | user claims and compounds only |
 | **FEE**     | disclosed purchase fee              | authority withdrawal           |
 
@@ -162,9 +163,9 @@ trusted to stay in step by hand:
 
 | # | Requirement | Covered by |
 |---|---|---|
-| 1 | New rig earns nothing accrued before it existed | `t01_new_rig_earns_nothing_accrued_before_it_existed`, `t01_onchain_new_rig_earns_nothing_retroactively` |
-| 2 | N:M rigs → N:M rewards | `t02_rewards_split_in_rig_ratio` |
-| 3 | `claim` pays exactly `earned`, rigs unchanged | `t03_claim_transfers_exactly_earned`, `e2e_buy_accrue_claim_moves_real_lamports` |
+| 1 | New Seed earns nothing accrued before it existed | `t01_new_rig_earns_nothing_accrued_before_it_existed`, `t01_onchain_new_rig_earns_nothing_retroactively` |
+| 2 | N:M Seeds → N:M rewards | `t02_rewards_split_in_rig_ratio` |
+| 3 | `claim` pays exactly `earned`, Seeds unchanged | `t03_claim_transfers_exactly_earned`, `e2e_buy_accrue_claim_moves_real_lamports` |
 | 4 | Double-claim pays nothing twice | `t04_double_claim_in_same_slot_pays_nothing` |
 | 5 | `compound` buys `floor(pending/cost)`, keeps remainder | `t05_compound_worked_example_from_spec`, `t05b_compound_affordability_is_exact_with_fees` |
 | 6 | Reward vault drops by exactly the compounded amount | `t06_compound_moves_real_lamports_between_vaults`, `e2e_compound_moves_reward_vault_into_capital_and_fee` |
@@ -182,7 +183,7 @@ trusted to stay in step by hand:
 | 18 | Wrong-owner position rejected, seeds validated | `t18`, `t18b_vault_substitution_rejected`, `t18c_config_substitution_rejected` |
 | 19 | Checked math at realistic and extreme inputs | `t19_extreme_inputs_error_rather_than_wrap` |
 | 20 | Strict detection false outside Cherry | `tests/environment.test.ts` — including the RN-WebView and iframe cases the non-strict fallbacks misread |
-| 21 | Embedded: zero connect UI, rigs on first paint | `render.spec.ts` — two tests |
+| 21 | Embedded: zero connect UI, Seeds on first paint | `render.spec.ts` — two tests |
 | 22 | Backend rejects forged/expired tokens | `tests/launchToken.test.ts` — real RS256 keypair, local JWKS |
 | 23 | Ticker halts on suspend, re-anchors on resume | `accrual.test.ts` re-anchor test + `render.spec.ts` freeze test. **Partial:** the "matches chain within tolerance after a 5-minute suspend" half needs a live chain |
 | 24 | `walletDisconnected` disables actions, keeps state | `render.spec.ts` — the event is pushed through the host stub |
@@ -249,7 +250,7 @@ The `inline:render` permission is required for blink sharing.
 ## Deferred — deliberately not built
 
 24h earning cap (breaks O(1) accumulator accounting; would need explicit reward
-epochs), native SOL staking adapter, rig upgrades, an SPL token, a reward-vault
+epochs), native SOL staking adapter, Seed upgrades, an SPL token, a reward-vault
 recovery instruction, a native Android / dApp Store build, and interactive
 blinks with callback buttons.
 

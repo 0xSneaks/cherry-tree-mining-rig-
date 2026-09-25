@@ -30,7 +30,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
 
   const headline =
     compounded !== null
-      ? `+${formatCount(compounded)} RIGS`
+      ? `+${formatCount(compounded)} SEEDS`
       : claimed !== null
         ? `${formatSol(claimed, 4)} SOL CLAIMED`
         : PRODUCT_NAME;
@@ -58,7 +58,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
           <span className="readout-label">Hashpower</span>
           <span className="readout-value">
             {rigs !== null ? formatCount(rigs) : '—'}
-            <span className="unit">RIGS</span>
+            <span className="unit">SEEDS</span>
           </span>
         </div>
         <p className="note" style={{ marginTop: 10 }}>

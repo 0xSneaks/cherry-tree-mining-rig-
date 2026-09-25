@@ -46,7 +46,7 @@ test.describe('inline blink card', () => {
     });
     await page.goto(`/inline?token=${token}`);
 
-    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    await expect(page.getByText('+12 SEEDS')).toBeVisible();
     await expect(page.getByText('54')).toBeVisible();
   });
 

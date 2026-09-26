@@ -60,10 +60,6 @@
   --live: #6ee7b7;
   --alert: #ff6b81;
 
-  /* Bark and foliage for the grove drawing only — never a surface or text. */
-  --bark: #6b4a57;
-  --foliage: #4f9a7c;
-
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
@@ -910,54 +906,74 @@ details.panel {
   background: radial-gradient(120% 90% at 50% 20%, var(--blossom-wash), transparent 70%), var(--bg-inset);
 }
 
-.grove-svg {
-  display: block;
-  overflow: visible;
-}
-
-/* The painted tree, standing on a soft ground shadow, sized by stage. */
+/* The painting for this stage, standing at the bottom of a frame sized to it. */
 .grove-art {
   position: relative;
 }
 
-.grove-ground {
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  bottom: 0;
-  height: 14%;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, var(--bg-raised), transparent);
-}
-
 .grove-tree {
   position: absolute;
-  bottom: 4%;
+  bottom: 0;
   left: 50%;
   height: auto;
   transform: translateX(-50%);
   transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 16px var(--blossom-glow));
   user-select: none;
   -webkit-user-drag: none;
 }
 
-.grove-tree--main {
-  filter: drop-shadow(0 0 18px var(--blossom-glow));
+/* Nothing planted yet: the seed waits, unlit. */
+.grove-tree--dormant {
+  filter: saturate(0.35) brightness(0.7);
 }
 
-/* A full grove: two younger trees behind the main one. */
-.grove-tree--left,
-.grove-tree--right {
-  width: 44%;
-  bottom: 9%;
-  opacity: 0.55;
-  filter: saturate(0.85) brightness(0.8);
+/* The five stages, small, with the seed count each begins at. */
+.grove-track {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
 }
-.grove-tree--left {
-  left: 20%;
+
+.grove-step {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 4px 2px 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
-.grove-tree--right {
-  left: 80%;
+
+.grove-step img {
+  width: 100%;
+  max-width: 44px;
+  height: 36px;
+  object-fit: contain;
+  object-position: 50% 100%;
+  opacity: 0.35;
+  filter: saturate(0.4);
+}
+
+.grove-step--done img {
+  opacity: 0.75;
+  filter: none;
+}
+
+.grove-step--now {
+  border-color: var(--blossom-dim);
+  background: var(--blossom-wash);
+  color: var(--blossom-soft);
+}
+
+.grove-step--now img {
+  opacity: 1;
+  filter: none;
 }
 
 .grove-tree--sway {

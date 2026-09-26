@@ -287,11 +287,11 @@ test.describe('miner cadence surfaces', () => {
     await expect(page.getByTestId('global-grove')).toContainText('Global grove');
   });
 
-  test('the painted tree loads, and the box you tap carries the blossom ring until you move on', async ({ page }) => {
+  test('the stage painting loads, and the box you tap carries the blossom ring until you move on', async ({ page }) => {
     await stubCherryHost(page);
     await stubRpc(page);
     await page.goto('/');
-    const tree = page.locator('.grove-tree--main');
+    const tree = page.locator('.grove-art .grove-tree');
     await expect(tree).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => tree.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
 

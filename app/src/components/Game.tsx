@@ -544,14 +544,6 @@ export function Game({ host }: { host: Host }) {
               announced before launch.
             </p>
           </section>
-
-          <p className="disclosure">
-            {PRODUCT_NAME_SHORT} is a planting <em>simulation</em>. SOL is not proof-of-work
-            mined: seeds do not participate in Solana consensus and do not
-            cryptographically produce new SOL. Rewards are paid from a funded
-            reward vault, are denominated in SOL, and vary with total seeds planted
-            and funding. Seed purchases are non-redeemable.
-          </p>
         </>
       )}
 

@@ -13,7 +13,7 @@ import {
 import { decodeConfig, decodeMiner } from '../src/lib/program/accounts';
 
 const CONFIG_FIXTURE =
-  '9b0caae01efacc82010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303dd4fd8b645aa70d07045a4fc0adf6fc5c9d235e334252c8d5da4b989a625d9610180969800000000002c01c937000000000000b288840100000000803bb16a0000000000a5186a00000000d20a3f4eeee073c3f60fe98e010000009210000000000000c007857303000000c08c6c050000000040ed9604000000000000943577000000000087930300000040420f0000000000db03000000000000fafbfc0200fddd4fd8b645aa70d07045a4fc0adf6fc5c9d235e334252c8d5da4b989a625d961601e176a00000000f5cc150000000000a025260000000000c409000000000000';
+  '9b0caae01efacc82010101010101010101010101010101010101010101010101010101010101010102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303dd4fd8b645aa70d07045a4fc0adf6fc5c9d235e334252c8d5da4b989a625d9610180969800000000002c01c937000000000000b288840100000000803bb16a0000000000a5186a00000000d20a3f4eeee073c3f60fe98e010000009210000000000000c007857303000000c08c6c050000000040ed9604000000000000943577000000000087930300000040420f0000000000db03000000000000fafbfc0300fddd4fd8b645aa70d07045a4fc0adf6fc5c9d235e334252c8d5da4b989a625d961601e176a00000000f5cc150000000000a025260000000000c409000000000000fa008403200380991c6a00000000d5dc3200000000001cd143000000000047f410000000000063c5540000000000';
 
 const MINER_FIXTURE =
   'df710f367b7a8c6409090909090909090909090909090909090909090909090909090909090909092a00000000000000ea7e26e5384da55a050000000000000038191701000000001e000000000000000c0000000000000040f76a1200000000000e270700000000e0dc4e0300000000800e80690000000040f0646a00000000fe6900070707070707070707070707070707070707070707070707070707070707070700ae556a00000000';
@@ -58,13 +58,22 @@ describe('Config decoding', () => {
     expect(c.capitalVaultBump).toBe(250);
     expect(c.rewardVaultBump).toBe(251);
     expect(c.feeVaultBump).toBe(252);
-    expect(c.version).toBe(2);
+    expect(c.version).toBe(3);
     expect(c.bump).toBe(253);
     expect(c.founder).toBe('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
     expect(c.launchT0).toBe(1_779_900_000n);
     expect(c.totalShares).toBe(14_156n * 100n + 125n * 105n);
     expect(c.totalClaimPenalties).toBe(2_500_000n);
     expect(c.genesisCapRigs).toBe(2_500n);
+    // V3 §7a fee fields.
+    expect(c.compoundFeeBps).toBe(250);
+    expect(c.pendingPurchaseFeeBps).toBe(900);
+    expect(c.pendingCompoundFeeBps).toBe(800);
+    expect(c.feeChangeEffectiveAt).toBe(1_780_259_200n);
+    expect(c.reservedCommissions).toBe(3_333_333n);
+    expect(c.totalCommissionsReserved).toBe(4_444_444n);
+    expect(c.totalCommissionsPaid).toBe(1_111_111n);
+    expect(c.totalRewardToFees).toBe(5_555_555n);
   });
 
   it('rejects data carrying another account type', () => {
@@ -73,8 +82,27 @@ describe('Config decoding', () => {
     expect(() => decodeConfig(wrong)).toThrow(/discriminator/);
   });
 
-  it('rejects data of neither the V1 nor the V2 length', () => {
+  it('rejects data of none of the V1, V2 or V3 lengths', () => {
     expect(() => decodeConfig(bytes(CONFIG_FIXTURE.slice(0, 642 - 16)))).toThrow(/length/);
+    expect(() => decodeConfig(bytes(CONFIG_FIXTURE.slice(0, 700)))).toThrow(/length/);
+  });
+});
+
+describe('Config decoding (V2, pre-§7a)', () => {
+  // A V2 Config: the V3 fixture with version 2 and the 46 fee bytes dropped
+  // — the exact inverse of what `migrate_v3` writes on chain.
+  const v2 = bytes(CONFIG_FIXTURE);
+  v2.set([0x02, 0x00], 262);
+  const data = v2.subarray(0, 329);
+
+  it('reads the legacy layout with the compound fee equal to the purchase fee', () => {
+    const c = decodeConfig(data);
+    expect(c.version).toBe(2);
+    expect(c.genesisCapRigs).toBe(2_500n);
+    expect(c.compoundFeeBps).toBe(c.purchaseFeeBps);
+    expect(c.feeChangeEffectiveAt).toBe(0n);
+    expect(c.reservedCommissions).toBe(0n);
+    expect(c.totalRewardToFees).toBe(0n);
   });
 });
 
@@ -107,9 +135,11 @@ describe('Config decoding (V1 Devnet)', () => {
 
   it('agrees with the V2 decode on every shared field', () => {
     // `version` and the cap are exactly the two fields V2 changes.
+    const v2 = bytes(CONFIG_FIXTURE);
+    v2.set([0x02, 0x00], 262);
     const { genesisCapRigs: v1Cap, version: v1Ver, ...v1Rest } = decodeConfig(data);
     const { genesisCapRigs: v2Cap, version: v2Ver, ...v2Rest } = decodeConfig(
-      bytes(CONFIG_FIXTURE),
+      v2.subarray(0, 329),
     );
     expect(v1Cap).toBeNull();
     expect(v1Ver).toBe(1);

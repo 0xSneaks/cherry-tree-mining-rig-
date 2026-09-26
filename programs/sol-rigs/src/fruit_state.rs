@@ -148,6 +148,13 @@ pub struct Pool {
     pub final_root: [u8; 32],
     pub committed_at: i64,
     pub bump: u8,
+    /// `forfeited` of the Pending root (lock ledger only; else 0).
+    pub pending_forfeited: u64,
+    /// `forfeited` of the latest Final root; 0 unless that root is complete.
+    pub final_forfeited: u64,
+    /// Released unused lock-bonus allocation paid to the Protocol Treasury at
+    /// close: `floor(0.80 final_forfeited)`. Never fee revenue.
+    pub forfeit_treasury_released: u64,
 }
 
 impl Pool {
@@ -165,6 +172,9 @@ impl Pool {
             final_version: self.final_version,
             final_complete: self.final_complete,
             status: PoolStatus::from_u8(self.status).anchor()?,
+            pending_forfeited: self.pending_forfeited,
+            final_forfeited: self.final_forfeited,
+            forfeit_treasury_released: self.forfeit_treasury_released,
         })
     }
 
@@ -181,6 +191,9 @@ impl Pool {
         self.final_version = p.final_version;
         self.final_complete = p.final_complete;
         self.status = p.status as u8;
+        self.pending_forfeited = p.pending_forfeited;
+        self.final_forfeited = p.final_forfeited;
+        self.forfeit_treasury_released = p.forfeit_treasury_released;
     }
 }
 
@@ -207,6 +220,9 @@ pub struct Root {
     /// challenge window.
     pub terminal: bool,
     pub bump: u8,
+    /// Voluntary lock-forfeit capacity carried by a complete lock root
+    /// (architecture §8 / §7a item 8); always 0 on core and loyalty roots.
+    pub forfeited: u64,
 }
 
 impl Root {
@@ -220,6 +236,7 @@ impl Root {
             final_after: self.final_after,
             status: RootStatus::from_u8(self.status).anchor()?,
             veto_count: self.veto_count,
+            forfeited: self.forfeited,
         })
     }
 
@@ -232,6 +249,7 @@ impl Root {
         self.final_after = r.final_after;
         self.status = r.status as u8;
         self.veto_count = r.veto_count;
+        self.forfeited = r.forfeited;
     }
 }
 

@@ -489,6 +489,7 @@ fn t19_extreme_inputs_error_rather_than_wrap() {
         total_reward_funded: 10,
         total_reward_claimed: 11,
         total_reward_compounded: 0,
+        total_reward_to_fees: 0,
     };
     assert_eq!(bad.outstanding(), Err(EngineError::MathOverflow));
 }

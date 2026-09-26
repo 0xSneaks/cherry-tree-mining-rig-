@@ -207,8 +207,12 @@ refuses rather than touching live state.
 
 ## 4A. V1 → V2 migration (qualification and eventual controlled upgrade)
 
-V2 appends exactly one `u64 genesis_cap_rigs` field to Config: 321 → 329
-bytes. Miner and Vault layouts do not change. The authority calls:
+V2 appended one `u64 genesis_cap_rigs` field to Config (321 → 329 bytes);
+V3 appends the architecture §7a protocol-fee fields (329 → 375 bytes).
+`migrate_v2` now takes a V1 account straight to the current 375-byte layout,
+and `migrate_v3` takes a V2 account to it (compound fee = legacy purchase
+fee, nothing pending, commission counters zero). Miner and Vault layouts do
+not change. The authority calls:
 
 ```
 migrate_v2(genesis_cap_rigs: u64)
@@ -219,9 +223,10 @@ The instruction receives Config as a raw unchecked account because a V2
 checks the canonical `config` PDA, program owner, exact size 321,
 discriminator, exact V1 decode with no trailing bytes, version 1, stored bump,
 stored authority signer, and cap bounds. It then transfers only the exact rent
-shortfall, reallocates to 329 with zero initialization, serializes all V1
-fields unchanged except version 1 → 2, appends the cap, preserves the
-discriminator, and emits `GenesisCapConfigured`.
+shortfall, reallocates to 375 with zero initialization, serializes all V1
+fields unchanged except version 1 → 3, appends the cap and the §7a fee
+fields, preserves the discriminator, and emits `GenesisCapConfigured` and
+`CompoundFeeConfigured`.
 
 There is an intentional migration dead window: after the V2 upgrade and
 before successful migration, every typed Config instruction rejects the
@@ -291,11 +296,11 @@ CHERRY_TREE_FOUNDER_KEYPAIR=<devnet founder keypair> \
   T0 the founder is an ordinary wallet under the access gate, and a refused
   purchase writes nothing;
 - a wallet with no domain is refused in the `.skr` phase;
-- a founder replant pays no penalty and keeps the planting clock;
-- a founder claim pays the penalty band its planting age earns (25% inside
-  24h of the latest purchase), and a sole planter's penalty stays in the
-  reward vault as dust;
-- the fee and capital vaults are untouched, and the reward vault is solvent.
+- a founder replant pays no early-claim fee and keeps the planting clock;
+- a founder claim pays the early-claim fee band its planting age earns (30%
+  inside 24h of the latest purchase): 60% of the fee moves to the fee vault,
+  and a sole planter's 40% grove share stays in the reward vault as dust;
+- the capital vault is untouched, and the reward vault is solvent.
 
 If `activate` dies mid-way it is continued, never repeated. The resume path
 is guarded by a strict fingerprint of the interrupted state:
@@ -320,8 +325,9 @@ without `--resume` stays one-shot.
 - public planting at weight 100, and a referred first planting at weight
   105 with the referrer bound;
 - a second referrer is refused (`ReferrerAlreadyBound`);
-- a replant pays no penalty;
-- a claim inside 24h pays 25% and only the net leaves the reward vault;
+- a replant pays no early-claim fee;
+- a claim inside 24h pays the 30% early-claim fee: the net goes to the
+  claimant and 60% of the fee to the fee vault;
 - the reward vault is solvent.
 
 `.skr` acceptance cannot run on devnet because the registry is mainnet-only;
@@ -406,7 +412,7 @@ The future qualification execution order is fixed:
    32,768 bytes, verify capacity, upgrade with auto-extension disabled, and
    verify the artifact prefix plus zero-only padding.
 4. From staged V2, run `devnet-migrate-v2.sh` for the qualification-only
-   321 → 329 migration with an explicit test cap.
+   321 → 375 migration with an explicit test cap.
 5. Fund externally, then activate with `A <= C`; verify T0 from block time.
 6. Exercise below/exact/over-cap fresh buys and cap-exhausted compounding.
 7. At exact T0 + 24h verify no-domain Public buying and cap removal.

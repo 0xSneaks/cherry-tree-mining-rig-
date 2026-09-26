@@ -140,8 +140,8 @@ export function reminders(miner: Miner | null, config: Config, now: bigint): Rem
         atSeconds: miner.lastPlantedAt + nextEdge,
         text:
           next === 0
-            ? 'Claims become penalty-free. A new fresh purchase would restart this clock; replanting would not.'
-            : `Claim penalty drops to ${next / 100}%.`,
+            ? 'Claims become free of the early-claim fee. A new fresh purchase would restart this clock; replanting would not.'
+            : `Early-claim fee drops to ${next / 100}%.`,
       });
     }
   }

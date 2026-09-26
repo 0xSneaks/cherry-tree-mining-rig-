@@ -9,9 +9,10 @@ use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
 use crate::events::{LaunchActivated, ReferralBound, RigsPurchased, SkrDomainBound};
 use crate::identity;
+use crate::referral::{self, FeeEvent};
 use crate::skr_binding;
 use crate::state::{Config, Miner, Vault};
-use crate::vault::{deposit_from_wallet, distributable};
+use crate::vault::{assert_commissions_backed, deposit_from_wallet, distributable};
 
 #[derive(Accounts)]
 pub struct BuyRigs<'info> {
@@ -82,6 +83,12 @@ pub struct BuyRigs<'info> {
 ///
 /// Every purchase also obeys the permanent 250-seed holding cap, enforced in
 /// `rigs_engine::buy_rigs`.
+///
+/// Referral commission (§7 / §7a item 4): for a referred position — bound
+/// earlier, or bound by this very purchase — the direct referrer's
+/// commission on this purchase fee is reserved in FEE in this instruction.
+/// The referrer's REFERRAL LEDGER travels as the last remaining account
+/// whenever the position is referred.
 pub fn handle_buy_rigs<'info>(
     ctx: Context<'_, '_, 'info, 'info, BuyRigs<'info>>,
     count: u64,
@@ -91,11 +98,33 @@ pub fn handle_buy_rigs<'info>(
     let owner_key = ctx.accounts.owner.key();
     // Remaining accounts: identity accounts first (1 for a direct domain, 3
     // for a wrapped / tokenized one), then the `.skr` binding PDA if given,
-    // then the referrer's miner iff named.
+    // then the referrer's miner iff named, then the referrer's referral
+    // ledger iff the position is referred (decided from on-chain state: an
+    // existing Miner's immutable referrer, or the referrer this purchase
+    // binds).
     let remaining = ctx.remaining_accounts;
     let n_ref = usize::from(referrer.is_some());
     if remaining.len() < n_ref {
         return err!(RigsError::MissingReferrerAccount);
+    }
+    let existing_referrer = {
+        let m = &ctx.accounts.miner;
+        (m.owner != Pubkey::default() && m.referrer != Pubkey::default()).then_some(m.referrer)
+    };
+    let is_new_position = ctx.accounts.miner.owner == Pubkey::default();
+    let commission_referrer = if is_new_position {
+        referrer
+    } else {
+        existing_referrer
+    };
+    let n_ledger = usize::from(commission_referrer.is_some());
+    if remaining.len() < n_ref + n_ledger {
+        return err!(RigsError::MissingReferralLedger);
+    }
+    let (remaining, ledger_accounts) = remaining.split_at(remaining.len() - n_ledger);
+    let referral_ledger = ledger_accounts.first();
+    if let (Some(r), Some(l)) = (commission_referrer, referral_ledger) {
+        referral::require_address(l, &r, ctx.program_id)?;
     }
     let (identity_and_binding, referrer_accounts) = remaining.split_at(remaining.len() - n_ref);
     let (identity_accounts, binding_account) = skr_binding::split(identity_and_binding);
@@ -257,6 +286,29 @@ pub fn handle_buy_rigs<'info>(
             .checked_add(1)
             .ok_or(error!(RigsError::MathOverflow))?;
     }
+
+    // The fee has reached FEE: reserve the direct referrer's commission on it
+    // (one level; the referrer's own referrer receives nothing).
+    if let (Some(r), Some(ledger_ai)) = (commission_referrer, referral_ledger) {
+        referral::reserve(
+            config,
+            FeeEvent {
+                ledger: ledger_ai,
+                payer: &ctx.accounts.owner.to_account_info(),
+                system_program: &ctx.accounts.system_program.to_account_info(),
+                referrer: r,
+                referred: owner_key,
+                fee_lamports: quote.fee_lamports,
+                volume_lamports: quote.capital_lamports,
+                compound: false,
+            },
+            ctx.program_id,
+        )?;
+    }
+    assert_commissions_backed(
+        &ctx.accounts.fee_vault.to_account_info(),
+        config.reserved_commissions,
+    )?;
 
     let ledger = config.ledger();
     assert_fully_funded(

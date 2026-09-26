@@ -109,32 +109,55 @@ Read the table this way:
   - a 100 SOL pool spent over 180 days holds Genesis (≥ 1,200%) up to ~17 SOL planted;
   - the same pool holds Mature (≥ 60%) up to ~338 SOL planted.
 
-## Claim penalty
+## Early-claim fee (architecture §7a item 5)
 
-A claim pays `gross − penalty`, where the rate depends on chain time since the
-wallet's latest purchase (`Miner.last_planted_at`):
+A claim pays `gross − x`, where the early-claim fee `x` depends on chain time
+since the wallet's latest fresh purchase (`Miner.last_planted_at`) and
+applies to the whole claimed amount:
 
-| Age of latest purchase | Penalty |
+| Age of latest fresh purchase | Early-claim fee |
 |---|---|
-| 0 – 24h | 25% |
-| 24h – 48h | 15% |
-| 48h – 72h | 5% |
+| 0 – 24h | 30% |
+| 24h – 48h | 20% |
+| 48h – 72h | 10% |
 | 72h onward | 0% |
 
 - **Clock.** `Clock::unix_timestamp` only. A clock behind the anchor counts as
-  age 0 (25%). Band edges are exact to the second.
-- **Reset.** Every purchase (`buy_rigs`) sets the anchor to that purchase's
-  chain time, for the whole position. Claims and replants never move it.
-- **Replant** is never penalised.
-- **Where it goes.** The penalty never leaves the reward vault and never
-  reaches the fee vault, the capital vault, or the founder. It is re-credited
-  by shares to the *other* planters (the claimer is excluded, so repeated
-  claims cannot recover it). A sole planter's penalty goes to undistributed
-  dust. `Config.total_claim_penalties` records the running total.
-- **Rounding.** `ceil(gross × bps / 10 000)`, so splitting a claim never
-  lowers the total penalty.
+  age 0 (30%). Band edges are half-open and exact to the second.
+- **Reset.** Every fresh purchase (`buy_rigs`) sets the anchor to that
+  purchase's chain time, for the whole position — the product warns before a
+  top-up when rewards are pending. Claims and replants never move it.
+- **Replant** (compound) never pays it.
+- **Where it goes.** `floor(0.60 x)` moves from the reward vault to the fee
+  vault in the claim instruction, as Protocol Treasury revenue (never
+  referral-eligible). The rest, `x − floor(0.60 x)`, stays in the reward
+  vault and is re-credited by shares to the *other* planters (the claimer is
+  excluded, so repeated claims cannot recover it); a sole planter's share
+  goes to undistributed dust. `Config.total_claim_penalties` records the
+  running total of `x`; `Config.total_reward_to_fees` the treasury shares.
+- **Rounding.** `x = floor(gross × bps / 10 000)`; the split rounds toward
+  the grove.
 - **Solvency.** No new emission: `paid + owed ≤ funded` holds after every
-  action (engine proptests and program tests).
+  action, with the treasury share settling the liability it came from
+  (engine proptests and program tests).
+
+## Protocol fees (architecture §7a)
+
+- **Purchase fee** `purchase_fee_bps` (production 1,000 = 10%, hard ceiling
+  1,000) on top of principal; **compound fee** `compound_fee_bps`, charged
+  only by `compound`, never above the purchase fee.
+- **72-hour timelock.** After `initialize`, both rates change only through
+  `schedule_fee_change` → wait 259,200 s → permissionless `apply_fee_change`
+  (or `cancel_fee_change`). A new schedule restarts the delay. The pending
+  values and `fee_change_effective_at` are readable in Config from the moment
+  they are scheduled; `set_pricing` can no longer change a fee.
+- **Referral commission.** One direct level:
+  `min(floor(0.20 f), max(0, f − ceil(0.08 v)))` of each eligible purchase /
+  compound fee, reserved in the fee vault in the instruction that receives
+  the fee (`Config.reserved_commissions` + the referrer's
+  `["referral", referrer]` ledger) and paid by `claim_commission`.
+  `withdraw_fees` can only move `distributable(FEE) − reserved_commissions`,
+  and only to a recipient this program does not own.
 
 ## Simulation results
 

@@ -35,6 +35,15 @@ export async function skrBindingPda(nameAccount: Address): Promise<Address> {
   return pda;
 }
 
+/** Referral ledger PDA for a referrer: `["referral", referrer]` (§7). */
+export async function referralPda(referrer: Address): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PROGRAM_ID,
+    seeds: [SEEDS.referral, getAddressEncoder().encode(referrer)],
+  });
+  return pda;
+}
+
 export async function capitalVaultPda(): Promise<Address> {
   const [pda] = await getProgramDerivedAddress({
     programAddress: PROGRAM_ID,

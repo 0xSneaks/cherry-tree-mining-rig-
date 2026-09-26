@@ -79,7 +79,19 @@ export function TransparencyPanel({
           label="Your share"
           value={formatSharePercent(miner ? minerShares(miner) : 0n, config.totalShares)}
         />
-        <Readout label="Protocol fee" value={formatBps(config.purchaseFeeBps)} />
+        <Readout label="Purchase fee" value={formatBps(config.purchaseFeeBps)} />
+        <Readout label="Replant (compound) fee" value={formatBps(config.compoundFeeBps)} />
+        {config.feeChangeEffectiveAt > 0n ? (
+          <Readout
+            label={`Scheduled fee change · purchase ${formatBps(config.pendingPurchaseFeeBps)}, replant ${formatBps(config.pendingCompoundFeeBps)}`}
+            value={`from ${formatUtcInstant(config.feeChangeEffectiveAt)}`}
+          />
+        ) : null}
+        <Readout
+          label="Reserved referral commissions"
+          value={formatSol(config.reservedCommissions, 6)}
+          unit="SOL"
+        />
 
         <a
           className="verify"

@@ -472,14 +472,15 @@ fn exhaustion_is_defined() {
     );
 }
 
-/// Referral V1 lives entirely inside `buy_rigs` (an optional referrer bound
-/// once, as a reward weight). There is no referral instruction and no
-/// referrer payout: the instruction set is exactly the one below, so a
-/// referral can never move lamports on its own. Adding one would have to be
-/// done here, deliberately. The Fruit ledger instructions were added this way
-/// and none names or pays a referrer.
+/// Referral binding lives inside `buy_rigs` (an optional referrer bound
+/// once, as a reward weight). The instruction set is exactly the one below,
+/// so a referral can move lamports only where listed here, deliberately. The
+/// Fruit ledger instructions were added this way and none names or pays a
+/// referrer. The architecture §7a fee pass added exactly one referrer payout,
+/// `claim_commission`, which pays only commissions already reserved in FEE
+/// out of FEE (see `programs/sol-rigs/tests/protocol_fees.rs`).
 #[test]
-fn exploit_referral_has_no_payout_surface() {
+fn exploit_referral_payout_surface_is_exactly_claim_commission() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../programs/sol-rigs/src/lib.rs"
@@ -500,6 +501,13 @@ fn exploit_referral_has_no_payout_surface() {
         "fund_rewards",
         "initialize",
         "migrate_v2",
+        // §7a fee pass: timelocked fee changes, V2 -> V3 migration, and the
+        // single referrer payout.
+        "apply_fee_change",
+        "cancel_fee_change",
+        "claim_commission",
+        "migrate_v3",
+        "schedule_fee_change",
         "set_fee_recipient",
         "set_paused",
         "set_pricing",
@@ -528,8 +536,11 @@ fn exploit_referral_has_no_payout_surface() {
         "/../../programs/sol-rigs/src/events.rs"
     ))
     .unwrap();
-    // The only referral event records a binding; none records a payment.
+    // Referral events: the binding, and the §7a commission reservation and
+    // claim. No other referral payment event exists.
     assert!(events.contains("pub struct ReferralBound"));
+    assert!(events.contains("pub struct CommissionReserved"));
+    assert!(events.contains("pub struct CommissionClaimed"));
     assert!(!events.to_lowercase().contains("referralpaid"));
     assert!(!events.to_lowercase().contains("referrer_reward"));
 }

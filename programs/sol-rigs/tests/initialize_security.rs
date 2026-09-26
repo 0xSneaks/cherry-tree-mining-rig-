@@ -52,6 +52,7 @@ fn hostile_data(who: &Pubkey) -> Vec<u8> {
         fee_recipient: *who,
         founder: *who,
         genesis_cap_rigs: GENESIS_CAP,
+        compound_fee_bps: 1_000,
     }
     .data()
 }

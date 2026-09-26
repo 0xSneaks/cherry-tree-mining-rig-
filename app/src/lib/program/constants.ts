@@ -39,7 +39,22 @@ export const SEEDS = {
   feeVault: new TextEncoder().encode('fee_vault'),
   /** Day-1 `.skr` binding: `["skr_bind", name_account]`. */
   skrBind: new TextEncoder().encode('skr_bind'),
+  /** Referral ledger (architecture §7): `["referral", referrer]`. */
+  referral: new TextEncoder().encode('referral'),
 } as const;
+
+// --- protocol fees (architecture §7a) — program constants, mirrored ---
+
+/** Matches `rigs_engine::pricing::MAX_PURCHASE_FEE_BPS`. */
+export const MAX_PURCHASE_FEE_BPS = 1_000;
+/** Matches `rigs_engine::fees::FEE_CHANGE_TIMELOCK_SECONDS` (72 h). */
+export const FEE_CHANGE_TIMELOCK_SECONDS = 259_200n;
+/** Matches `rigs_engine::fees::REFERRAL_COMMISSION_BPS` (c = 20%). */
+export const REFERRAL_COMMISSION_BPS = 2_000n;
+/** Matches `rigs_engine::fees::REFERRAL_RETAINED_MARGIN_BPS` (m = 8%). */
+export const REFERRAL_RETAINED_MARGIN_BPS = 800n;
+/** Matches `rigs_engine::fees::EARLY_CLAIM_TREASURY_BPS` (60% of the fee). */
+export const EARLY_CLAIM_TREASURY_BPS = 6_000n;
 
 function fromHex(hex: string): Uint8Array {
   const out = new Uint8Array(hex.length / 2);
@@ -59,16 +74,26 @@ export const IX_DISCRIMINATOR = {
   // Operator-only; used by app/scripts/ops, never by the browser bundle.
   setFeeRecipient: fromHex('e312d72aedf69742'),
   withdrawFees: fromHex('c6d4ab6d90d7ae59'),
+  // §7a protocol fees.
+  claimCommission: fromHex('0c090faa9beb7cfe'),
+  applyFeeChange: fromHex('e7b15c75f934c370'),
+  // Operator-only.
+  scheduleFeeChange: fromHex('4117d76e1094f993'),
+  cancelFeeChange: fromHex('a52beb3f1f674984'),
+  migrateV3: fromHex('f5aa677c90bb1566'),
 } as const;
 
 export const ACCOUNT_DISCRIMINATOR = {
   config: fromHex('9b0caae01efacc82'),
   miner: fromHex('df710f367b7a8c64'),
   vault: fromHex('d308e82b02987577'),
+  referralLedger: fromHex('a30861cf910b5b80'),
 } as const;
 
 /** Byte length of each account, discriminator included. */
 export const ACCOUNT_SIZE = {
-  config: 329,
+  /** V3: V2 (329) plus the architecture §7a protocol-fee fields. */
+  config: 375,
   miner: 171,
+  referralLedger: 8 + 32 + 8 + 8 + 1,
 } as const;

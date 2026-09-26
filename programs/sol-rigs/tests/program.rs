@@ -59,11 +59,16 @@ async fn e2e_buy_accrue_claim_moves_real_lamports() {
     assert!(received > 0, "claim paid nothing");
     let cfg = env.config().await;
     assert_eq!(cfg.total_reward_claimed, received);
+    // A claim 500 s after planting pays the 30% early-claim fee: 60% of it
+    // moves REWARD → FEE (architecture §7a item 5).
+    let treasury = cfg.total_reward_to_fees;
+    assert_eq!(treasury, cfg.total_claim_penalties * 6 / 10);
     assert_eq!(
         env.lamports(reward_vault).await,
-        reward_rent + 100 * SOL - received,
-        "reward vault must drop by exactly the claimed amount"
+        reward_rent + 100 * SOL - received - treasury,
+        "reward vault must drop by exactly the claimed amount plus the treasury share"
     );
+    assert_eq!(env.lamports(fee_vault).await, fee_rent + fee + treasury);
 
     let miner = env.miner(&alice.pubkey()).await;
     assert_eq!(miner.rigs, 10, "claim must not change rigs");
@@ -71,8 +76,10 @@ async fn e2e_buy_accrue_claim_moves_real_lamports() {
     assert_eq!(miner.lifetime_sol_claimed, received);
 
     // Fully-funded invariant holds on-chain.
-    let outstanding =
-        cfg.total_reward_funded - cfg.total_reward_claimed - cfg.total_reward_compounded;
+    let outstanding = cfg.total_reward_funded
+        - cfg.total_reward_claimed
+        - cfg.total_reward_compounded
+        - cfg.total_reward_to_fees;
     assert!(env.lamports(reward_vault).await - reward_rent >= outstanding);
 }
 

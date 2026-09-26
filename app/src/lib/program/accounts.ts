@@ -52,7 +52,10 @@ export type Config = {
   launchT0: bigint;
   /** `Σ rigs × weight`; emission is divided by this. */
   totalShares: bigint;
-  /** Lamports forfeited by early claims and re-credited to other planters. */
+  /**
+   * Cumulative early-claim fees (both shares: 60% to the Protocol Treasury,
+   * 40% re-credited to other planters).
+   */
   totalClaimPenalties: bigint;
   /**
    * Cumulative fresh-buy cap during [T0, T0 + 24h); ignored once Public.
@@ -60,6 +63,32 @@ export type Config = {
    * migration appends this field — because the V1 program enforces no cap.
    */
   genesisCapRigs: bigint | null;
+  // --- V3 protocol fees (architecture §7a) ---
+  /**
+   * Fee charged by `compound`, never above `purchaseFeeBps`. On a legacy
+   * (V1 / V2) account this reads as `purchaseFeeBps` — what those programs
+   * charged on compound — and migration writes exactly that.
+   */
+  compoundFeeBps: number;
+  /** Scheduled fee change; meaningful only while `feeChangeEffectiveAt > 0`. */
+  pendingPurchaseFeeBps: number;
+  pendingCompoundFeeBps: number;
+  /** When the pending change may be applied (72 h after scheduling); `0n` = none. */
+  feeChangeEffectiveAt: bigint;
+  /** Referral commissions reserved in the fee vault, not yet claimed. */
+  reservedCommissions: bigint;
+  totalCommissionsReserved: bigint;
+  totalCommissionsPaid: bigint;
+  /** Early-claim fee treasury shares moved REWARD → FEE (60% of each fee). */
+  totalRewardToFees: bigint;
+};
+
+/** A referrer's commission ledger (`["referral", referrer]`). */
+export type ReferralLedger = {
+  referrer: Address;
+  accruedCum: bigint;
+  claimedCum: bigint;
+  bump: number;
 };
 
 export type Miner = {
@@ -114,18 +143,54 @@ const configFields = [
   ['totalShares', getU64Decoder()],
   ['totalClaimPenalties', getU64Decoder()],
   ['genesisCapRigs', getU64Decoder()],
+  ['compoundFeeBps', getU16Decoder()],
+  ['pendingPurchaseFeeBps', getU16Decoder()],
+  ['pendingCompoundFeeBps', getU16Decoder()],
+  ['feeChangeEffectiveAt', getI64Decoder()],
+  ['reservedCommissions', getU64Decoder()],
+  ['totalCommissionsReserved', getU64Decoder()],
+  ['totalCommissionsPaid', getU64Decoder()],
+  ['totalRewardToFees', getU64Decoder()],
 ] as const;
 
 const configDecoder = getStructDecoder(configFields);
 
 /**
- * V2 appended `genesis_cap_rigs` as the final Config field, so the V1 layout
- * is byte-for-byte the V2 layout minus one trailing `u64`. The canonical
- * Devnet program still runs V1 (`DEPLOY.md`: 321 → 329 is the qualification
- * lane's exact migration), and its Config must stay readable from the app.
+ * Each version appended fields: V2 added `genesis_cap_rigs` (321 → 329), V3
+ * the §7a fee fields (329 → 375). The canonical Devnet program still runs V1
+ * (`DEPLOY.md`), so every legacy layout stays readable from the app.
  */
-const V1_CONFIG_SIZE = ACCOUNT_SIZE.config - 8;
-const configV1Decoder = getStructDecoder(configFields.slice(0, -1));
+const V1_CONFIG_SIZE = 321;
+const V2_CONFIG_SIZE = 329;
+const V2_FIELD_COUNT = configFields.findIndex(([name]) => name === 'genesisCapRigs') + 1;
+const configV1Decoder = getStructDecoder(configFields.slice(0, V2_FIELD_COUNT - 1));
+const configV2Decoder = getStructDecoder(configFields.slice(0, V2_FIELD_COUNT));
+
+type LegacyFeeFields = Pick<
+  Config,
+  | 'compoundFeeBps'
+  | 'pendingPurchaseFeeBps'
+  | 'pendingCompoundFeeBps'
+  | 'feeChangeEffectiveAt'
+  | 'reservedCommissions'
+  | 'totalCommissionsReserved'
+  | 'totalCommissionsPaid'
+  | 'totalRewardToFees'
+>;
+
+/** A legacy program compounds at the purchase fee and has no fee timelock. */
+function legacyFees(purchaseFeeBps: number): LegacyFeeFields {
+  return {
+    compoundFeeBps: purchaseFeeBps,
+    pendingPurchaseFeeBps: 0,
+    pendingCompoundFeeBps: 0,
+    feeChangeEffectiveAt: 0n,
+    reservedCommissions: 0n,
+    totalCommissionsReserved: 0n,
+    totalCommissionsPaid: 0n,
+    totalRewardToFees: 0n,
+  };
+}
 
 const minerDecoder = getStructDecoder([
   ['owner', getAddressDecoder()],
@@ -162,15 +227,40 @@ function stripDiscriminator(data: Uint8Array, expected: Uint8Array, what: string
 export function decodeConfig(data: Uint8Array): Config {
   const payload = stripDiscriminator(data, ACCOUNT_DISCRIMINATOR.config, 'Config');
   if (payload.length === V1_CONFIG_SIZE - 8) {
-    const v1 = configV1Decoder.decode(payload) as Omit<Config, 'genesisCapRigs'>;
-    return { ...v1, genesisCapRigs: null };
+    const v1 = configV1Decoder.decode(payload) as Omit<
+      Config,
+      'genesisCapRigs' | keyof LegacyFeeFields
+    >;
+    return { ...v1, genesisCapRigs: null, ...legacyFees(v1.purchaseFeeBps) };
+  }
+  if (payload.length === V2_CONFIG_SIZE - 8) {
+    const v2 = configV2Decoder.decode(payload) as Omit<Config, keyof LegacyFeeFields>;
+    return { ...v2, ...legacyFees(v2.purchaseFeeBps) };
   }
   if (payload.length !== ACCOUNT_SIZE.config - 8) {
     throw new AccountDecodeError(
-      `Config: unexpected data length ${data.length} (V1 ${V1_CONFIG_SIZE} or V2 ${ACCOUNT_SIZE.config})`,
+      `Config: unexpected data length ${data.length} (V1 ${V1_CONFIG_SIZE}, V2 ${V2_CONFIG_SIZE} or V3 ${ACCOUNT_SIZE.config})`,
     );
   }
   return configDecoder.decode(payload) as Config;
+}
+
+const referralLedgerDecoder = getStructDecoder([
+  ['referrer', getAddressDecoder()],
+  ['accruedCum', getU64Decoder()],
+  ['claimedCum', getU64Decoder()],
+  ['bump', getU8Decoder()],
+]);
+
+export function decodeReferralLedger(data: Uint8Array): ReferralLedger {
+  return referralLedgerDecoder.decode(
+    stripDiscriminator(data, ACCOUNT_DISCRIMINATOR.referralLedger, 'ReferralLedger'),
+  ) as ReferralLedger;
+}
+
+/** Unpaid commission: `accruedCum - claimedCum`. */
+export function unpaidCommission(l: ReferralLedger): bigint {
+  return l.accruedCum > l.claimedCum ? l.accruedCum - l.claimedCum : 0n;
 }
 
 export function decodeMiner(data: Uint8Array): Miner {

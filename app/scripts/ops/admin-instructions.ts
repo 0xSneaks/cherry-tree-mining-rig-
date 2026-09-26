@@ -37,7 +37,11 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 
 /**
  * `initialize(rig_price_lamports, purchase_fee_bps, reward_funder,
- * fee_recipient, founder, genesis_cap_rigs)`.
+ * fee_recipient, founder, genesis_cap_rigs, compound_fee_bps)`.
+ *
+ * `compoundFeeBps` (architecture §7a) must not exceed `purchaseFeeBps`; the
+ * program refuses otherwise. Both are the only fee values set without the
+ * 72-hour timelock.
  *
  * `founder` is pinned for this program version: the only wallet whose purchase
  * can activate launch. There is no setter.
@@ -59,6 +63,7 @@ export function initializeInstruction(
     feeRecipient: Address;
     founder: Address;
     genesisCapRigs: bigint;
+    compoundFeeBps: number;
   },
 ): Instruction {
   return {
@@ -80,11 +85,71 @@ export function initializeInstruction(
       new Uint8Array(getAddressEncoder().encode(args.feeRecipient)),
       new Uint8Array(getAddressEncoder().encode(args.founder)),
       new Uint8Array(getU64Encoder().encode(args.genesisCapRigs)),
+      new Uint8Array(getU16Encoder().encode(args.compoundFeeBps)),
     ),
   };
 }
 
-/** Raw-account `migrate_v2(genesis_cap_rigs)`, authority-only and one-shot. */
+/**
+ * Raw-account `migrate_v3()`: V2 (329 bytes) → current (375), compound fee
+ * = legacy purchase fee. Authority-only and one-shot.
+ */
+export function migrateV3Instruction(authority: Address, config: Address): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.WRITABLE_SIGNER },
+      { address: config, role: AccountRole.WRITABLE },
+      { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    ],
+    data: IX_DISCRIMINATOR.migrateV3,
+  };
+}
+
+/**
+ * `schedule_fee_change(purchase_fee_bps, compound_fee_bps)`. Authority only;
+ * applies no earlier than 72 hours later, via the permissionless
+ * `apply_fee_change`.
+ */
+export function scheduleFeeChangeInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+  purchaseFeeBps: number,
+  compoundFeeBps: number,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.scheduleFeeChange,
+      new Uint8Array(getU16Encoder().encode(purchaseFeeBps)),
+      new Uint8Array(getU16Encoder().encode(compoundFeeBps)),
+    ),
+  };
+}
+
+/** `cancel_fee_change()`. Authority only. */
+export function cancelFeeChangeInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+    ],
+    data: IX_DISCRIMINATOR.cancelFeeChange,
+  };
+}
+
+/**
+ * Raw-account `migrate_v2(genesis_cap_rigs)`: V1 (321 bytes) → current
+ * (375), authority-only and one-shot.
+ */
 export function migrateV2Instruction(
   authority: Address,
   config: Address,

@@ -106,13 +106,16 @@ test.describe('embedded path', () => {
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeVisible();
   });
 
-  /** Claim penalty from the chain clock and `Miner.last_planted_at` (30h → 15%). */
-  test('shows the claim penalty and the net before claiming', async ({ page }) => {
+  /** Early-claim fee from the chain clock and `Miner.last_planted_at` (30h → 20%). */
+  test('shows the early-claim fee, gross and net before claiming', async ({ page }) => {
     await page.goto('/');
     const note = page.getByTestId('claim-penalty');
-    await expect(note).toContainText('Claim penalty now: 15%');
+    await expect(note).toContainText('early-claim fee now 20%');
+    await expect(note).toContainText(/SOL gross/);
+    await expect(note).toContainText(/SOL net/);
     await expect(note).toContainText(/drops in 1[78]h/);
-    await expect(note).toContainText('Replanting has no penalty.');
+    await expect(note).toContainText('60% of the fee goes to the Protocol Treasury, 40% to the other planters.');
+    await expect(note).toContainText('Replanting is never charged.');
   });
 
   /** §12.21 — zero connect-wallet UI in the embed. */
@@ -206,7 +209,10 @@ test.describe('embedded path', () => {
       'Funded runway',
       'Seeds planted',
       'Your share',
-      'Protocol fee',
+      // §7a: both independent fee rates and the reserved commissions.
+      'Purchase fee',
+      'Replant (compound) fee',
+      'Reserved referral commissions',
     ]) {
       await expect(panel.getByText(label, { exact: true })).toBeVisible();
     }

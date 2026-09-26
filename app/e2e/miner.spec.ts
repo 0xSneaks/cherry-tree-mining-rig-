@@ -64,12 +64,12 @@ test.describe('visual miner', () => {
       `${(miner.weight / 100).toFixed(2)}×`,
     );
     await expect(record.locator('.readout', { hasText: 'Referral' })).toContainText('Bound to');
-    // Planted 30h before the stub clock → the 15% band, shown with the age.
+    // Planted 30h before the stub clock → the 20% band, shown with the age.
     await expect(record.locator('.readout', { hasText: 'Last planted' })).toContainText(
       /1d ?\d+h|30h|1d/,
     );
     await expect(record.locator('.readout', { hasText: 'Last planted' })).toContainText(
-      '15% claim band',
+      '20% claim band',
     );
     await expect(
       record.locator('.readout', { hasText: 'Seeds bought · replanted' }),
@@ -116,7 +116,10 @@ test.describe('harvest confirmation', () => {
     const sheet = page.getByTestId('claim-confirm');
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText('Gross harvest')).toBeVisible();
-    await expect(sheet.getByText(/Early-claim penalty · 15%/)).toBeVisible();
+    await expect(sheet.getByText(/Early-claim fee · 20%/)).toBeVisible();
+    // §7a item 5: the destination is disclosed before signing.
+    await expect(sheet.getByText(/to the Protocol Treasury \(60%\)/)).toBeVisible();
+    await expect(sheet.getByText(/redistributed to other planters \(40%\)/)).toBeVisible();
     await expect(sheet.getByText('You receive')).toBeVisible();
     await expect(sheet.getByRole('button', { name: 'Not now' })).toBeVisible();
 
@@ -200,9 +203,17 @@ test.describe('miner cadence surfaces', () => {
     await page.getByRole('button', { name: 'Seeker Test Wallet' }).click();
 
     const warning = page.getByTestId('buy-reset-warning');
-    await expect(warning).toContainText(/restarts the whole position’s 72-hour/i);
-    await expect(warning).toContainText(/accrued REWARD.*25%/i);
-    await expect(warning).toContainText(/Harvesting and replanting do not reset/i);
+    // §7a item 6: pending rewards > 0, so the mandated top-up warning shows.
+    await expect(warning.getByTestId('top-up-warning')).toContainText(
+      /Buying more seeds restarts your early-claim timer\. Your unclaimed rewards \(0\.\d+ SOL\) would then carry the 30% early-claim fee for the next 24 hours\. Claim them first to keep the full amount\./,
+    );
+    // §7a item 5: schedule and 60/40 destination disclosed before purchase.
+    await expect(warning.getByTestId('early-claim-disclosure')).toContainText(
+      /30% under 24h, 20% from 24h to 48h, 10% from 48h to 72h, 0% after/,
+    );
+    await expect(warning.getByTestId('early-claim-disclosure')).toContainText(
+      /60% of the fee goes to the Protocol Treasury and 40% is redistributed/,
+    );
 
     let sends = 0;
     page.on('request', (request) => {
@@ -229,8 +240,8 @@ test.describe('miner cadence surfaces', () => {
     const cockpit = page.getByTestId('miner-cockpit');
     await expect(cockpit).toBeVisible();
     await expect(cockpit).toContainText(/Plant → tend → watch → rooted → harvest or replant → share/i);
-    await expect(cockpit.getByTestId('harvest-state')).toContainText('15%');
-    await expect(cockpit.getByTestId('harvest-state')).toContainText(/5% in 18h/);
+    await expect(cockpit.getByTestId('harvest-state')).toContainText('20%');
+    await expect(cockpit.getByTestId('harvest-state')).toContainText(/10% in 18h/);
     await expect(cockpit.getByTestId('replant-state')).toContainText(/Resulting grove/);
     // Pool and runway detail lives in the yield panel; the cockpit carries the state.
     await expect(cockpit.getByTestId('reward-state')).toHaveText(/Live|Low runway|Dormant|Unfunded/);

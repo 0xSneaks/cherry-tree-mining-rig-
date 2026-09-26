@@ -13,8 +13,9 @@
  *                 proof. After T0 the founder is an ordinary wallet under the
  *                 access gate; the refusal writes nothing, so T0 cannot move.
  *               - a wallet with no domain is refused in the .skr phase
- *               - founder claim pays the penalty band its planting age earns;
- *                 a sole planter's penalty stays in the reward vault as dust;
+ *               - founder claim pays the early-claim fee band its planting age
+ *                 earns; 60% moves to FEE, a sole planter's 40% grove share
+ *                 stays in the reward vault as dust;
  *                 fee/capital vaults untouched
  *               - founder replant pays no penalty and keeps the clock
  *               - reward-vault solvency
@@ -32,7 +33,7 @@
  *               - wallet A plants (weight 100)
  *               - wallet B plants referred by A (weight 105, referrer bound)
  *               - B naming a referrer again is refused (ReferrerAlreadyBound)
- *               - B claims inside 24h: 25% penalty, only the net leaves the
+ *               - B claims inside 24h: 30% early-claim fee, net + 60% share leave the
  *                 reward vault, fee/capital vaults untouched
  *               - A replants with no penalty
  *               - reward-vault solvency
@@ -72,11 +73,11 @@ import {
   claimInstruction,
   compoundInstruction,
 } from '../../src/lib/program/instructions';
-import { minerPda, programAddresses } from '../../src/lib/program/pdas';
+import { minerPda, programAddresses, referralPda } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
 import { projectedClaimable } from '../../src/lib/program/accrual';
 import { quotePurchase } from '../../src/lib/program/pricing';
-import { claimPenaltyBps } from '../../src/lib/program/penalty';
+import { claimPenaltyBps, earlyClaimFeeSplit } from '../../src/lib/program/penalty';
 import { activateResumeMismatches } from './rehearsal-resume';
 import type { Config } from '../../src/lib/program/accounts';
 
@@ -94,6 +95,23 @@ function check(name: string, pass: boolean, detail: string): void {
   console.log(`  ${pass ? 'PASS' : 'FAIL'}  ${name} — ${detail}`);
 }
 
+/** The all-ones "no referrer" address a Miner stores when unreferred. */
+const NO_REFERRER = '11111111111111111111111111111111';
+
+/**
+ * The referral ledger a referred position must carry (architecture §7): the
+ * bound referrer's, or — on a first purchase — the referrer being bound.
+ */
+async function referralLedgerFor(
+  chain: Chain,
+  who: Address,
+  newReferrer: Address | null,
+): Promise<Address | null> {
+  const bound = (await fetchMiner(chain, who))?.referrer;
+  const r = bound && bound !== NO_REFERRER ? bound : newReferrer;
+  return r ? referralPda(r) : null;
+}
+
 async function buy(
   chain: Chain,
   pdas: Pdas,
@@ -104,6 +122,7 @@ async function buy(
   const ix = buyRigsInstruction(who.address, await minerPda(who.address), pdas, seeds, {
     identity: [],
     referrer: referrer ? { wallet: referrer, miner: await minerPda(referrer) } : null,
+    referralLedger: await referralLedgerFor(chain, who.address, referrer),
   });
   return submit(chain, who, ix);
 }
@@ -154,10 +173,12 @@ async function blockTimeOf(chain: Chain, sig: string): Promise<bigint | null> {
 }
 
 /**
- * Claim for `who`; returns (net, penalty, bps, expectedBps) and checks vault
- * isolation. The expected band comes from the position's planting age — the
- * same pure function the program mirrors — so the assertion holds for any
- * claim time, not just the fresh-flow 25% case.
+ * Claim for `who`; returns (net, penalty, bps, expectedBps) and checks the
+ * exact routing of architecture §7a item 5: net to the claimant, the
+ * early-claim fee's 60% treasury share REWARD → FEE, the 40% grove share
+ * stays in REWARD, CAPITAL untouched. The expected band comes from the
+ * position's planting age — the same pure function the program mirrors — so
+ * the assertion holds for any claim time.
  */
 async function claimChecked(chain: Chain, pdas: Pdas, who: KeyPairSigner, label: string) {
   const before = {
@@ -176,23 +197,24 @@ async function claimChecked(chain: Chain, pdas: Pdas, who: KeyPairSigner, label:
   const penalty = cfg.totalClaimPenalties - before.cfg.totalClaimPenalties;
   const gross = net + penalty;
   const bps = gross > 0n ? (penalty * 10_000n) / gross : 0n;
+  const { treasury, grove } = earlyClaimFeeSplit(penalty);
   check(
-    `${label}: only the net leaves the reward vault`,
-    before.reward - (await lamportsOf(chain, pdas.rewardVault)) === net,
-    `net ${net}, penalty ${penalty}`,
+    `${label}: net and the fee's treasury share leave the reward vault`,
+    before.reward - (await lamportsOf(chain, pdas.rewardVault)) === net + treasury,
+    `net ${net}, fee ${penalty} (treasury ${treasury}, grove ${grove})`,
   );
   check(
-    `${label}: fee and capital vaults untouched`,
-    (await lamportsOf(chain, pdas.feeVault)) === before.fee &&
+    `${label}: FEE gains exactly the treasury share; CAPITAL untouched`,
+    (await lamportsOf(chain, pdas.feeVault)) === before.fee + treasury &&
       (await lamportsOf(chain, pdas.capitalVault)) === before.capital,
-    'unchanged',
+    `fee +${treasury}`,
   );
   check(
     `${label}: claim does not move the planting clock`,
     miner.lastPlantedAt === before.miner.lastPlantedAt,
     `last_planted_at ${miner.lastPlantedAt}`,
   );
-  return { net, penalty, bps, expectedBps, before, cfg };
+  return { net, penalty, grove, bps, expectedBps, before, cfg };
 }
 
 /** Poll the chain until `who` can afford one seed from rewards, or give up. */
@@ -232,7 +254,13 @@ async function waitUntilReplantable(chain: Chain, pdas: Pdas, who: Address, maxS
 async function replantChecked(chain: Chain, pdas: Pdas, who: KeyPairSigner, label: string) {
   const cfg0 = (await fetchConfig(chain))!;
   const m0 = (await fetchMiner(chain, who.address))!;
-  await submit(chain, who, compoundInstruction(who.address, await minerPda(who.address), pdas));
+  await submit(
+    chain,
+    who,
+    compoundInstruction(who.address, await minerPda(who.address), pdas, {
+      referralLedger: await referralLedgerFor(chain, who.address, null),
+    }),
+  );
   const cfg1 = (await fetchConfig(chain))!;
   const m1 = (await fetchMiner(chain, who.address))!;
   check(
@@ -445,8 +473,8 @@ async function stageActivate(
     `${c.bps} bps, band ${c.expectedBps} bps`,
   );
   check(
-    'sole planter: penalty stays in the vault as dust',
-    c.cfg.undistributedDust >= dust0 + c.penalty,
+    'sole planter: the grove share of the fee stays in the vault as dust',
+    c.cfg.undistributedDust >= dust0 + c.grove,
     `dust ${dust0} → ${c.cfg.undistributedDust}`,
   );
   await solvency(chain, pdas);

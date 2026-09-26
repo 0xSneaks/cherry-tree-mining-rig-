@@ -62,7 +62,7 @@ export function MilestonesPanel({ config, miner, chainTime }: { config: Config; 
         label="Next status"
         value={next ? `${next.tier.label} · ${formatCount(next.seedsToGo)} seeds to go` : 'Highest status reached'}
       />
-      <Readout label="Claims" value={isRooted(miner, chainTime) ? 'Rooted · penalty-free' : 'Early-claim band active'} />
+      <Readout label="Claims" value={isRooted(miner, chainTime) ? 'Rooted · no early-claim fee' : 'Early-claim band active'} />
       {days ? <Readout label="Days tended (this device)" value={formatCount(days.days)} /> : null}
       <p className="note" style={{ marginTop: 8 }}>
         Earned {earned.length} of {list.length}:

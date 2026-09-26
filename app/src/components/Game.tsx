@@ -200,10 +200,11 @@ export function Game({ host }: { host: Host }) {
   const compoundPreview = useMemo(() => {
     if (!config) return 0n;
     try {
+      // Compound is priced at the compound fee (architecture §7a item 2).
       return rigsAffordable(
         claimable,
         config.rigPriceLamports,
-        BigInt(config.purchaseFeeBps),
+        BigInt(config.compoundFeeBps),
       );
     } catch {
       return 0n;
@@ -233,7 +234,9 @@ export function Game({ host }: { host: Host }) {
   );
 
   const onBuy = (count: bigint) =>
-    void run('buy', () => buyRigs(host.signer!, count, { referrer }));
+    void run('buy', () =>
+      buyRigs(host.signer!, count, { referrer, boundReferrer: miner?.referrer ?? null }),
+    );
 
   const onClaim = () =>
     void run('claim', async () => {
@@ -247,7 +250,7 @@ export function Game({ host }: { host: Host }) {
   const onCompound = () =>
     void run('compound', async () => {
       const minted = compoundPreview;
-      await compound(host.signer!);
+      await compound(host.signer!, { boundReferrer: miner?.referrer ?? null });
       if (host.share && minted > 0n) {
         setSharePayload({
           kind: 'compound',

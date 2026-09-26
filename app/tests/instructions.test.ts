@@ -15,11 +15,13 @@ import {
   SYSTEM_PROGRAM_ID,
 } from '../src/lib/program/constants';
 import {
+  applyFeeChangeInstruction,
   buyRigsInstruction,
+  claimCommissionInstruction,
   claimInstruction,
   compoundInstruction,
 } from '../src/lib/program/instructions';
-import { skrBindingPda, type ProgramAddresses } from '../src/lib/program/pdas';
+import { referralPda, skrBindingPda, type ProgramAddresses } from '../src/lib/program/pdas';
 
 const OWNER = address('7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU');
 const MINER = address('So11111111111111111111111111111111111111112');
@@ -123,13 +125,15 @@ describe('claim', () => {
     expect(Array.from(ix.data!)).toEqual(Array.from(IX_DISCRIMINATOR.claim));
   });
 
-  it('touches the reward vault and nothing else that holds money', () => {
+  it('touches the reward vault and the fee vault (the early-claim fee treasury share), never capital', () => {
     expect(ix.accounts!.map((a) => a.address)).toEqual([
       OWNER,
       PDAS.config,
       MINER,
       PDAS.rewardVault,
+      PDAS.feeVault,
     ]);
+    expect(ix.accounts![4]!.role).toBe(AccountRole.WRITABLE);
     expect(ix.accounts!.map((a) => a.address)).not.toContain(PDAS.capitalVault);
   });
 });
@@ -157,5 +161,60 @@ describe('discriminators', () => {
     for (const d of all) expect(d.length).toBe(8);
     const hex = all.map((d) => Buffer.from(d).toString('hex'));
     expect(new Set(hex).size).toBe(all.length);
+  });
+});
+
+describe('§7a referral plumbing', () => {
+  const REFERRER = address('ALTNSZ46uaAUU7XUV6awvdorLGqAsPwa9shm7h4uP2FK');
+
+  it('buy_rigs appends the writable referral ledger last', async () => {
+    const ledger = await referralPda(REFERRER);
+    const ix = buyRigsInstruction(OWNER, MINER, PDAS, 1n, {
+      referrer: { wallet: REFERRER, miner: MINER },
+      referralLedger: ledger,
+    });
+    const last = ix.accounts![ix.accounts!.length - 1]!;
+    expect(last).toEqual({ address: ledger, role: AccountRole.WRITABLE });
+    const prev = ix.accounts![ix.accounts!.length - 2]!;
+    expect(prev).toEqual({ address: MINER, role: AccountRole.READONLY });
+  });
+
+  it('compound carries the system program, then the ledger iff referred', async () => {
+    const plain = compoundInstruction(OWNER, MINER, PDAS);
+    expect(plain.accounts!.map((a) => a.address)).toEqual([
+      OWNER,
+      PDAS.config,
+      MINER,
+      PDAS.rewardVault,
+      PDAS.capitalVault,
+      PDAS.feeVault,
+      SYSTEM_PROGRAM_ID,
+    ]);
+    const ledger = await referralPda(REFERRER);
+    const referred = compoundInstruction(OWNER, MINER, PDAS, { referralLedger: ledger });
+    expect(referred.accounts!.length).toBe(8);
+    expect(referred.accounts![7]).toEqual({ address: ledger, role: AccountRole.WRITABLE });
+  });
+
+  it('claim_commission pays the signer from the fee vault only', async () => {
+    const ledger = await referralPda(REFERRER);
+    const ix = claimCommissionInstruction(REFERRER, ledger, PDAS);
+    expect(Array.from(ix.data!)).toEqual(Array.from(IX_DISCRIMINATOR.claimCommission));
+    expect(ix.accounts!.map((a) => a.address)).toEqual([
+      REFERRER,
+      PDAS.config,
+      ledger,
+      PDAS.feeVault,
+    ]);
+    expect(ix.accounts!.map((a) => a.address)).not.toContain(PDAS.capitalVault);
+    expect(ix.accounts!.map((a) => a.address)).not.toContain(PDAS.rewardVault);
+  });
+
+  it('apply_fee_change is permissionless: any signer, config only', () => {
+    const ix = applyFeeChangeInstruction(OWNER, PDAS);
+    expect(ix.accounts).toEqual([
+      { address: OWNER, role: AccountRole.READONLY_SIGNER },
+      { address: PDAS.config, role: AccountRole.WRITABLE },
+    ]);
   });
 });

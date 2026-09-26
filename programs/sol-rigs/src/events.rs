@@ -46,9 +46,11 @@ pub struct Claim {
     pub owner: Pubkey,
     /// Net lamports paid to the owner.
     pub amount: u64,
-    /// Settled ore bin before the penalty.
+    /// Settled ore bin before the early-claim fee.
     pub gross: u64,
-    /// Forfeited, kept in the reward vault for the other planters.
+    /// Early-claim fee `x` (architecture §7a item 5): 60% moved to FEE, 40%
+    /// kept in the reward vault for the other planters — see
+    /// `EarlyClaimFeeSplit`.
     pub penalty: u64,
     pub penalty_bps: u16,
     pub user_rigs: u64,
@@ -227,4 +229,79 @@ pub struct FruitReserveWithdrawn {
 pub struct FruitPausedSet {
     pub kind: u8,
     pub paused: bool,
+}
+
+// --- protocol fees (architecture §7a) ---
+//
+// New events only: the frozen `Initialized`, `Claim`, `Compound` and
+// `RigsPurchased` schemas stay byte-compatible for historical decoders.
+
+/// The compound fee pinned at `initialize` (or copied from the purchase fee
+/// by migration).
+#[event]
+pub struct CompoundFeeConfigured {
+    pub compound_fee_bps: u16,
+}
+
+#[event]
+pub struct FeeChangeScheduled {
+    pub purchase_fee_bps: u16,
+    pub compound_fee_bps: u16,
+    pub effective_at: i64,
+    /// True when this schedule replaced an earlier pending change.
+    pub replaced: bool,
+}
+
+#[event]
+pub struct FeeChangeApplied {
+    pub purchase_fee_bps: u16,
+    pub compound_fee_bps: u16,
+    pub applied_by: Pubkey,
+}
+
+#[event]
+pub struct FeeChangeCancelled {
+    pub purchase_fee_bps: u16,
+    pub compound_fee_bps: u16,
+    pub effective_at: i64,
+}
+
+/// Early-claim fee split for one claim: `treasury` moved REWARD → FEE,
+/// `grove` stayed in REWARD for the other planters.
+#[event]
+pub struct EarlyClaimFeeSplit {
+    pub owner: Pubkey,
+    pub fee: u64,
+    pub treasury: u64,
+    pub grove: u64,
+}
+
+/// A referral commission reserved in FEE for one eligible fee event.
+#[event]
+pub struct CommissionReserved {
+    pub referrer: Pubkey,
+    pub referred: Pubkey,
+    /// True for a compound fee, false for a fresh purchase fee.
+    pub compound: bool,
+    pub fee_lamports: u64,
+    pub volume_lamports: u64,
+    pub commission: u64,
+    pub reserved_commissions: u64,
+}
+
+#[event]
+pub struct CommissionClaimed {
+    pub referrer: Pubkey,
+    pub amount: u64,
+    pub reserved_commissions: u64,
+}
+
+/// Released unused lock-bonus allocation paid to the Protocol Treasury at
+/// lock-pool close. Reported separately; never fee revenue.
+#[event]
+pub struct LockForfeitReleased {
+    pub pool: Pubkey,
+    pub forfeited: u64,
+    pub treasury_release: u64,
+    pub treasury: Pubkey,
 }

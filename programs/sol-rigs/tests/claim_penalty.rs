@@ -1,5 +1,6 @@
-//! Claim penalty through real instructions: exact chain-clock boundaries,
-//! where the lamports go, replant and reset rules.
+//! Early-claim fee through real instructions (architecture §7a item 5;
+//! tests 85–87): exact chain-clock boundaries, the 60/40 treasury/grove
+//! split with real lamport movement, replant and reset rules.
 
 mod common;
 
@@ -26,7 +27,9 @@ async fn grove() -> (Env, i64) {
     (env, t)
 }
 
-/// Claim for `who` at exactly `at`; returns (net received, penalty).
+/// Claim for `who` at exactly `at`; returns (net received, fee x). Asserts
+/// the exact lamport routing: net to the claimant, `floor(0.60 x)` REWARD →
+/// FEE, the rest stays in REWARD, CAPITAL untouched.
 async fn claim_at(env: &mut Env, who: &solana_sdk::signature::Keypair, at: i64) -> (u64, u64) {
     env.set_time(at).await;
     let (fee, cap) = (
@@ -39,10 +42,11 @@ async fn claim_at(env: &mut Env, who: &solana_sdk::signature::Keypair, at: i64) 
     env.claim(who).await.unwrap();
     let net = env.lamports(who.pubkey()).await - wallet_before;
     let penalty = env.config().await.total_claim_penalties - penalties_before;
+    let treasury = penalty * 6 / 10;
     assert_eq!(
         env.lamports(fee_vault_pda()).await,
-        fee,
-        "fee vault untouched"
+        fee + treasury,
+        "exactly floor(0.60 x) reaches FEE"
     );
     assert_eq!(
         env.lamports(capital_vault_pda()).await,
@@ -51,26 +55,31 @@ async fn claim_at(env: &mut Env, who: &solana_sdk::signature::Keypair, at: i64) 
     );
     assert_eq!(
         env.lamports(reward_vault_pda()).await,
-        reward_before - net,
-        "only the net leaves the reward vault"
+        reward_before - net - treasury,
+        "net and the treasury share leave REWARD; the grove share stays"
     );
     (net, penalty)
 }
 
-fn bps_of(net: u64, penalty: u64) -> u128 {
-    // penalty = ceil(gross × bps / 10_000) → bps ≈ penalty / gross.
-    penalty as u128 * 10_000 / (net as u128 + penalty as u128)
+/// `x = floor(gross × bps / 10_000)`: recover the exact rate band.
+fn assert_band(net: u64, penalty: u64, want: u64) {
+    let gross = net + penalty;
+    assert_eq!(
+        penalty,
+        (gross as u128 * want as u128 / 10_000) as u64,
+        "want {want} bps"
+    );
 }
 
 #[tokio::test]
 async fn schedule_enforced_at_every_boundary_second() {
     for (age, want) in [
-        (1, 2_500u128),
-        (DAY - 1, 2_500),
-        (DAY, 1_500),
-        (2 * DAY - 1, 1_500),
-        (2 * DAY, 500),
-        (3 * DAY - 1, 500),
+        (1, 3_000u64),
+        (DAY - 1, 3_000),
+        (DAY, 2_000),
+        (2 * DAY - 1, 2_000),
+        (2 * DAY, 1_000),
+        (3 * DAY - 1, 1_000),
         (3 * DAY, 0),
         (400 * DAY, 0),
     ] {
@@ -78,22 +87,30 @@ async fn schedule_enforced_at_every_boundary_second() {
         let erin = env.erin.insecure_clone();
         let (net, penalty) = claim_at(&mut env, &erin, t + age).await;
         assert!(net > 0);
-        let bps = bps_of(net, penalty);
-        assert!(
-            bps == want || bps + 1 == want,
-            "age {age}: {bps} bps, want {want}"
-        );
+        assert_band(net, penalty, want);
     }
 }
 
 #[tokio::test]
-async fn penalty_is_owed_to_the_other_planter_not_to_fees() {
+async fn fee_splits_sixty_forty_treasury_and_grove() {
     let (mut env, t) = grove().await;
     let (bob, erin) = (env.bob.insecure_clone(), env.erin.insecure_clone());
-    // Erin claims early (25%), Bob waits out the window: Bob collects his own
-    // emission plus the share of Erin's penalty re-credited to him.
+    // Erin claims early (30%): 60% of her fee is treasury revenue in FEE, 40%
+    // is re-credited to Bob. Bob's accrual jumps by the grove share.
+    let cfg0 = env.config().await;
     let (_, penalty) = claim_at(&mut env, &erin, t + 3_600).await;
     assert!(penalty > 0);
+    let cfg = env.config().await;
+    let treasury = penalty * 6 / 10;
+    assert_eq!(
+        cfg.total_reward_to_fees - cfg0.total_reward_to_fees,
+        treasury
+    );
+    assert_eq!(cfg.total_protocol_fees - cfg0.total_protocol_fees, treasury);
+    assert_eq!(
+        cfg.reserved_commissions, cfg0.reserved_commissions,
+        "the treasury share is never referral-eligible"
+    );
     // Erin's watermark is set after her penalty was re-credited, so none of
     // it is owed back to her (clock-independent; the same-second repeat
     // claim is covered in the engine suite).
@@ -138,8 +155,7 @@ async fn buying_resets_the_clock_claiming_does_not() {
     let (mut env, t) = grove().await;
     let erin = env.erin.insecure_clone();
     let (n1, p1) = claim_at(&mut env, &erin, t + DAY + 60).await;
-    let b = bps_of(n1, p1);
-    assert!(b == 1_500 || b == 1_499, "15% band: {b}");
+    assert_band(n1, p1, 2_000);
     assert_eq!(
         env.miner(&erin.pubkey()).await.last_planted_at,
         t,
@@ -150,9 +166,6 @@ async fn buying_resets_the_clock_claiming_does_not() {
     let reset = env.clock().await.unix_timestamp;
     assert_eq!(env.miner(&erin.pubkey()).await.last_planted_at, reset);
     let (n2, p2) = claim_at(&mut env, &erin, reset + 3_600).await;
-    let b = bps_of(n2, p2);
-    assert!(
-        b == 2_500 || b == 2_499,
-        "purchase restarted the 25% band: {b}"
-    );
+    // Test 87: all pending, older rewards included, back under 30%.
+    assert_band(n2, p2, 3_000);
 }

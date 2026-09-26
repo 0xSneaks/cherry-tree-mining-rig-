@@ -91,8 +91,22 @@ impl Sim {
         complete: bool,
         now: i64,
     ) -> EngineResult<()> {
+        self.post_forfeit(i, v, cp, total, complete, 0, now)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn post_forfeit(
+        &mut self,
+        i: usize,
+        v: u64,
+        cp: i64,
+        total: u64,
+        complete: bool,
+        forfeited: u64,
+        now: i64,
+    ) -> EngineResult<()> {
         let (p, roots, _) = &mut self.pools[i];
-        let r = post_root(p, v, cp, total, complete, now, WINDOW)?;
+        let r = post_root(p, v, cp, total, complete, forfeited, now, WINDOW)?;
         roots.push(r);
         self.check();
         Ok(())
@@ -138,10 +152,24 @@ impl Sim {
     }
 
     fn close(&mut self, i: usize, now: i64) -> EngineResult<u64> {
+        Ok(self.close_full(i, now)?.released)
+    }
+
+    /// Close, moving the treasury release out of the vault as the program
+    /// does (`V -= t; Z -= t`).
+    fn close_full(&mut self, i: usize, now: i64) -> EngineResult<CloseOutcome> {
         let l_before = self.ledger.liabilities;
+        let u_before = self.ledger.committed;
         let (p, _, _) = &mut self.pools[i];
+        let budget_left = p.budget - p.final_total;
         let r = close_pool(&mut self.ledger, p, now)?;
         assert_eq!(self.ledger.liabilities, l_before, "close touched L");
+        assert_eq!(
+            u_before - self.ledger.committed,
+            budget_left,
+            "close moved U by other than E - final_total"
+        );
+        self.vault -= r.treasury_release;
         self.check();
         Ok(r)
     }
@@ -696,4 +724,112 @@ proptest! {
             s.check();
         }
     }
+}
+
+// ---------------------------------------------------- lock forfeit (89)
+
+/// Test 89: at lock-pool close `floor(0.80 forfeited)` leaves `Z` to the
+/// Protocol Treasury and the remainder stays in `Z`; unallocated and
+/// safety-cancelled capacity go 100% to `Z`; `L` and `U` are untouched by
+/// the release; a root claiming more forfeiture than it releases is
+/// rejected.
+#[test]
+fn lock_forfeit_releases_eighty_percent_to_treasury() {
+    let (t0, t1) = (1_000, 1_000 + 5 * 86_400);
+    let mut sim = Sim::new(3);
+    sim.fund(10 * SOL).unwrap();
+    let i = sim.commit(10 * SOL, t0, t1, 0).unwrap();
+    let e = 10 * SOL;
+    let total = 6 * SOL; // established, vested
+    let released = e - total; // 4 SOL: unallocated + forfeited + other
+
+    // forfeited above the released capacity: rejected at post.
+    assert_eq!(
+        sim.post_forfeit(i, 1, t1, total, true, released + 1, t1),
+        Err(EngineError::InvalidForfeited)
+    );
+    // forfeited on an incomplete root: rejected.
+    assert_eq!(
+        sim.post_forfeit(i, 1, t1 - 1, total, false, 1, t1),
+        Err(EngineError::InvalidForfeited)
+    );
+
+    let forfeited = SOL + 7; // odd lamports exercise the floor
+    sim.post_forfeit(i, 1, t1, total, true, forfeited, t1)
+        .unwrap();
+    sim.finalize(i, t1 + WINDOW).unwrap();
+    let before = sim.ledger;
+    let vault_before = sim.vault;
+    let out = sim.close_full(i, t1 + WINDOW).unwrap();
+    let treasury = forfeited * 8 / 10;
+    assert_eq!(out.released, released);
+    assert_eq!(out.treasury_release, treasury);
+    assert_eq!(lock_forfeit_treasury_release(forfeited), treasury);
+    assert_eq!(sim.ledger.liabilities, before.liabilities, "L untouched");
+    assert_eq!(sim.ledger.committed, before.committed - released);
+    assert_eq!(
+        sim.ledger.reserve,
+        before.reserve + released - treasury,
+        "20% of forfeited, and all unallocated/other capacity, stays in Z"
+    );
+    assert_eq!(sim.vault, vault_before - treasury);
+    assert_eq!(sim.pools[i].0.forfeit_treasury_released, treasury);
+    // Exactly once.
+    assert_eq!(sim.close(i, t1 + WINDOW), Err(EngineError::FruitPoolClosed));
+}
+
+#[test]
+fn lock_forfeit_edge_cases() {
+    let (t0, t1) = (1_000, 1_000 + 5 * 86_400);
+    // forfeited == released: 80% of all released capacity leaves.
+    let mut sim = Sim::new(1);
+    sim.fund(5 * SOL).unwrap();
+    let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.post_forfeit(i, 1, t1, 0, true, 5 * SOL, t1).unwrap();
+    sim.finalize(i, t1 + WINDOW).unwrap();
+    let out = sim.close_full(i, t1 + WINDOW).unwrap();
+    assert_eq!(out.treasury_release, 4 * SOL);
+    assert_eq!(sim.ledger.reserve, SOL);
+
+    // Nobody forfeits: 100% of released capacity stays in Z.
+    let mut sim = Sim::new(1);
+    sim.fund(5 * SOL).unwrap();
+    let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.post(i, 1, t1, SOL, true, t1).unwrap();
+    sim.finalize(i, t1 + WINDOW).unwrap();
+    let out = sim.close_full(i, t1 + WINDOW).unwrap();
+    assert_eq!(out.treasury_release, 0);
+    assert_eq!(sim.ledger.reserve, 4 * SOL);
+
+    // A vetoed forfeit root leaves nothing behind; a later complete root
+    // without forfeiture releases nothing to the treasury.
+    let mut sim = Sim::new(1);
+    sim.fund(5 * SOL).unwrap();
+    let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.post_forfeit(i, 1, t1, SOL, true, 2 * SOL, t1).unwrap();
+    assert!(sim.veto(i, 1, t1).unwrap());
+    assert_eq!(sim.pools[i].0.pending_forfeited, 0);
+    sim.post(i, 2, t1, SOL, true, t1).unwrap();
+    sim.finalize(i, t1 + WINDOW).unwrap();
+    assert_eq!(sim.close_full(i, t1 + WINDOW).unwrap().treasury_release, 0);
+
+    // Terminal resolution never carries forfeiture.
+    let mut sim = Sim::new(1);
+    sim.fund(5 * SOL).unwrap();
+    let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.terminal(i, 1, t1, SOL, t1).unwrap();
+    assert_eq!(sim.close_full(i, t1).unwrap().treasury_release, 0);
+
+    // A superseding complete root replaces the carried forfeiture.
+    let mut sim = Sim::new(1);
+    sim.fund(5 * SOL).unwrap();
+    let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.post_forfeit(i, 1, t1, SOL, true, 3 * SOL, t1).unwrap();
+    sim.finalize(i, t1 + WINDOW).unwrap();
+    sim.post_forfeit(i, 2, t1, 2 * SOL, true, SOL, t1 + WINDOW)
+        .unwrap();
+    sim.finalize(i, t1 + 2 * WINDOW).unwrap();
+    let out = sim.close_full(i, t1 + 2 * WINDOW).unwrap();
+    assert_eq!(out.released, 3 * SOL);
+    assert_eq!(out.treasury_release, SOL * 8 / 10);
 }

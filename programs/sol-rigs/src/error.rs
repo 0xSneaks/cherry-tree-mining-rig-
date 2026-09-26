@@ -156,6 +156,28 @@ pub enum RigsError {
     LockPoolsNotImplemented,
     #[msg("Reserve withdrawal destination is not the configured reserve recipient")]
     ReserveRecipientMismatch,
+    #[msg("Compound fee must not exceed the purchase fee")]
+    CompoundFeeAbovePurchaseFee,
+    #[msg("No fee change is scheduled")]
+    NoPendingFeeChange,
+    #[msg("The 72-hour fee-change timelock has not elapsed")]
+    FeeTimelockActive,
+    #[msg("Fee rates change only through schedule_fee_change")]
+    FeeChangeRequiresTimelock,
+    #[msg("Referred position: the referrer's referral ledger account is required")]
+    MissingReferralLedger,
+    #[msg("Referral ledger account is not the canonical PDA for this referrer")]
+    ReferralLedgerInvalid,
+    #[msg("No unpaid referral commission")]
+    NothingToClaimCommission,
+    #[msg("Fee vault does not cover reserved referral commissions")]
+    CommissionReservationBroken,
+    #[msg("Protocol Treasury destination must not be a program-owned account")]
+    TreasuryDestinationInvalid,
+    #[msg("forfeited must be on a complete root and within released capacity")]
+    InvalidForfeited,
+    #[msg("Only lock-ledger roots may carry forfeiture")]
+    ForfeitOnlyOnLockLedger,
 }
 
 impl From<EngineError> for RigsError {
@@ -207,6 +229,10 @@ impl From<EngineError> for RigsError {
             EngineError::FruitPoolNotEnded => RigsError::FruitPoolNotEnded,
             EngineError::FruitPoolNotReconciled => RigsError::FruitPoolNotReconciled,
             EngineError::InvalidFruitGovernance => RigsError::InvalidFruitGovernance,
+            EngineError::CompoundFeeAbovePurchaseFee => RigsError::CompoundFeeAbovePurchaseFee,
+            EngineError::NoPendingFeeChange => RigsError::NoPendingFeeChange,
+            EngineError::FeeTimelockActive => RigsError::FeeTimelockActive,
+            EngineError::InvalidForfeited => RigsError::InvalidForfeited,
         }
     }
 }

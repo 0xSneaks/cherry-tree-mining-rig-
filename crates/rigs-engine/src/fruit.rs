@@ -33,6 +33,16 @@ pub const FRUIT_M: u64 = 250;
 pub const QMAX_NUM: u64 = 1;
 pub const QMAX_DEN: u64 = 5;
 
+/// Protocol Treasury share of released lock-forfeit capacity: 80%
+/// (architecture §7a item 8). The rest stays in the lock ledger's `Z`.
+pub const LOCK_FORFEIT_TREASURY_BPS: u64 = 8_000;
+
+/// Treasury release of `forfeited` at lock-pool close:
+/// `floor(0.80 forfeited)`. `forfeited - release` stays in `Z`.
+pub fn lock_forfeit_treasury_release(forfeited: u64) -> u64 {
+    ((forfeited as u128) * LOCK_FORFEIT_TREASURY_BPS as u128 / 10_000) as u64
+}
+
 /// Per-wallet ceiling of a pool with budget `budget`: `floor(E * qmax)`.
 pub const fn wallet_cap(budget: u64) -> u64 {
     budget / QMAX_DEN
@@ -241,6 +251,13 @@ pub struct FruitPool {
     /// Whether the latest Final root is marked complete (reconciled).
     pub final_complete: bool,
     pub status: PoolStatus,
+    /// `forfeited` carried by the Pending root (lock ledger only, else 0).
+    pub pending_forfeited: u64,
+    /// `forfeited` carried by the latest Final root; 0 unless it is complete.
+    pub final_forfeited: u64,
+    /// Lamports released from `Z` to the Protocol Treasury at close
+    /// (`floor(0.80 final_forfeited)`), reported separately from fee revenue.
+    pub forfeit_treasury_released: u64,
 }
 
 /// Accounting state of one posted root.
@@ -256,6 +273,9 @@ pub struct FruitRoot {
     pub status: RootStatus,
     /// Distinct veto signatures recorded so far.
     pub veto_count: u8,
+    /// Voluntary lock-forfeit capacity carried by a complete lock root
+    /// (architecture §8 / §7a item 8). Always 0 for core and loyalty roots.
+    pub forfeited: u64,
 }
 
 /// Scheduled capacity at `checkpoint_time`:
@@ -335,12 +355,21 @@ pub fn commit_pool(
 }
 
 /// POST ROOT (Pending). All §10a invariant-3 and invariant-4 checks.
+///
+/// `forfeited` (lock ledgers only; the caller rejects it elsewhere) may be
+/// non-zero only on a root marked complete, and never above the capacity
+/// that root leaves unestablished: `forfeited <= E - total`. The lock
+/// engine's tighter `sum A_i - final_total` bound needs `H_lock`, which is
+/// not written in this version; `E - total` is the outer envelope the close
+/// can release, so the treasury release can never touch `L` or `U`.
+#[allow(clippy::too_many_arguments)]
 pub fn post_root(
     pool: &mut FruitPool,
     version: u64,
     checkpoint_time: i64,
     total: u64,
     complete: bool,
+    forfeited: u64,
     now: i64,
     challenge_window: i64,
 ) -> EngineResult<FruitRoot> {
@@ -363,6 +392,15 @@ pub fn post_root(
     if complete && checkpoint_time < pool.t_end {
         return Err(EngineError::IncompleteCheckpoint);
     }
+    if forfeited > 0 {
+        let released = pool
+            .budget
+            .checked_sub(total)
+            .ok_or(EngineError::MathOverflow)?;
+        if !complete || forfeited > released {
+            return Err(EngineError::InvalidForfeited);
+        }
+    }
     if challenge_window <= 0 {
         return Err(EngineError::InvalidFruitGovernance);
     }
@@ -374,6 +412,7 @@ pub fn post_root(
     next.latest_version = version;
     next.pending_version = version;
     next.pending_complete = complete;
+    next.pending_forfeited = forfeited;
     next.refresh_status(now);
     *pool = next;
     Ok(FruitRoot {
@@ -385,6 +424,7 @@ pub fn post_root(
         final_after,
         status: RootStatus::Pending,
         veto_count: 0,
+        forfeited,
     })
 }
 
@@ -417,6 +457,7 @@ pub fn veto_vote(
         r.status = RootStatus::Vetoed;
         p.pending_version = 0;
         p.pending_complete = false;
+        p.pending_forfeited = 0;
         p.refresh_status(now);
     }
     *root = r;
@@ -449,8 +490,10 @@ pub fn finalize_root(
     p.final_total = r.total;
     p.final_version = r.version;
     p.final_complete = r.complete;
+    p.final_forfeited = if r.complete { r.forfeited } else { 0 };
     p.pending_version = 0;
     p.pending_complete = false;
+    p.pending_forfeited = 0;
     p.refresh_status(now);
     r.status = RootStatus::Final;
     *ledger = l;
@@ -481,7 +524,9 @@ pub fn terminal_resolution(
     }
     let mut p = *pool;
     let mut l = *ledger;
-    let mut root = post_root(&mut p, version, checkpoint_time, total, true, now, 1)?;
+    // Unknown history is never treated as voluntary exit (§8): a terminal
+    // resolution carries no forfeiture, so nothing it releases leaves `Z`.
+    let mut root = post_root(&mut p, version, checkpoint_time, total, true, 0, now, 1)?;
     root.final_after = now;
     let delta = finalize_root(&mut l, &mut p, &mut root, now)?;
     *pool = p;
@@ -523,10 +568,29 @@ pub fn claim(
     Ok(payment)
 }
 
+/// What a [`close_pool`] released.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CloseOutcome {
+    /// `E - final_total`, moved `U -> Z`.
+    pub released: u64,
+    /// `floor(0.80 forfeited)`, then moved out of `Z` to the Protocol
+    /// Treasury in the same close (`V -= t; Z -= t`). 0 when nothing was
+    /// forfeited. The caller moves exactly these lamports.
+    pub treasury_release: u64,
+}
+
 /// CLOSE: after `t_end`, with no Pending root and a Final root marked
-/// complete, release `E - final_total` from `U` to `Z`, exactly once.
-/// Returns the released amount. Elapsed time alone never satisfies it.
-pub fn close_pool(ledger: &mut FruitLedger, pool: &mut FruitPool, now: i64) -> EngineResult<u64> {
+/// complete, release `E - final_total` from `U` to `Z`, exactly once; then
+/// release `floor(0.80 forfeited)` of it from `Z` to the Protocol Treasury
+/// (lock ledger, architecture §8 / §7a item 8). `forfeited - release`,
+/// unallocated and safety-cancelled capacity all stay in `Z`. Elapsed time
+/// alone never satisfies it. `L` and `U` are never touched by the treasury
+/// release.
+pub fn close_pool(
+    ledger: &mut FruitLedger,
+    pool: &mut FruitPool,
+    now: i64,
+) -> EngineResult<CloseOutcome> {
     pool.require_open()?;
     if now < pool.t_end {
         return Err(EngineError::FruitPoolNotEnded);
@@ -541,9 +605,22 @@ pub fn close_pool(ledger: &mut FruitLedger, pool: &mut FruitPool, now: i64) -> E
         .budget
         .checked_sub(pool.final_total)
         .ok_or(EngineError::MathOverflow)?;
+    // Enforced at post time; re-checked so the release can never exceed the
+    // capacity this close returns to `Z`.
+    if pool.final_forfeited > release {
+        return Err(EngineError::InvalidForfeited);
+    }
+    let treasury_release = lock_forfeit_treasury_release(pool.final_forfeited);
     let mut l = *ledger;
     l.release(release)?;
+    if treasury_release > 0 {
+        l.withdraw_reserve(treasury_release)?;
+    }
     *ledger = l;
+    pool.forfeit_treasury_released = treasury_release;
     pool.status = PoolStatus::Closed;
-    Ok(release)
+    Ok(CloseOutcome {
+        released: release,
+        treasury_release,
+    })
 }

@@ -232,11 +232,11 @@ describe('milestones (post-72h engagement)', () => {
     const r = reminders(fresh, cfg, NOW);
     const p = r.find((x) => x.id === 'penalty')!;
     expect(p.atSeconds).toBe(fresh.lastPlantedAt + 3n * DAY);
-    expect(p.text).toMatch(/penalty-free/);
+    expect(p.text).toMatch(/free of the early-claim fee/);
     expect(p.text).toMatch(/replanting would not/);
     expect(isRooted(miner({ lastPlantedAt: NOW - 3n * DAY }), NOW)).toBe(true);
     const early = reminders(miner({ lastPlantedAt: NOW - 3_600n }), cfg, NOW).find((x) => x.id === 'penalty')!;
-    expect(early.text).toBe('Claim penalty drops to 15%.');
+    expect(early.text).toBe('Early-claim fee drops to 20%.');
   });
 
   it('reminders are sorted and include the funded-window end', () => {

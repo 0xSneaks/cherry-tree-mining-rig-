@@ -11,7 +11,8 @@
 import { useMemo, useState } from 'react';
 
 import { formatSol } from '../lib/format';
-import { buyResetDisclosure } from '../lib/minerCadence';
+import { buyResetDisclosure, showsTopUpWarning } from '../lib/minerCadence';
+import { EARLY_CLAIM_DISCLOSURE } from '../lib/program/penalty';
 import type { Config } from '../lib/program/accounts';
 import { MAX_RIGS_PER_PURCHASE } from '../lib/program/constants';
 import { quotePurchase, rigsAffordable } from '../lib/program/pricing';
@@ -60,6 +61,7 @@ export function BuyPanel({
   const [pendingCount, setPendingCount] = useState<bigint | null>(null);
   const emissionLive = projectionsAllowed(config, chainTime);
   const resetDisclosure = buyResetDisclosure(hasPosition, accruedRewardLamports);
+  const topUpWarning = showsTopUpWarning(hasPosition, accruedRewardLamports);
 
   const quote = useMemo(() => {
     try {
@@ -188,12 +190,12 @@ export function BuyPanel({
       {/* The essential rules, read once, directly above the button. */}
       <div className="buy-reset-warning" data-testid="buy-reset-warning">
         <strong>Before you plant</strong>
-        <span>
-          {resetDisclosure}
-          {hasPosition && accruedRewardLamports > 0n
-            ? ` Accrued now: ${formatSol(accruedRewardLamports, 6)} SOL.`
-            : null}
-        </span>
+        {topUpWarning ? (
+          <span data-testid="top-up-warning">
+            <strong>{resetDisclosure}</strong>
+          </span>
+        ) : null}
+        <span data-testid="early-claim-disclosure">{EARLY_CLAIM_DISCLOSURE}</span>
         <span>
           Seeds are game production capacity, not a deposit. They are
           non-redeemable — you are planting capacity, not staking principal you

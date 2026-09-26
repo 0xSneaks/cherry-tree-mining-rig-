@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
-use rigs_engine::{validate_genesis_cap, validate_pricing};
+use rigs_engine::{validate_fee_pair, validate_genesis_cap, validate_pricing};
 
 use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
-use crate::events::{GenesisCapConfigured, Initialized};
+use crate::events::{CompoundFeeConfigured, GenesisCapConfigured, Initialized};
 use crate::state::{Config, Vault};
 
 #[derive(Accounts)]
@@ -73,8 +73,12 @@ pub fn handle_initialize(
     fee_recipient: Pubkey,
     founder: Pubkey,
     genesis_cap_rigs: u64,
+    compound_fee_bps: u16,
 ) -> Result<()> {
     validate_pricing(rig_price_lamports, purchase_fee_bps).anchor()?;
+    // First fee values are set here, before launch, without a delay; every
+    // later change goes through the 72-hour timelock (§7a item 3).
+    validate_fee_pair(purchase_fee_bps, compound_fee_bps).anchor()?;
     validate_genesis_cap(genesis_cap_rigs).anchor()?;
     // The founder is pinned here and nowhere else. An unset founder would
     // make launch impossible to activate, so it is refused outright.
@@ -138,6 +142,15 @@ pub fn handle_initialize(
         total_shares: 0,
         total_claim_penalties: 0,
         genesis_cap_rigs,
+
+        compound_fee_bps,
+        pending_purchase_fee_bps: 0,
+        pending_compound_fee_bps: 0,
+        fee_change_effective_at: 0,
+        reserved_commissions: 0,
+        total_commissions_reserved: 0,
+        total_commissions_paid: 0,
+        total_reward_to_fees: 0,
     });
 
     emit!(Initialized {
@@ -151,5 +164,6 @@ pub fn handle_initialize(
     // The cap rides its own event so the frozen V1 `Initialized` schema — and
     // every historical decoder — stays byte-compatible.
     emit!(GenesisCapConfigured { genesis_cap_rigs });
+    emit!(CompoundFeeConfigured { compound_fee_bps });
     Ok(())
 }

@@ -6,13 +6,17 @@
 //! reconciled close moves unused capacity back to `Z`.
 
 use anchor_lang::prelude::*;
-use rigs_engine::{close_pool, finalize_root, post_root, terminal_resolution, veto_vote};
+use rigs_engine::{
+    close_pool, finalize_root, post_root, terminal_resolution, veto_vote, LedgerKind,
+};
 
 use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
 use crate::events::*;
 use crate::fruit_state::{require_version, FruitConfig, FruitVault, Ledger, Pool, Root};
 use crate::instructions::fruit_ledger::check_solvent;
+use crate::state::Config;
+use crate::vault::{move_lamports, require_external_destination};
 
 // ------------------------------------------------------------ post
 
@@ -57,6 +61,7 @@ pub fn post_fruit_root(
     checkpoint_time: i64,
     total: u64,
     complete: bool,
+    forfeited: u64,
 ) -> Result<()> {
     let fc = &ctx.accounts.fruit_config;
     require_version(fc.state_version)?;
@@ -64,6 +69,13 @@ pub fn post_fruit_root(
     require!(
         !fc.is_paused(ctx.accounts.pool.ledger_kind),
         RigsError::FruitPaused
+    );
+    // Only voluntary lock exits forfeit (§8); core and loyalty roots never
+    // carry it, so their close can never release anything out of `Z`.
+    require!(
+        forfeited == 0
+            || LedgerKind::from_u8(ctx.accounts.pool.ledger_kind).anchor()? == LedgerKind::Lock,
+        RigsError::ForfeitOnlyOnLockLedger
     );
     let window = fc.challenge_window_secs;
     let now = Clock::get()?.unix_timestamp;
@@ -75,6 +87,7 @@ pub fn post_fruit_root(
         checkpoint_time,
         total,
         complete,
+        forfeited,
         now,
         window,
     )
@@ -395,12 +408,32 @@ pub struct CloseFruitPool<'info> {
     )]
     pub ledger: Account<'info, Ledger>,
 
-    #[account(seeds = [FRUIT_VAULT_SEED, &[pool.ledger_kind]], bump = ledger.vault_bump)]
+    #[account(
+        mut,
+        seeds = [FRUIT_VAULT_SEED, &[pool.ledger_kind]],
+        bump = ledger.vault_bump,
+    )]
     pub vault: Account<'info, FruitVault>,
+
+    /// Base config, read-only: names the Protocol Treasury
+    /// (`config.fee_recipient`, architecture §7a). No base vault is touched.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    /// CHECK: only credited, and pinned to `config.fee_recipient`; must not
+    /// be program-owned (checked in the handler).
+    #[account(
+        mut,
+        constraint = treasury.key() == config.fee_recipient @ RigsError::FeeRecipientMismatch,
+    )]
+    pub treasury: UncheckedAccount<'info>,
 }
 
 /// Permissionless close: `now >= t_end`, no Pending root, a complete Final
 /// root; then `U -= E - final_total; Z += E - final_total`, exactly once.
+/// For a lock pool whose complete root carries `forfeited`, the close then
+/// pays `floor(0.80 forfeited)` out of `Z` to the Protocol Treasury
+/// (`V -= t; Z -= t`); the rest stays in `Z` for the next Season.
 pub fn close_fruit_pool(ctx: Context<CloseFruitPool>) -> Result<()> {
     let fc = &ctx.accounts.fruit_config;
     require_version(fc.state_version)?;
@@ -414,8 +447,17 @@ pub fn close_fruit_pool(ctx: Context<CloseFruitPool>) -> Result<()> {
 
     let mut acct = ctx.accounts.ledger.accounting();
     let mut pool_state = ctx.accounts.pool.accounting()?;
-    let released = close_pool(&mut acct, &mut pool_state, now).anchor()?;
-    check_solvent(&ctx.accounts.vault.to_account_info(), &acct)?;
+    let out = close_pool(&mut acct, &mut pool_state, now).anchor()?;
+    let vault_ai = ctx.accounts.vault.to_account_info();
+    if out.treasury_release > 0 {
+        require_external_destination(&ctx.accounts.treasury.to_account_info(), ctx.program_id)?;
+        move_lamports(
+            &vault_ai,
+            &ctx.accounts.treasury.to_account_info(),
+            out.treasury_release,
+        )?;
+    }
+    check_solvent(&vault_ai, &acct)?;
 
     ctx.accounts.ledger.write_accounting(&acct);
     ctx.accounts.pool.write_accounting(&pool_state);
@@ -423,7 +465,15 @@ pub fn close_fruit_pool(ctx: Context<CloseFruitPool>) -> Result<()> {
     emit!(FruitPoolClosed {
         pool: ctx.accounts.pool.key(),
         final_total: pool_state.final_total,
-        released,
+        released: out.released,
     });
+    if out.treasury_release > 0 {
+        emit!(LockForfeitReleased {
+            pool: ctx.accounts.pool.key(),
+            forfeited: pool_state.final_forfeited,
+            treasury_release: out.treasury_release,
+            treasury: ctx.accounts.treasury.key(),
+        });
+    }
     Ok(())
 }

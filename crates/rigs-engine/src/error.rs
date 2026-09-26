@@ -107,6 +107,15 @@ pub enum EngineError {
     FruitPoolNotReconciled,
     /// Invalid governance configuration (veto set, threshold, window, poster).
     InvalidFruitGovernance,
+    /// `compound_fee_bps > purchase_fee_bps` (architecture §7a item 2).
+    CompoundFeeAbovePurchaseFee,
+    /// Apply or cancel with no scheduled fee change.
+    NoPendingFeeChange,
+    /// Apply before the 72-hour fee-change timelock has elapsed.
+    FeeTimelockActive,
+    /// A root's `forfeited` exceeds the capacity it releases, or is set on a
+    /// root that is not marked complete.
+    InvalidForfeited,
 }
 
 impl fmt::Display for EngineError {
@@ -160,6 +169,14 @@ impl fmt::Display for EngineError {
             EngineError::FruitPoolNotEnded => "pool has not ended",
             EngineError::FruitPoolNotReconciled => "pool has no complete final root",
             EngineError::InvalidFruitGovernance => "invalid fruit governance configuration",
+            EngineError::CompoundFeeAbovePurchaseFee => {
+                "compound fee must not exceed the purchase fee"
+            }
+            EngineError::NoPendingFeeChange => "no fee change is scheduled",
+            EngineError::FeeTimelockActive => "the 72-hour fee-change timelock has not elapsed",
+            EngineError::InvalidForfeited => {
+                "forfeited must be on a complete root and within released capacity"
+            }
         };
         f.write_str(s)
     }

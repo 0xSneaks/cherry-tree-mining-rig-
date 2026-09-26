@@ -53,7 +53,7 @@ export function minerActivity(rows: readonly EventRow[], owner: Address): MinerA
         out.push({ ...base, action: 'Replant', seeds: event.rigsMinted, amountLamports: event.totalLamports, detail: null });
         break;
       case 'Claim':
-        out.push({ ...base, action: 'Harvest', seeds: null, amountLamports: event.amount, detail: event.penaltyBps > 0 ? `${event.penaltyBps / 100}% penalty` : 'Rooted' });
+        out.push({ ...base, action: 'Harvest', seeds: null, amountLamports: event.amount, detail: event.penaltyBps > 0 ? `${event.penaltyBps / 100}% early-claim fee` : 'Rooted' });
         break;
       case 'ReferralBound':
         out.push({ ...base, action: 'Referral bound', seeds: null, amountLamports: null, detail: `${event.weight} weight` });

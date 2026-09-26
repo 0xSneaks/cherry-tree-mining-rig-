@@ -242,6 +242,7 @@ describe('initialize instruction', () => {
     feeRecipient: FEE_RECIPIENT,
     founder: FEE_RECIPIENT,
     genesisCapRigs: 2_500n,
+    compoundFeeBps: 250,
   });
 
   it('targets the program', () => {
@@ -263,16 +264,17 @@ describe('initialize instruction', () => {
     expect(ix.accounts![6]!.role).toBe(AccountRole.READONLY);
   });
 
-  it('encodes V2 initialize args with the cap appended last', () => {
+  it('encodes initialize args with the cap and then the §7a compound fee appended', () => {
     const data = ix.data!;
     expect(Array.from(data.slice(0, 8))).toEqual(Array.from(IX_DISCRIMINATOR.initialize));
     // 10_000_000 little-endian u64
     expect(Array.from(data.slice(8, 16))).toEqual([128, 150, 152, 0, 0, 0, 0, 0]);
     // 300 little-endian u16
     expect(Array.from(data.slice(16, 18))).toEqual([44, 1]);
-    // reward_funder, fee_recipient, founder, genesis_cap_rigs
-    expect(data.length).toBe(8 + 8 + 2 + 32 + 32 + 32 + 8);
-    expect(new DataView(data.buffer, data.byteOffset + data.length - 8, 8).getBigUint64(0, true)).toBe(2_500n);
+    // reward_funder, fee_recipient, founder, genesis_cap_rigs, compound_fee_bps
+    expect(data.length).toBe(8 + 8 + 2 + 32 + 32 + 32 + 8 + 2);
+    expect(new DataView(data.buffer, data.byteOffset + data.length - 10, 8).getBigUint64(0, true)).toBe(2_500n);
+    expect(new DataView(data.buffer, data.byteOffset + data.length - 2, 2).getUint16(0, true)).toBe(250);
   });
 
   it('carries the fee recipient after the reward funder', () => {

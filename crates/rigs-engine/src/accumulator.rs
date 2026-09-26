@@ -75,19 +75,23 @@ pub struct RewardGlobals {
 
 /// Cumulative reward-vault bookkeeping. Lives inside the Config PDA.
 ///
-/// The fully-funded invariant is checkable in O(1) from these three counters:
+/// The fully-funded invariant is checkable in O(1) from these counters:
 /// every lamport that entered the reward vault did so through `fund_rewards`,
-/// and every lamport that left did so through `claim` or `compound`.
+/// and every lamport that left did so through `claim` (to the claimant, and
+/// the early-claim fee's treasury share to FEE) or `compound`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RewardLedger {
     pub total_reward_funded: u64,
     pub total_reward_claimed: u64,
     pub total_reward_compounded: u64,
+    /// Early-claim fee treasury shares moved REWARD → FEE (architecture §7a
+    /// item 5). Each settles the claim liability it was taken from.
+    pub total_reward_to_fees: u64,
 }
 
 impl RewardLedger {
     /// Lamports the reward vault still owes: everything funded that has not yet
-    /// left through a claim or a compound.
+    /// left through a claim, an early-claim fee treasury share or a compound.
     ///
     /// This is an upper bound on user-claimable value, because it also covers
     /// not-yet-accrued future emission, per-second flooring residue and
@@ -96,6 +100,7 @@ impl RewardLedger {
         self.total_reward_funded
             .checked_sub(self.total_reward_claimed)
             .and_then(|v| v.checked_sub(self.total_reward_compounded))
+            .and_then(|v| v.checked_sub(self.total_reward_to_fees))
             .ok_or(EngineError::MathOverflow)
     }
 }

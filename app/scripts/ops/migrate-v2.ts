@@ -4,7 +4,7 @@
  * This command cannot run from the canonical source tree: it requires an
  * explicit qualification flag and disposable program ID, rejects the
  * canonical ID, verifies Devnet from the chain, then migrates one exact
- * 321-byte Config to 329 bytes and checks the result. It never deploys,
+ * 321-byte Config to the current 375-byte (V3, §7a) layout and checks the result. It never deploys,
  * funds, or activates anything.
  */
 import { address, getAddressDecoder, getBase64Encoder } from '@solana/kit';
@@ -33,7 +33,8 @@ import {
 
 const CANONICAL_PROGRAM_ID = 'C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt';
 const V1_SIZE = 321;
-const V2_SIZE = 329;
+/** `migrate_v2` now lands directly on the current (V3, §7a) layout. */
+const V2_SIZE = 375;
 
 function bytes(encoded: readonly [string, string]): Uint8Array {
   return new Uint8Array(getBase64Encoder().encode(encoded[0]));
@@ -102,7 +103,7 @@ async function main(): Promise<void> {
   const after = bytes(afterInfo.value.data);
   if (after.length !== V2_SIZE) fail(`post-migration Config is ${after.length}, expected ${V2_SIZE}`);
   const decoded = decodeConfig(after);
-  if (decoded.version !== 2 || decoded.genesisCapRigs !== cap) {
+  if (decoded.version !== 3 || decoded.genesisCapRigs !== cap) {
     fail(`post-migration version/cap mismatch: ${decoded.version}/${decoded.genesisCapRigs}`);
   }
   if (!same(before.subarray(0, 262), after.subarray(0, 262)) ||
@@ -113,7 +114,11 @@ async function main(): Promise<void> {
   if (BigInt(afterInfo.value.lamports) !== expectedLamports) {
     fail(`Config lamports ${afterInfo.value.lamports}; expected ${expectedLamports}`);
   }
-  console.log('\nMIGRATED: disposable Devnet Config is exact V2. No funding or activation occurred.');
+  if (decoded.compoundFeeBps !== decoded.purchaseFeeBps || decoded.feeChangeEffectiveAt !== 0n ||
+      decoded.reservedCommissions !== 0n) {
+    fail('post-migration fee fields are not the §7a migration defaults.');
+  }
+  console.log('\nMIGRATED: disposable Devnet Config is exact V3. No funding or activation occurred.');
 }
 
 main().catch((e) => {

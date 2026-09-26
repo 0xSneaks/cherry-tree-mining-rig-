@@ -114,9 +114,10 @@ export function MinerCockpit({
 
       {quote && quote.gross > 0n ? (
         <p className="note" data-testid="claim-penalty">
-          Claim penalty now: {quote.penaltyBps / 100}% · you receive {formatSol(quote.net, 6)} SOL
+          Claimable {formatSol(quote.gross, 6)} SOL gross · early-claim fee now{' '}
+          {quote.penaltyBps / 100}% · you receive {formatSol(quote.net, 6)} SOL net
           {quote.secondsToNextStep !== null ? ` · drops in ${formatDuration(quote.secondsToNextStep)}` : ''}.
-          The penalty stays in the reward pool for other planters. Replanting has no penalty.
+          60% of the fee goes to the Protocol Treasury, 40% to the other planters. Replanting is never charged.
         </p>
       ) : null}
       <div className="actions">
@@ -137,7 +138,7 @@ export function MinerCockpit({
         <div className="cockpit-block" data-testid="harvest-state">
           <h3>Harvest clock</h3>
           <Readout
-            label="Current penalty"
+            label="Current early-claim fee"
             value={cadence ? (cadence.rooted ? '0% · Rooted' : `${cadence.penaltyBps / 100}%`) : '—'}
           />
           <Readout

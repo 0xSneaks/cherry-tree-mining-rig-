@@ -5,7 +5,13 @@
  */
 import type { Config, Miner } from './program/accounts';
 import { effectiveWeight, minerShares } from './program/accrual';
-import { claimPenaltyBps, PENALTY_WINDOW_SECONDS } from './program/penalty';
+import { formatSol } from './format';
+import {
+  claimPenaltyBps,
+  EARLY_CLAIM_DISCLOSURE,
+  PENALTY_WINDOW_SECONDS,
+  topUpWarning,
+} from './program/penalty';
 import { quotePurchase, rigsAffordable } from './program/pricing';
 
 export type PenaltyCadence = {
@@ -54,9 +60,12 @@ export type ReplantState = {
   totalSharesAfter: bigint;
 };
 
-/** Current-state arithmetic only: no future emission or return estimate. */
+/**
+ * Current-state arithmetic only: no future emission or return estimate.
+ * Replanting is `compound`, priced at the compound fee (architecture §7a).
+ */
 export function replantState(
-  config: Pick<Config, 'rigPriceLamports' | 'purchaseFeeBps' | 'totalShares'>,
+  config: Pick<Config, 'rigPriceLamports' | 'compoundFeeBps' | 'totalShares'>,
   miner: Pick<Miner, 'rigs' | 'weight'> | null,
   availableLamports: bigint,
 ): ReplantState {
@@ -64,10 +73,10 @@ export function replantState(
   const wholeSeeds = rigsAffordable(
     safeAvailable,
     config.rigPriceLamports,
-    BigInt(config.purchaseFeeBps),
+    BigInt(config.compoundFeeBps),
   );
   const quote = wholeSeeds > 0n
-    ? quotePurchase(wholeSeeds, config.rigPriceLamports, BigInt(config.purchaseFeeBps))
+    ? quotePurchase(wholeSeeds, config.rigPriceLamports, BigInt(config.compoundFeeBps))
     : null;
   const weight = miner ? effectiveWeight(miner) : 100n;
   const currentSeeds = miner?.rigs ?? 0n;
@@ -85,12 +94,18 @@ export function replantState(
   };
 }
 
+/**
+ * What the planter must see before signing a fresh purchase (architecture
+ * §7a items 5 and 6): the mandatory top-up warning when rewards are pending
+ * (with the current gross pending amount), otherwise the early-claim fee
+ * disclosure. Compounding needs no warning.
+ */
 export function buyResetDisclosure(hasPosition: boolean, accruedLamports: bigint): string {
-  if (!hasPosition) {
-    return 'This fresh planting starts the position’s 72-hour harvest penalty clock at the 25% band. Harvesting and replanting do not reset it.';
-  }
-  const accrued = accruedLamports > 0n
-    ? ' Your currently accrued REWARD will also return to the 25% claim band.'
-    : '';
-  return `A fresh purchase restarts the whole position’s 72-hour harvest penalty clock.${accrued} Harvesting and replanting do not reset it.`;
+  const warning = hasPosition ? topUpWarning(accruedLamports, formatSol(accruedLamports, 6)) : null;
+  return warning ?? EARLY_CLAIM_DISCLOSURE;
+}
+
+/** Whether the §7a top-up warning applies (a position with pending > 0). */
+export function showsTopUpWarning(hasPosition: boolean, accruedLamports: bigint): boolean {
+  return hasPosition && accruedLamports > 0n;
 }

@@ -375,14 +375,46 @@ fn emit_penalty_vectors() {
         1_000_000_007,
         u64::MAX,
     ];
+    // planted,now,bps,gross,fee,treasury,grove  (architecture §7a item 5)
     println!("---PENALTY---");
     for &age in &ages {
         let now = planted + age;
         let bps = claim_penalty_bps(planted, now);
         for &g in &grosses {
             let p = penalty_amount(g, bps).unwrap();
-            println!("{planted},{now},{bps},{g},{p}");
+            let (t, gr) = rigs_engine::early_claim_fee_split(p);
+            println!("{planted},{now},{bps},{g},{p},{t},{gr}");
         }
+    }
+    println!("---END---");
+}
+
+/// Emits referral-commission vectors consumed by `app/tests/fees.test.ts`:
+/// `fee,volume,commission` for real purchase quotes at every fee rate the
+/// clamp distinguishes, plus raw edge pairs.
+#[test]
+fn emit_commission_vectors() {
+    use rigs_engine::referral_commission;
+    println!("---COMMISSION---");
+    for &bps in &[0u16, 1, 500, 799, 800, 801, 900, 999, 1_000] {
+        for &price in &[1u64, 7, 13, 10_000_000, 10_000_001] {
+            for &count in &[1u64, 3, 10, 99, 250] {
+                let q = quote_purchase(count, price, bps).unwrap();
+                let c = referral_commission(q.fee_lamports, q.capital_lamports).unwrap();
+                println!("{},{},{c}", q.fee_lamports, q.capital_lamports);
+            }
+        }
+    }
+    for &(f, v) in &[
+        (0u64, 0u64),
+        (1, 0),
+        (10, 13),
+        (2, 13),
+        (3, 13),
+        (u64::MAX, 0),
+        (u64::MAX, u64::MAX),
+    ] {
+        println!("{f},{v},{}", referral_commission(f, v).unwrap());
     }
     println!("---END---");
 }

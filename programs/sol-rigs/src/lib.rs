@@ -24,8 +24,11 @@
 //! | Vault   | Receives                            | Pays out                        |
 //! |---------|-------------------------------------|---------------------------------|
 //! | CAPITAL | non-fee portion of rig purchases    | nothing — locked in this version|
-//! | REWARD  | realized revenue via `fund_rewards` | user claims and compounds only  |
-//! | FEE     | disclosed purchase fee              | authority withdrawal            |
+//! | REWARD  | realized revenue via `fund_rewards` | user claims and compounds, and  |
+//! |         |                                     | the early-claim fee's 60% → FEE |
+//! | FEE     | purchase and compound fees, the     | referral commissions (reserved) |
+//! |         | early-claim fee's treasury share    | and the unreserved remainder to |
+//! |         |                                     | the Protocol Treasury           |
 //!
 //! `buy_rigs` takes the reward vault as a **read-only** account, so there is
 //! no code path by which a purchase lamport can reach a claim.
@@ -53,6 +56,7 @@ pub mod fruit_merkle;
 pub mod fruit_state;
 pub mod identity;
 pub mod instructions;
+pub mod referral;
 pub mod skr_binding;
 pub mod state;
 pub mod vault;
@@ -75,6 +79,7 @@ pub mod sol_rigs {
         fee_recipient: Pubkey,
         founder: Pubkey,
         genesis_cap_rigs: u64,
+        compound_fee_bps: u16,
     ) -> Result<()> {
         instructions::initialize::handle_initialize(
             ctx,
@@ -84,14 +89,23 @@ pub mod sol_rigs {
             fee_recipient,
             founder,
             genesis_cap_rigs,
+            compound_fee_bps,
         )
     }
 
-    /// Migrate a live V1 Config (321 bytes) in place to V2 (329 bytes),
-    /// pinning the Genesis cap. Authority-only, one-shot, and validated
-    /// against the raw legacy account before a single byte moves.
+    /// Migrate a live V1 Config (321 bytes) in place to the current layout
+    /// (375 bytes), pinning the Genesis cap. Authority-only, one-shot, and
+    /// validated against the raw legacy account before a single byte moves.
     pub fn migrate_v2(ctx: Context<MigrateV2>, genesis_cap_rigs: u64) -> Result<()> {
         instructions::migrate_v2::handle_migrate_v2(ctx, genesis_cap_rigs)
+    }
+
+    /// Migrate a live V2 Config (329 bytes) in place to the current layout
+    /// (375 bytes): compound fee = legacy purchase fee, nothing pending,
+    /// commission and treasury counters zero. Same guarantees as
+    /// `migrate_v2`.
+    pub fn migrate_v3(ctx: Context<MigrateV3>) -> Result<()> {
+        instructions::migrate_v2::handle_migrate_v3(ctx)
     }
 
     /// Fund the reward vault and (re)write the emission schedule.
@@ -122,9 +136,17 @@ pub mod sol_rigs {
         instructions::claim::handle_claim(ctx)
     }
 
-    /// Turn the ore bin into more rigs, preserving the remainder.
-    pub fn compound(ctx: Context<CompoundRewards>) -> Result<()> {
+    /// Turn the ore bin into more rigs at `compound_fee_bps`, preserving the
+    /// remainder. Remaining accounts: `[referral_ledger]` iff referred.
+    pub fn compound<'info>(
+        ctx: Context<'_, '_, 'info, 'info, CompoundRewards<'info>>,
+    ) -> Result<()> {
         instructions::compound::handle_compound(ctx)
+    }
+
+    /// A referrer claims its whole unpaid commission from the fee vault.
+    pub fn claim_commission(ctx: Context<ClaimCommission>) -> Result<()> {
+        instructions::admin::claim_commission(ctx)
     }
 
     // --- authority ---
@@ -139,6 +161,27 @@ pub mod sol_rigs {
         purchase_fee_bps: u16,
     ) -> Result<()> {
         instructions::admin::set_pricing(ctx, rig_price_lamports, purchase_fee_bps)
+    }
+
+    /// Schedule a fee change, effective 72 hours from now. Authority only.
+    /// Replaces any pending change and restarts the delay.
+    pub fn schedule_fee_change(
+        ctx: Context<AdminOnly>,
+        purchase_fee_bps: u16,
+        compound_fee_bps: u16,
+    ) -> Result<()> {
+        instructions::admin::schedule_fee_change(ctx, purchase_fee_bps, compound_fee_bps)
+    }
+
+    /// Apply the pending fee change once its timelock has elapsed.
+    /// Permissionless.
+    pub fn apply_fee_change(ctx: Context<ApplyFeeChange>) -> Result<()> {
+        instructions::admin::apply_fee_change(ctx)
+    }
+
+    /// Cancel the pending fee change. Authority only.
+    pub fn cancel_fee_change(ctx: Context<AdminOnly>) -> Result<()> {
+        instructions::admin::cancel_fee_change(ctx)
     }
 
     pub fn set_reward_funder(ctx: Context<AdminOnly>, reward_funder: Pubkey) -> Result<()> {
@@ -158,8 +201,8 @@ pub mod sol_rigs {
         instructions::admin::accept_authority(ctx)
     }
 
-    /// Withdraw disclosed protocol fees. FEE VAULT ONLY, and only to
-    /// `config.fee_recipient`.
+    /// Withdraw disclosed protocol fees. FEE VAULT ONLY, only its unreserved
+    /// balance, and only to `config.fee_recipient`.
     pub fn withdraw_fees(ctx: Context<WithdrawFees>, amount: u64) -> Result<()> {
         instructions::admin::withdraw_fees(ctx, amount)
     }
@@ -225,6 +268,7 @@ pub mod sol_rigs {
         checkpoint_time: i64,
         total: u64,
         complete: bool,
+        forfeited: u64,
     ) -> Result<()> {
         instructions::fruit_roots::post_fruit_root(
             ctx,
@@ -233,6 +277,7 @@ pub mod sol_rigs {
             checkpoint_time,
             total,
             complete,
+            forfeited,
         )
     }
 
@@ -273,7 +318,8 @@ pub mod sol_rigs {
         instructions::fruit_claim::claim_fruit(ctx, cumulative_amount, proof)
     }
 
-    /// Reconciled close: `U -= E - final_total; Z += E - final_total`.
+    /// Reconciled close: `U -= E - final_total; Z += E - final_total`; a lock
+    /// pool then pays `floor(0.80 forfeited)` from `Z` to the treasury.
     pub fn close_fruit_pool(ctx: Context<CloseFruitPool>) -> Result<()> {
         instructions::fruit_roots::close_fruit_pool(ctx)
     }

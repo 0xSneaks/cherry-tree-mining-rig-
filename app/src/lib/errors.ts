@@ -84,6 +84,17 @@ export const ANCHOR_ERROR_NAMES = [
   'FruitVersionMismatch',
   'LockPoolsNotImplemented',
   'ReserveRecipientMismatch',
+  'CompoundFeeAbovePurchaseFee',
+  'NoPendingFeeChange',
+  'FeeTimelockActive',
+  'FeeChangeRequiresTimelock',
+  'MissingReferralLedger',
+  'ReferralLedgerInvalid',
+  'NothingToClaimCommission',
+  'CommissionReservationBroken',
+  'TreasuryDestinationInvalid',
+  'InvalidForfeited',
+  'ForfeitOnlyOnLockLedger',
 ] as const;
 
 export type AnchorErrorName = (typeof ANCHOR_ERROR_NAMES)[number];
@@ -101,6 +112,9 @@ const PRODUCT_COPY: Partial<Record<AnchorErrorName, string>> = {
   GenesisCapExceeded: 'This purchase exceeds your remaining Genesis fresh-buy allowance.',
   WalletCapExceeded: 'A wallet can hold at most 250 seeds.',
   SkrDomainBound: 'This .skr domain has already opened Day-1 access for another wallet.',
+  NothingToClaimCommission: 'No referral commission is waiting to be claimed.',
+  MissingReferralLedger: 'This grove is referred — the referrer’s commission account must be included. Refresh and try again.',
+  FeeTimelockActive: 'The scheduled fee change cannot be applied until its 72-hour notice period ends.',
 };
 
 export type ExplainedError = {

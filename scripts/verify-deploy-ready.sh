@@ -115,7 +115,7 @@ done
 echo
 echo "--> configuration documented"
 for v in SOLANA_CLUSTER SOLANA_RPC_URL ANCHOR_WALLET CHERRY_TREE_REWARD_FUNDER \
-         CHERRY_TREE_RIG_PRICE_LAMPORTS CHERRY_TREE_PURCHASE_FEE_BPS \
+         CHERRY_TREE_RIG_PRICE_LAMPORTS CHERRY_TREE_PURCHASE_FEE_BPS CHERRY_TREE_COMPOUND_FEE_BPS \
          CHERRY_TREE_GENESIS_CAP_RIGS CHERRY_APP_ID; do
   grep -q "^# *$v=\|^$v=" .env.example && pass ".env.example documents $v" \
     || bad ".env.example does not document $v"

@@ -2,6 +2,7 @@
 
 use crate::accumulator::{RewardGlobals, RewardLedger, PRECISION, WEIGHT_BASE};
 use crate::error::{EngineError, EngineResult};
+use crate::fees::early_claim_fee_split;
 use crate::penalty::{claim_penalty_bps, penalty_amount};
 use crate::pricing::{quote_purchase, rigs_affordable, wallet_headroom, PurchaseQuote};
 
@@ -33,9 +34,15 @@ pub struct MinerPosition {
 pub struct ClaimOutcome {
     /// Everything settled in the ore bin.
     pub gross: u64,
+    /// Early-claim fee rate applied.
     pub penalty_bps: u64,
-    /// Forfeited and re-credited to every share; stays in the reward vault.
+    /// Early-claim fee `x`: `penalty_treasury + penalty_grove`.
     pub penalty: u64,
+    /// `floor(0.60 x)`: reward vault -> fee vault, Protocol Treasury revenue.
+    pub penalty_treasury: u64,
+    /// `x - penalty_treasury`: stays in the reward vault, re-credited to the
+    /// other planters (or dust).
+    pub penalty_grove: u64,
     /// Paid to the planter: `gross − penalty`.
     pub net: u64,
 }
@@ -139,7 +146,8 @@ pub fn buy_rigs(
         .rigs
         .checked_add(count)
         .ok_or(EngineError::MathOverflow)?;
-    // Claim-penalty reset: new capital restarts the clock for the position.
+    // Early-claim fee anchor reset: new capital restarts the clock for the
+    // whole position (architecture §7a item 6; disclosed before a top-up).
     position.last_planted_at = now;
     position.lifetime_rigs_bought = position
         .lifetime_rigs_bought
@@ -158,10 +166,11 @@ pub fn buy_rigs(
 /// Zeroes `pending_rewards` *before* the caller performs the external
 /// transfer, so a replay finds nothing left to pay. Rigs are untouched.
 ///
-/// Applies the claim penalty ([`crate::penalty`]): the caller transfers
-/// `net` only; `penalty` never leaves the reward vault and is re-credited to
-/// every other planter's shares here — then the claimer's watermark is moved
-/// past it, so the claimer recovers none of it.
+/// Applies the early-claim fee ([`crate::penalty`]): the caller transfers
+/// `net` to the claimant and `penalty_treasury` to the fee vault; the grove
+/// share never leaves the reward vault and is re-credited to every other
+/// planter's shares here — then the claimer's watermark is moved past it, so
+/// the claimer recovers none of it.
 pub fn claim(
     globals: &mut RewardGlobals,
     position: &mut MinerPosition,
@@ -176,10 +185,11 @@ pub fn claim(
     }
     let penalty_bps = claim_penalty_bps(position.last_planted_at, now);
     let penalty = penalty_amount(gross, penalty_bps)?;
+    let (penalty_treasury, penalty_grove) = early_claim_fee_split(penalty);
     let net = gross - penalty;
 
     position.pending_rewards = 0;
-    globals.redistribute_excluding(penalty, position.shares()?)?;
+    globals.redistribute_excluding(penalty_grove, position.shares()?)?;
     position.reward_per_rig_paid = globals.reward_per_rig_stored;
 
     position.lifetime_sol_claimed = position
@@ -190,11 +200,17 @@ pub fn claim(
         .total_reward_claimed
         .checked_add(net)
         .ok_or(EngineError::MathOverflow)?;
+    ledger.total_reward_to_fees = ledger
+        .total_reward_to_fees
+        .checked_add(penalty_treasury)
+        .ok_or(EngineError::MathOverflow)?;
 
     Ok(ClaimOutcome {
         gross,
         penalty_bps,
         penalty,
+        penalty_treasury,
+        penalty_grove,
         net,
     })
 }
@@ -204,6 +220,9 @@ pub fn claim(
 /// Spends as much of the ore bin as buys whole rigs, preserves the exact
 /// remainder, and tells the caller precisely how many lamports must move out
 /// of the reward vault and into the capital and fee vaults.
+///
+/// Priced at `compound_fee_bps` (architecture §7a item 2), never the purchase
+/// fee. Never touches `last_planted_at` and never pays the early-claim fee.
 ///
 /// Capped: mints `min(affordable, MAX_WALLET_RIGS - rigs)` and debits only
 /// the exact quote for that count; everything else stays claimable. With zero
@@ -216,7 +235,7 @@ pub fn compound(
     ledger: &mut RewardLedger,
     now: i64,
     rig_price_lamports: u64,
-    purchase_fee_bps: u16,
+    compound_fee_bps: u16,
 ) -> EngineResult<CompoundOutcome> {
     let headroom = wallet_headroom(position.rigs);
     if headroom == 0 {
@@ -228,14 +247,14 @@ pub fn compound(
     let affordable = rigs_affordable(
         position.pending_rewards,
         rig_price_lamports,
-        purchase_fee_bps,
+        compound_fee_bps,
     )?;
     let count = affordable.min(headroom);
     if count == 0 {
         return Err(EngineError::NothingToCompound);
     }
 
-    let quote = quote_purchase(count, rig_price_lamports, purchase_fee_bps)?;
+    let quote = quote_purchase(count, rig_price_lamports, compound_fee_bps)?;
 
     // Deduct only the exact amount spent. The remainder stays claimable.
     position.pending_rewards = position

@@ -44,10 +44,35 @@ fn discriminators_match_the_typescript_client() {
             "withdrawFees",
             hex(sol_rigs::instruction::WithdrawFees::DISCRIMINATOR),
         ),
+        // §7a protocol fees
+        (
+            "claimCommission",
+            hex(sol_rigs::instruction::ClaimCommission::DISCRIMINATOR),
+        ),
+        (
+            "applyFeeChange",
+            hex(sol_rigs::instruction::ApplyFeeChange::DISCRIMINATOR),
+        ),
+        (
+            "scheduleFeeChange",
+            hex(sol_rigs::instruction::ScheduleFeeChange::DISCRIMINATOR),
+        ),
+        (
+            "cancelFeeChange",
+            hex(sol_rigs::instruction::CancelFeeChange::DISCRIMINATOR),
+        ),
+        (
+            "migrateV3",
+            hex(sol_rigs::instruction::MigrateV3::DISCRIMINATOR),
+        ),
         // accounts
         ("Config", hex(sol_rigs::state::Config::DISCRIMINATOR)),
         ("Miner", hex(sol_rigs::state::Miner::DISCRIMINATOR)),
         ("Vault", hex(sol_rigs::state::Vault::DISCRIMINATOR)),
+        (
+            "ReferralLedger",
+            hex(sol_rigs::state::ReferralLedger::DISCRIMINATOR),
+        ),
     ];
 
     // Regenerate with: cargo test -p sol-rigs --test discriminators -- --nocapture
@@ -64,9 +89,15 @@ fn discriminators_match_the_typescript_client() {
         ("compound", "a5d0fb4ef2a08d2f"),
         ("setFeeRecipient", "e312d72aedf69742"),
         ("withdrawFees", "c6d4ab6d90d7ae59"),
+        ("claimCommission", "0c090faa9beb7cfe"),
+        ("applyFeeChange", "e7b15c75f934c370"),
+        ("scheduleFeeChange", "4117d76e1094f993"),
+        ("cancelFeeChange", "a52beb3f1f674984"),
+        ("migrateV3", "f5aa677c90bb1566"),
         ("Config", "9b0caae01efacc82"),
         ("Miner", "df710f367b7a8c64"),
         ("Vault", "d308e82b02987577"),
+        ("ReferralLedger", "a30861cf910b5b80"),
     ];
 
     for ((name, actual), (ename, eexpected)) in pairs.iter().zip(expected) {
@@ -115,7 +146,7 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         capital_vault_bump: 250,
         reward_vault_bump: 251,
         fee_vault_bump: 252,
-        version: 2,
+        version: 3,
         bump: 253,
         // The founder activation wallet the preflight expects.
         founder: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
@@ -125,6 +156,16 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         total_claim_penalties: 2_500_000,
         // Production V2 field — an explicit safe fixture value.
         genesis_cap_rigs: 2_500,
+        // V3 protocol-fee fields (architecture §7a): distinct values so a
+        // decoder that shifts by one field fails loudly.
+        compound_fee_bps: 250,
+        pending_purchase_fee_bps: 900,
+        pending_compound_fee_bps: 800,
+        fee_change_effective_at: 1_780_259_200,
+        reserved_commissions: 3_333_333,
+        total_commissions_reserved: 4_444_444,
+        total_commissions_paid: 1_111_111,
+        total_reward_to_fees: 5_555_555,
     };
     let miner = sol_rigs::state::Miner {
         owner: Pubkey::new_from_array([9u8; 32]),

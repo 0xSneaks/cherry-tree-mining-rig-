@@ -38,6 +38,7 @@ const PROGRAM_SOURCES: &[(&str, &str)] = &[
     ("skr_binding.rs", include_str!("../src/skr_binding.rs")),
     ("vault.rs", include_str!("../src/vault.rs")),
     ("identity.rs", include_str!("../src/identity.rs")),
+    ("referral.rs", include_str!("../src/referral.rs")),
     (
         "instructions/admin.rs",
         include_str!("../src/instructions/admin.rs"),
@@ -119,12 +120,17 @@ fn the_instruction_set_has_no_bonus_lock_or_commission_path() {
     ixs.sort();
     let mut expected = vec![
         "accept_authority",
+        "apply_fee_change",
         "buy_rigs",
+        "cancel_fee_change",
         "claim",
+        "claim_commission",
         "compound",
         "fund_rewards",
         "initialize",
         "migrate_v2",
+        "migrate_v3",
+        "schedule_fee_change",
         "set_fee_recipient",
         "set_paused",
         "set_pricing",
@@ -135,12 +141,20 @@ fn the_instruction_set_has_no_bonus_lock_or_commission_path() {
     expected.extend_from_slice(FRUIT_INSTRUCTIONS);
     expected.sort();
     assert_eq!(ixs, expected);
-    for banned in ["loyalty", "lock", "bonus", "commission"] {
+    for banned in ["loyalty", "lock", "bonus"] {
         assert!(
             !ixs.iter().any(|i| i.contains(banned)),
             "a `{banned}` instruction exists; it must never create seeds"
         );
     }
+    // Architecture §7a item 4: exactly one commission instruction, the
+    // reviewed referrer payout (see `commission_code_never_reaches_seeds`).
+    assert_eq!(
+        ixs.iter()
+            .filter(|i| i.contains("commission"))
+            .collect::<Vec<_>>(),
+        vec!["claim_commission"]
+    );
     // Every instruction naming Fruit is one of the reviewed Fruit set.
     for i in ixs.iter().filter(|i| i.contains("fruit")) {
         assert!(
@@ -228,4 +242,44 @@ fn seed_counts_change_only_in_the_two_capped_engine_transitions() {
             "seed-count write in {file}"
         );
     }
+}
+
+/// Test 11 (commission part): commission SOL is reserved in, and paid out
+/// of, the fee vault only. The referral module and the admin instructions
+/// (where `claim_commission` lives) never reach a seed count, a miner
+/// position, the compound path, the capital or reward vault, or a Fruit
+/// account.
+#[test]
+fn commission_code_never_reaches_seeds() {
+    const REFERRAL: &str = include_str!("../src/referral.rs");
+    const ADMIN: &str = include_str!("../src/instructions/admin.rs");
+    let code = |src: &str| -> String {
+        src.lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    for (file, src) in [("referral.rs", REFERRAL), ("admin.rs", ADMIN)] {
+        let src = code(src);
+        for needle in [
+            "Miner",
+            "MinerPosition",
+            ".rigs",
+            "add_rigs",
+            "buy_rigs",
+            "rigs_engine::compound",
+            "RewardGlobals",
+            "CAPITAL_VAULT_SEED",
+            "REWARD_VAULT_SEED",
+            "FRUIT_",
+            "fruit",
+        ] {
+            assert!(!src.contains(needle), "{file} references `{needle}`");
+        }
+    }
+    // The referral module moves no lamports out of any vault: it only
+    // raises counters (and pays rent for its own ledger PDA).
+    let r = code(REFERRAL);
+    assert!(!r.contains("move_lamports"));
+    assert!(!r.contains("FEE_VAULT_SEED"));
 }

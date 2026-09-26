@@ -14,12 +14,12 @@ describe('penalty cockpit cadence', () => {
   const planted = 1_000_000n;
 
   it.each([
-    ['25% start', 0n, 2_500, 1_500, DAY, 3n * DAY],
-    ['25% final second', DAY - 1n, 2_500, 1_500, 1n, 2n * DAY + 1n],
-    ['15% exact boundary', DAY, 1_500, 500, DAY, 2n * DAY],
-    ['15% final second', 2n * DAY - 1n, 1_500, 500, 1n, DAY + 1n],
-    ['5% exact boundary', 2n * DAY, 500, 0, DAY, DAY],
-    ['5% final second', 3n * DAY - 1n, 500, 0, 1n, 1n],
+    ['30% start', 0n, 3_000, 2_000, DAY, 3n * DAY],
+    ['30% final second', DAY - 1n, 3_000, 2_000, 1n, 2n * DAY + 1n],
+    ['20% exact boundary', DAY, 2_000, 1_000, DAY, 2n * DAY],
+    ['20% final second', 2n * DAY - 1n, 2_000, 1_000, 1n, DAY + 1n],
+    ['10% exact boundary', 2n * DAY, 1_000, 0, DAY, DAY],
+    ['10% final second', 3n * DAY - 1n, 1_000, 0, 1n, 1n],
   ])('%s', (_label, age, bps, next, toNext, toRooted) => {
     expect(penaltyCadence(planted, planted + age)).toEqual({
       penaltyBps: bps,
@@ -42,12 +42,13 @@ describe('penalty cockpit cadence', () => {
 
   it('treats a chain clock behind the planting anchor as age zero', () => {
     const state = penaltyCadence(planted, planted - 5n);
-    expect(state).toMatchObject({ penaltyBps: 2_500, secondsToNextStep: DAY });
+    expect(state).toMatchObject({ penaltyBps: 3_000, secondsToNextStep: DAY });
   });
 });
 
 describe('replant current-state arithmetic', () => {
-  const config = { rigPriceLamports: 10_000_000n, purchaseFeeBps: 300, totalShares: 100_000n };
+  // Replant is `compound`, priced at the compound fee (architecture §7a).
+  const config = { rigPriceLamports: 10_000_000n, compoundFeeBps: 300, totalShares: 100_000n };
   const miner = { rigs: 42n, weight: 105 };
 
   it('mints only whole seeds, includes the fee, and preserves dust', () => {
@@ -69,18 +70,26 @@ describe('replant current-state arithmetic', () => {
 });
 
 describe('fresh-buy reset disclosure', () => {
-  it('warns an existing planter that accrued REWARD returns to the 25% band', () => {
-    const copy = buyResetDisclosure(true, 1n);
-    expect(copy).toMatch(/restarts the whole position’s 72-hour/i);
-    expect(copy).toMatch(/accrued REWARD.*25%/i);
-    expect(copy).toMatch(/Harvesting and replanting do not reset/i);
+  it('shows the §7a top-up warning, with the pending amount, when rewards are pending', () => {
+    const copy = buyResetDisclosure(true, 1_500_000n);
+    expect(copy).toBe(
+      'Buying more seeds restarts your early-claim timer. Your unclaimed rewards ' +
+        '(0.001500 SOL) would then carry the 30% early-claim fee for the next 24 hours. ' +
+        'Claim them first to keep the full amount.',
+    );
     expect(copy).not.toMatch(/should|profit|guarantee|ROI|return per day/i);
   });
 
-  it('accurately describes a first planting', () => {
-    const copy = buyResetDisclosure(false, 0n);
-    expect(copy).toMatch(/starts the position’s 72-hour/i);
-    expect(copy).not.toMatch(/restarts the whole position/i);
+  it('shows no top-up warning when nothing is pending, only the fee disclosure', () => {
+    for (const [has, pending] of [
+      [true, 0n],
+      [false, 0n],
+    ] as const) {
+      const copy = buyResetDisclosure(has, pending);
+      expect(copy).not.toMatch(/restarts your early-claim timer/i);
+      expect(copy).toMatch(/30% under 24h, 20% from 24h to 48h, 10% from 48h to 72h, 0% after/);
+      expect(copy).toMatch(/60% of the fee goes to the Protocol Treasury and 40% is redistributed/);
+    }
   });
 });
 
@@ -105,7 +114,7 @@ describe('personal activity', () => {
       'Referral bound',
       'Founder activation',
     ]);
-    expect(activity[2]).toMatchObject({ amountLamports: 75n, detail: '25% penalty' });
+    expect(activity[2]).toMatchObject({ amountLamports: 75n, detail: '25% early-claim fee' });
   });
 
   it('returns an empty history and rejects unsafe explorer signatures', () => {

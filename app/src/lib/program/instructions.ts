@@ -32,13 +32,16 @@ function ix(
  * `buy_rigs(count, referrer)` — see `instructions/buy_rigs.rs`.
  *
  * Args: `u64 count` then Borsh `Option<Pubkey>` (`0` | `1 ‖ 32 bytes`).
- * Remaining accounts: `[identity…, skr_binding?, referrer_miner?]` — the
- * buyer's `.skr` / `.sns` proof (`[name]` direct, `[name, nft_record,
- * token_account]` wrapped or tokenized, or nothing), then — for a `.skr`
- * proof — the writable Day-1 binding PDA `["skr_bind", name]` (required
- * during Day 1, ignored otherwise), then the referrer's miner PDA iff a
- * referrer is named. The program verifies all of it; the client choosing
- * them grants nothing.
+ * Remaining accounts: `[identity…, skr_binding?, referrer_miner?,
+ * referral_ledger?]` — the buyer's `.skr` / `.sns` proof (`[name]` direct,
+ * `[name, nft_record, token_account]` wrapped or tokenized, or nothing),
+ * then — for a `.skr` proof — the writable Day-1 binding PDA
+ * `["skr_bind", name]` (required during Day 1, ignored otherwise), then the
+ * referrer's miner PDA iff a referrer is named, then the writable referral
+ * ledger `["referral", referrer]` iff the position is referred (bound
+ * earlier, or bound by this purchase) — the program reserves the referrer's
+ * commission there (architecture §7a). The program verifies all of it; the
+ * client choosing them grants nothing.
  */
 export function buyRigsInstruction(
   owner: Address,
@@ -49,6 +52,8 @@ export function buyRigsInstruction(
     identity?: readonly Address[];
     skrBinding?: Address | null;
     referrer?: { wallet: Address; miner: Address } | null;
+    /** `["referral", referrer]` of the position's (new or bound) referrer. */
+    referralLedger?: Address | null;
   } = {},
 ): Instruction {
   const countBytes = getU64Encoder().encode(count);
@@ -73,12 +78,18 @@ export function buyRigsInstruction(
       // Writable: the first Day-1 use of a domain creates its binding.
       ...(opts.skrBinding ? [{ address: opts.skrBinding, role: AccountRole.WRITABLE }] : []),
       ...(referrer ? [{ address: referrer.miner, role: AccountRole.READONLY }] : []),
+      ...(opts.referralLedger
+        ? [{ address: opts.referralLedger, role: AccountRole.WRITABLE }]
+        : []),
     ],
     args,
   );
 }
 
-/** `claim()` — see `instructions/claim.rs`. */
+/**
+ * `claim()` — see `instructions/claim.rs`. The fee vault receives the
+ * early-claim fee's 60% treasury share (architecture §7a item 5).
+ */
 export function claimInstruction(
   owner: Address,
   miner: Address,
@@ -89,14 +100,19 @@ export function claimInstruction(
     { address: pdas.config, role: AccountRole.WRITABLE },
     { address: miner, role: AccountRole.WRITABLE },
     { address: pdas.rewardVault, role: AccountRole.WRITABLE },
+    { address: pdas.feeVault, role: AccountRole.WRITABLE },
   ]);
 }
 
-/** `compound()` — see `instructions/compound.rs`. */
+/**
+ * `compound()` — see `instructions/compound.rs`. Remaining accounts:
+ * `[referral_ledger]` iff the position has a referrer.
+ */
 export function compoundInstruction(
   owner: Address,
   miner: Address,
   pdas: ProgramAddresses,
+  opts: { referralLedger?: Address | null } = {},
 ): Instruction {
   return ix(IX_DISCRIMINATOR.compound, [
     { address: owner, role: AccountRole.WRITABLE_SIGNER },
@@ -105,5 +121,37 @@ export function compoundInstruction(
     { address: pdas.rewardVault, role: AccountRole.WRITABLE },
     { address: pdas.capitalVault, role: AccountRole.WRITABLE },
     { address: pdas.feeVault, role: AccountRole.WRITABLE },
+    { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    ...(opts.referralLedger
+      ? [{ address: opts.referralLedger, role: AccountRole.WRITABLE }]
+      : []),
+  ]);
+}
+
+/**
+ * `claim_commission()` — see `instructions/admin.rs::ClaimCommission`. Pays
+ * the referrer's whole unpaid commission from the fee vault.
+ */
+export function claimCommissionInstruction(
+  referrer: Address,
+  referralLedger: Address,
+  pdas: ProgramAddresses,
+): Instruction {
+  return ix(IX_DISCRIMINATOR.claimCommission, [
+    { address: referrer, role: AccountRole.WRITABLE_SIGNER },
+    { address: pdas.config, role: AccountRole.WRITABLE },
+    { address: referralLedger, role: AccountRole.WRITABLE },
+    { address: pdas.feeVault, role: AccountRole.WRITABLE },
+  ]);
+}
+
+/**
+ * `apply_fee_change()` — permissionless once the 72-hour timelock has
+ * elapsed. See `instructions/admin.rs::ApplyFeeChange`.
+ */
+export function applyFeeChangeInstruction(caller: Address, pdas: ProgramAddresses): Instruction {
+  return ix(IX_DISCRIMINATOR.applyFeeChange, [
+    { address: caller, role: AccountRole.READONLY_SIGNER },
+    { address: pdas.config, role: AccountRole.WRITABLE },
   ]);
 }

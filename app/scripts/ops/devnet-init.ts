@@ -61,6 +61,12 @@ async function main(): Promise<void> {
   const purchaseFeeBps = Number(
     requireEnv('CHERRY_TREE_PURCHASE_FEE_BPS', 'e.g. 300 for 3.00%.'),
   );
+  const compoundFeeBps = Number(
+    requireEnv(
+      'CHERRY_TREE_COMPOUND_FEE_BPS',
+      'Set the compound fee explicitly (architecture §7a); it must not exceed the purchase fee.',
+    ),
+  );
   const genesisCapRigs = BigInt(
     requireEnv(
       'CHERRY_TREE_GENESIS_CAP_RIGS',
@@ -97,6 +103,9 @@ async function main(): Promise<void> {
   if (!Number.isInteger(purchaseFeeBps) || purchaseFeeBps < 0 || purchaseFeeBps > 1000) {
     fail('CHERRY_TREE_PURCHASE_FEE_BPS must be an integer in 0..=1000 (the program caps it at 1000).');
   }
+  if (!Number.isInteger(compoundFeeBps) || compoundFeeBps < 0 || compoundFeeBps > purchaseFeeBps) {
+    fail('CHERRY_TREE_COMPOUND_FEE_BPS must be an integer in 0..=CHERRY_TREE_PURCHASE_FEE_BPS.');
+  }
   if (genesisCapRigs !== GENESIS_CAP_RIGS) {
     fail(`CHERRY_TREE_GENESIS_CAP_RIGS must be exactly ${GENESIS_CAP_RIGS} (the program refuses any other cap).`);
   }
@@ -117,6 +126,7 @@ async function main(): Promise<void> {
   row('founder (no setter in this version)', founder);
   row('rig price', `${rigPriceLamports} lamports (${sol(rigPriceLamports)} SOL)`);
   row('purchase fee', `${purchaseFeeBps} bps (${(purchaseFeeBps / 100).toFixed(2)}%)`);
+  row('compound fee', `${compoundFeeBps} bps (${(compoundFeeBps / 100).toFixed(2)}%)`);
   row('Genesis cap', `${genesisCapRigs} fresh seeds per wallet`);
   console.log();
   row('CONFIG PDA', pdas.config);
@@ -158,6 +168,7 @@ async function main(): Promise<void> {
       feeRecipient,
       founder,
       genesisCapRigs,
+      compoundFeeBps,
     }),
   );
   row('signature', signature);
@@ -175,6 +186,9 @@ async function main(): Promise<void> {
     ['launch_t0 (initialize must NOT activate)', config.launchT0, 0n],
     ['rig_price_lamports', config.rigPriceLamports, rigPriceLamports],
     ['purchase_fee_bps', config.purchaseFeeBps, purchaseFeeBps],
+    ['compound_fee_bps', config.compoundFeeBps, compoundFeeBps],
+    ['fee_change_effective_at (nothing pending)', config.feeChangeEffectiveAt, 0n],
+    ['reserved_commissions', config.reservedCommissions, 0n],
     ['total_rigs', config.totalRigs, 0n],
     ['total_reward_funded', config.totalRewardFunded, 0n],
     ['total_reward_claimed', config.totalRewardClaimed, 0n],
@@ -184,7 +198,7 @@ async function main(): Promise<void> {
     ['miner_count', config.minerCount, 0n],
     ['paused', config.paused, false],
     ['pending_authority', config.pendingAuthority, '11111111111111111111111111111111'],
-    ['version', config.version, 2],
+    ['version', config.version, 3],
   ];
 
   let bad = 0;

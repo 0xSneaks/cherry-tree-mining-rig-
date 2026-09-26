@@ -183,7 +183,8 @@ export function projectCompounding(
     throw new Error('projection interval too fine');
   }
   const price = config.rigPriceLamports;
-  const fee = BigInt(config.purchaseFeeBps);
+  // The projection compounds, so it prices seeds at the compound fee (§7a).
+  const fee = BigInt(config.compoundFeeBps);
 
   const g: Globals = {
     totalShares: config.totalShares,

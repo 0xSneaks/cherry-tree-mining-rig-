@@ -194,6 +194,10 @@ pub struct Env {
     /// wallet → its `.skr` name account, for wallets planted with a `.skr`.
     /// `buy_ix` appends that domain's binding PDA, as the client does.
     pub skr_names: std::collections::HashMap<Pubkey, Pubkey>,
+    /// wallet → the referrer it last named. `buy_ix` / `compound_ix` append
+    /// that referrer's referral ledger, as the client does for a referred
+    /// position.
+    pub referrers: std::cell::RefCell<std::collections::HashMap<Pubkey, Pubkey>>,
     /// Where fees are configured to land. Not a signer — see [`FEE_RECIPIENT`].
     pub fee_recipient: Pubkey,
     pub funder: Keypair,
@@ -217,6 +221,10 @@ pub fn fee_vault_pda() -> Pubkey {
     Pubkey::find_program_address(&[FEE_VAULT_SEED], &sol_rigs::ID).0
 }
 /// Day-1 `.skr` binding PDA for a domain's ANS name account.
+pub fn referral_pda(referrer: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[REFERRAL_SEED, referrer.as_ref()], &sol_rigs::ID).0
+}
+
 pub fn skr_binding_pda(name: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[SKR_BIND_SEED, name.as_ref()], &sol_rigs::ID).0
 }
@@ -343,6 +351,7 @@ impl Env {
             frank,
             identities,
             skr_names,
+            referrers: Default::default(),
         }
     }
 
@@ -432,6 +441,29 @@ impl Env {
             fee_recipient: self.fee_recipient,
             founder: self.founder.pubkey(),
             genesis_cap_rigs,
+            compound_fee_bps: FEE_BPS,
+        }
+        .data();
+        let auth = self.authority.insecure_clone();
+        self.send(ix, &[&auth]).await
+    }
+
+    /// `initialize` with explicit purchase and compound fees (architecture
+    /// §7a), otherwise the fixture's values.
+    pub async fn initialize_with_fees(
+        &mut self,
+        purchase_fee_bps: u16,
+        compound_fee_bps: u16,
+    ) -> Result<(), TransportError> {
+        let mut ix = self.initialize_ix(&self.authority.pubkey(), program_data_pda());
+        ix.data = sol_rigs::instruction::Initialize {
+            rig_price_lamports: RIG_PRICE,
+            purchase_fee_bps,
+            reward_funder: self.funder.pubkey(),
+            fee_recipient: self.fee_recipient,
+            founder: self.founder.pubkey(),
+            genesis_cap_rigs: GENESIS_CAP,
+            compound_fee_bps,
         }
         .data();
         let auth = self.authority.insecure_clone();
@@ -460,6 +492,7 @@ impl Env {
                 fee_recipient: self.fee_recipient,
                 founder: self.founder.pubkey(),
                 genesis_cap_rigs: GENESIS_CAP,
+                compound_fee_bps: FEE_BPS,
             }
             .data(),
         }
@@ -532,9 +565,17 @@ impl Env {
         if let Some(b) = binding {
             ix.accounts.push(AccountMeta::new(b, false));
         }
-        if let Some((_, referrer_miner)) = referrer {
+        if let Some((referrer_key, referrer_miner)) = referrer {
             ix.accounts
                 .push(AccountMeta::new_readonly(referrer_miner, false));
+            // The referral ledger travels last whenever the position is
+            // referred (architecture §7). Remember the named referrer so
+            // later buys / compounds by this wallet carry the ledger too.
+            ix.accounts
+                .push(AccountMeta::new(referral_pda(&referrer_key), false));
+            self.referrers.borrow_mut().insert(*owner, referrer_key);
+        } else if let Some(r) = self.referrers.borrow().get(owner) {
+            ix.accounts.push(AccountMeta::new(referral_pda(r), false));
         }
         ix
     }
@@ -587,6 +628,7 @@ impl Env {
                 config: config_pda(),
                 miner,
                 reward_vault: reward_vault_pda(),
+                fee_vault: fee_vault_pda(),
             }
             .to_account_metas(None),
             data: sol_rigs::instruction::Claim {}.data(),
@@ -600,7 +642,7 @@ impl Env {
     }
 
     pub fn compound_ix(&self, owner: &Pubkey) -> Instruction {
-        Instruction {
+        let mut ix = Instruction {
             program_id: sol_rigs::ID,
             accounts: sol_rigs::accounts::CompoundRewards {
                 owner: *owner,
@@ -609,10 +651,18 @@ impl Env {
                 reward_vault: reward_vault_pda(),
                 capital_vault: capital_vault_pda(),
                 fee_vault: fee_vault_pda(),
+                system_program: solana_sdk::system_program::ID,
             }
             .to_account_metas(None),
             data: sol_rigs::instruction::Compound {}.data(),
+        };
+        if let Some(r) = self.referrers.borrow().get(owner) {
+            ix.accounts.push(solana_sdk::instruction::AccountMeta::new(
+                referral_pda(r),
+                false,
+            ));
         }
+        ix
     }
 
     pub async fn compound(&mut self, who: &Keypair) -> Result<(), TransportError> {

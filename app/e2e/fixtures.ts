@@ -89,7 +89,7 @@ const RPR_PAID = 1_000_000_000_000_000_000n - 4_355_000_000_000_000n;
 const OFF_MINER_WEIGHT = 129;
 /** `Miner.last_planted_at`: the last field (discriminator included). */
 const OFF_MINER_LAST_PLANTED = 163;
-/** Planted 30h before the stub's default clock → the 15% band. */
+/** Planted 30h before the stub's default clock → the 20% early-claim band. */
 export const LAST_PLANTED_AT = 1_780_000_000n - 30n * 3_600n;
 
 export type StubOptions = {

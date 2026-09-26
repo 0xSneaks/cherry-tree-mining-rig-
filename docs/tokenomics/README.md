@@ -17,3 +17,10 @@ binding (§4); tests 1, 2, 3, 4 (engine part), 5, 8 (preflight), 9–15 of §14.
 Implementation pass #2: on-chain Fruit ledger foundation (§10 / §10a) —
 CORE / LOYALTY / LOCK ledgers and vaults, `V >= L + U + Z`, roots with
 challenge window, Merkle claims, close, pause, versioning; tests 55–67, 73–76.
+
+Implementation pass #3: protocol fee implementation (§7a) — independent
+compound fee, 72-hour fee timelock, 30/20/10/0 early-claim fee split 60/40,
+20/80 referral commission with the 8% retained-margin clamp, reserved in FEE
+and claimed by `claim_commission`, `withdraw_fees` reservation guard, 80/20
+lock-forfeit release at lock-pool close, Config V3 migration, TypeScript
+mirrors and disclosures; tests 6 (fee half), 68–72, 78–87, 89–91.

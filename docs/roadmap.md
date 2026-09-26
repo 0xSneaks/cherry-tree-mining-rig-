@@ -4,11 +4,13 @@ Last verified: 2026-09-26. Source: release lane `mainnet/rc-hardening` (`f0d5e96
 
 ## Where the plan lives
 
-The repository maintains the plan of record:
+The full plan of record is mirrored verbatim in the [Canonical reference](canonical/CHERRY_TREE_FRUIT_TOKENOMICS.md) section of this space (copies of branch `z-ai/cherry-docs-roadmap` @ `2ccbac2`, 2026-09-26) and maintained in the repository:
 
 - [Implementation roadmap](https://github.com/PhantomCapAI/cherry-tree-mining-rig-/blob/z-ai/cherry-docs-roadmap/docs/CHERRY_TREE_IMPLEMENTATION_ROADMAP.md) — 33 dependency-ordered tasks with acceptance criteria and evidence rules.
 - [Decision register](https://github.com/PhantomCapAI/cherry-tree-mining-rig-/blob/z-ai/cherry-docs-roadmap/docs/CHERRY_TREE_DECISIONS.md) — open decisions D01–D11; founder-set decisions C-01–C-20.
 - [Status / handoff](https://github.com/PhantomCapAI/cherry-tree-mining-rig-/blob/z-ai/cherry-docs-roadmap/docs/CHERRY_TREE_STATUS.md) — exactly one next actionable task at any time.
+
+The repository branch is the source of truth; the mirrors here are refreshed when it changes.
 
 ## Phase
 

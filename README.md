@@ -12,6 +12,7 @@ THE CHERRY TREE is a Solana-native mining simulation. Users buy non-redeemable r
 - [Protocol](docs/protocol.md) · [Economics](docs/economics.md) · [Security](docs/security.md)
 - [Development](docs/development.md) · [Deployment](docs/deployment.md) · [Operations](docs/operations.md) · [Glossary](docs/glossary.md)
 - [What's next](docs/whats-next.md) · [Roadmap and status](docs/roadmap.md)
+- [Canonical reference](docs/canonical/CHERRY_TREE_FRUIT_TOKENOMICS.md) — the full tokenomics specification, roadmap, decision register, status, and design references
 
 The repository contains an Anchor program, a dependency-free Rust accounting engine, and a Next.js application with Cherry integration paths. The checked-in tests report that live deployment, real Cherry handshake, live wallet execution, and some live-chain checks remain unverified in this environment.
 

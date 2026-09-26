@@ -8,3 +8,8 @@
 - **REWARD vault:** funded source for claims and compounding.
 - **T0:** chain timestamp of founder activation.
 - **Weight:** reward-share units; base 100, referred 105.
+- **FRUIT_T0:** public opening of the planned Fruit layer; T0 + 24 hours.
+- **Fruit layer:** planned external-asset reward weighting; adopted design, not implemented.
+- **Holding cap:** adopted permanent per-wallet limit of 250 current seeds; not yet implemented.
+- **Safe Mode:** planned risk-state system (NORMAL / WARM / HOT / EXTREME) for leveraged Fruit assets; never erases accrued rewards.
+- **Stock baskets:** planned-but-unscoped phase mentioned in early website copy; not part of the approved Fruit architecture.

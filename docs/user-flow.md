@@ -8,4 +8,4 @@
 
 The embedded path is intended to arrive with a wallet and show no connect-wallet step. Standalone wallet behavior is implemented but real extension execution is not verified here.
 
-Technically, actions are `buy_rigs`, `claim`, and `compound`. The client builds transactions and receives signatures from the wallet/Cherry bridge. Chain state is authoritative for balances, schedules, gates, and APR. Pre-launch permits only the configured founder activation. From T0 through the first 24 hours, valid `.skr` proof and a cumulative per-wallet fresh-purchase cap apply; at the exact boundary access becomes public. `.sns` is not the V2 launch gate.
+Technically, actions are `buy_rigs`, `claim`, and `compound`. The client builds transactions and receives signatures from the wallet/Cherry bridge. Chain state is authoritative for balances, schedules, gates, and APR. Pre-launch permits only the configured founder activation. From T0 through the first 24 hours, valid `.skr` proof and a cumulative per-wallet fresh-purchase cap apply — 250 seeds in production, compounds excluded; at the exact boundary access becomes public. `.sns` is not the V2 launch gate.

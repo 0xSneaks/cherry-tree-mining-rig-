@@ -15,3 +15,9 @@ APR uses the funded rate, 365-day annualization, fee-inclusive cost, and weighte
 | Dormant | no funded emission |
 
 Claim penalties are 25% before 24h, 15% at 24–48h, 5% at 48–72h, and 0% thereafter. They stay in REWARD and are redistributed or recorded as dust. A valid first referrer changes weight from 100 to 105; it is not an extra payout or guaranteed 5% APR.
+
+## Caps and launch windows
+
+During the first 24 hours after T0, cumulative fresh purchases per wallet are capped; compounding never consumes the allowance and the cap stops applying exactly at T0 + 24h. The production value is 250 seeds (2.5 SOL of principal; fees additional). Rehearsal and qualification used smaller test-only numbers.
+
+Separately, a **permanent per-wallet holding cap of 250 seeds** is adopted policy for the planned Fruit model. It is not yet implemented — it requires a new program version — and at that cap, compounding must keep unspent earned SOL claimable. See [What's next](whats-next.md).

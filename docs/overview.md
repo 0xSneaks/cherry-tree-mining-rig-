@@ -14,3 +14,7 @@ Three program-owned vaults are separate: CAPITAL receives non-fee purchase proce
 - **DOCUMENTED INTENT:** deployment and operational procedures describe a live launch.
 - **INCOMPLETE / UNCONFIRMED:** this checkout does not prove live deployment, real Cherry handshake, or live wallet execution.
 - **INFERENCE:** figures are not a live schedule unless read from chain state.
+
+## Current vs. planned
+
+This site documents the base Tree as implemented on the release lane. The planned Fruit layer, the roadmap, and the open decisions are summarized in [What's next](whats-next.md) and [Roadmap and status](roadmap.md).

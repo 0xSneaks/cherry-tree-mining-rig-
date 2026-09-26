@@ -59,16 +59,18 @@ export function purchaseAllowed(phase: AccessPhase, identity: Identity): boolean
 
 /**
  * Fresh rigs this wallet may still buy under the Genesis cap, or `null` once
- * the launch is Public (T0 + 24h onward) and the cap no longer applies.
- * Display only — the program enforces `rigs_engine::genesis_cap_check`.
+ * the launch is Public (T0 + 24h onward) and the cap no longer applies — and
+ * for a V1 Config, which carries no cap at all. Display only — the program
+ * enforces `rigs_engine::genesis_cap_check`.
  */
 export function genesisAllowance(
   launchT0: bigint,
   now: bigint,
   lifetimeRigsBought: bigint,
-  genesisCapRigs: bigint,
+  genesisCapRigs: bigint | null,
 ): bigint | null {
   if (accessPhase(launchT0, now) === 'public') return null;
+  if (genesisCapRigs === null) return null;
   const remaining = genesisCapRigs - lifetimeRigsBought;
   return remaining < 0n ? 0n : remaining;
 }

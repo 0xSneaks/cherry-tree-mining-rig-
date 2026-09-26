@@ -72,6 +72,51 @@ describe('Config decoding', () => {
     wrong.set(ACCOUNT_DISCRIMINATOR.miner, 0);
     expect(() => decodeConfig(wrong)).toThrow(/discriminator/);
   });
+
+  it('rejects data of neither the V1 nor the V2 length', () => {
+    expect(() => decodeConfig(bytes(CONFIG_FIXTURE.slice(0, 642 - 16)))).toThrow(/length/);
+  });
+});
+
+describe('Config decoding (V1 Devnet)', () => {
+  // The canonical Devnet Config predates V2's appended `genesis_cap_rigs`:
+  // 321 bytes, version 1, no cap. The fixture is the Rust V2 fixture with
+  // the version reset to 1 and the final `u64` dropped — the exact inverse
+  // of what `migrate_v2` writes on chain.
+  const v1 = bytes(CONFIG_FIXTURE);
+  v1.set([0x01, 0x00], 262); // version, offset 8 (discriminator) + 254
+  const data = v1.subarray(0, 321);
+
+  it('is exactly the size the V1 program allocates', () => {
+    expect(data.length).toBe(321);
+  });
+
+  it('round-trips every V1 field and reports no genesis cap', () => {
+    const c = decodeConfig(data);
+    expect(c.version).toBe(1);
+    expect(c.genesisCapRigs).toBeNull();
+    expect(c.feeRecipient).toBe('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
+    expect(c.rigPriceLamports).toBe(10_000_000n);
+    expect(c.purchaseFeeBps).toBe(300);
+    expect(c.totalRigs).toBe(14_281n);
+    expect(c.founder).toBe('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
+    expect(c.launchT0).toBe(1_779_900_000n);
+    expect(c.totalShares).toBe(14_156n * 100n + 125n * 105n);
+    expect(c.totalClaimPenalties).toBe(2_500_000n);
+  });
+
+  it('agrees with the V2 decode on every shared field', () => {
+    // `version` and the cap are exactly the two fields V2 changes.
+    const { genesisCapRigs: v1Cap, version: v1Ver, ...v1Rest } = decodeConfig(data);
+    const { genesisCapRigs: v2Cap, version: v2Ver, ...v2Rest } = decodeConfig(
+      bytes(CONFIG_FIXTURE),
+    );
+    expect(v1Cap).toBeNull();
+    expect(v1Ver).toBe(1);
+    expect(v2Cap).toBe(2_500n);
+    expect(v2Ver).toBe(2);
+    expect(v1Rest).toEqual(v2Rest);
+  });
 });
 
 describe('Miner decoding', () => {

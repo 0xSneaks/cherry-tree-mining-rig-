@@ -96,7 +96,7 @@ export function LaunchPanel({
           {countdown}
         </p>
       ) : null}
-      {phase === 'skrGenesis' && allowance !== null ? (
+      {phase === 'skrGenesis' && allowance !== null && config.genesisCapRigs !== null ? (
         <p className="note" data-testid="genesis-allowance">
           Genesis fresh buys: {lifetimeRigsBought.toString()} /{' '}
           {config.genesisCapRigs.toString()} · {allowance.toString()} remaining

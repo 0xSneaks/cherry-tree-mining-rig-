@@ -18,7 +18,7 @@ import {
   type Address,
 } from '@solana/kit';
 
-import { ACCOUNT_DISCRIMINATOR } from './constants';
+import { ACCOUNT_DISCRIMINATOR, ACCOUNT_SIZE } from './constants';
 
 export type Config = {
   authority: Address;
@@ -54,8 +54,12 @@ export type Config = {
   totalShares: bigint;
   /** Lamports forfeited by early claims and re-credited to other planters. */
   totalClaimPenalties: bigint;
-  /** Cumulative fresh-buy cap during [T0, T0 + 24h); ignored once Public. */
-  genesisCapRigs: bigint;
+  /**
+   * Cumulative fresh-buy cap during [T0, T0 + 24h); ignored once Public.
+   * `null` on a V1 account — the canonical Devnet Config until the V2
+   * migration appends this field — because the V1 program enforces no cap.
+   */
+  genesisCapRigs: bigint | null;
 };
 
 export type Miner = {
@@ -79,7 +83,7 @@ export type Miner = {
   lastPlantedAt: bigint;
 };
 
-const configDecoder = getStructDecoder([
+const configFields = [
   ['authority', getAddressDecoder()],
   ['pendingAuthority', getAddressDecoder()],
   ['rewardFunder', getAddressDecoder()],
@@ -110,7 +114,18 @@ const configDecoder = getStructDecoder([
   ['totalShares', getU64Decoder()],
   ['totalClaimPenalties', getU64Decoder()],
   ['genesisCapRigs', getU64Decoder()],
-]);
+] as const;
+
+const configDecoder = getStructDecoder(configFields);
+
+/**
+ * V2 appended `genesis_cap_rigs` as the final Config field, so the V1 layout
+ * is byte-for-byte the V2 layout minus one trailing `u64`. The canonical
+ * Devnet program still runs V1 (`DEPLOY.md`: 321 → 329 is the qualification
+ * lane's exact migration), and its Config must stay readable from the app.
+ */
+const V1_CONFIG_SIZE = ACCOUNT_SIZE.config - 8;
+const configV1Decoder = getStructDecoder(configFields.slice(0, -1));
 
 const minerDecoder = getStructDecoder([
   ['owner', getAddressDecoder()],
@@ -145,9 +160,17 @@ function stripDiscriminator(data: Uint8Array, expected: Uint8Array, what: string
 }
 
 export function decodeConfig(data: Uint8Array): Config {
-  return configDecoder.decode(
-    stripDiscriminator(data, ACCOUNT_DISCRIMINATOR.config, 'Config'),
-  ) as Config;
+  const payload = stripDiscriminator(data, ACCOUNT_DISCRIMINATOR.config, 'Config');
+  if (payload.length === V1_CONFIG_SIZE - 8) {
+    const v1 = configV1Decoder.decode(payload) as Omit<Config, 'genesisCapRigs'>;
+    return { ...v1, genesisCapRigs: null };
+  }
+  if (payload.length !== ACCOUNT_SIZE.config - 8) {
+    throw new AccountDecodeError(
+      `Config: unexpected data length ${data.length} (V1 ${V1_CONFIG_SIZE} or V2 ${ACCOUNT_SIZE.config})`,
+    );
+  }
+  return configDecoder.decode(payload) as Config;
 }
 
 export function decodeMiner(data: Uint8Array): Miner {

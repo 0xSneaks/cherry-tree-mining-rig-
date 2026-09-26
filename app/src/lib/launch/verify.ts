@@ -101,7 +101,7 @@ export function evaluateFirstBuy(
   add('V2 config', c.version === 2, `config.version ${c.version}`);
   add(
     'activation within Genesis cap',
-    expected.seeds <= c.genesisCapRigs,
+    c.genesisCapRigs !== null && expected.seeds <= c.genesisCapRigs,
     `${expected.seeds} <= ${c.genesisCapRigs}`,
   );
 

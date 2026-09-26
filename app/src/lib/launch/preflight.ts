@@ -108,8 +108,10 @@ export function evaluatePreflight(i: PreflightInput, founderMiner: Address): Pre
     add('V2 config', c.version === 2, `config.version = ${c.version}`);
     add(
       'Genesis cap configured',
-      c.genesisCapRigs > 0n,
-      `genesis_cap_rigs = ${c.genesisCapRigs}`,
+      c.genesisCapRigs !== null && c.genesisCapRigs > 0n,
+      c.genesisCapRigs === null
+        ? 'genesis_cap_rigs absent (V1 Config)'
+        : `genesis_cap_rigs = ${c.genesisCapRigs}`,
     );
     add(
       'reward vault funded',
@@ -137,7 +139,7 @@ export function evaluatePreflight(i: PreflightInput, founderMiner: Address): Pre
   if (c && count !== null) {
     add(
       'founder activation fits Genesis cap',
-      count > 0n && count <= c.genesisCapRigs,
+      c.genesisCapRigs !== null && count > 0n && count <= c.genesisCapRigs,
       `${count} <= ${c.genesisCapRigs}`,
     );
   }

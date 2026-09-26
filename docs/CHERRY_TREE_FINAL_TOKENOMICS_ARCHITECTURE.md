@@ -1,6 +1,6 @@
 # THE CHERRY TREE — Final Tokenomics Architecture
 
-Date: 2026-09-26. Status: reconciled economic specification, **closeout revision** (founder final decisions and adversarial-review corrections applied; see `docs/OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md`). Implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
+Date: 2026-09-26. Status: reconciled economic specification, **closeout revision** (founder final decisions and adversarial-review corrections applied; see `docs/OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md`). **Architecture FROZEN for implementation** (gate 14.2-A closed by founder-supplied mainnet evidence: initial-deployment case). Implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
 
 Authority: founder final decisions of the closeout (external debt netting, on-chain Fruit ledger, permanent 250 max wallet with legacy grandfathering, no Fruit/bonus compounding, one .skr domain = one Day-1 wallet), then founder overrides in the original request, then Fable's quantitative solve, then the existing Fruit baseline. This document defines one model. Unresolved inputs remain configuration variables; no illustrative budget is asserted to exist.
 
@@ -11,7 +11,7 @@ Evidence reviewed:
 - V2 `mainnet/rc-hardening`: `state.rs` blob `f60b1f2a174ab4187f6237e28af6c0d3acdb45a2`, `buy_rigs.rs` blob `76c22acbd63674cee581ae935492f82d9a22f9b2`, `compound.rs` blob `91ade0dd81c0771d3f25a8ac2c144dba38a69849`.
 - Current official Hylo address and equations pages, plus Jito and Solana Mobile documentation. Asset admission still requires chain/configuration and adapter verification; reading documentation is not production certification.
 
-Pre-ops result: source confirms that V2's current cap applies only to cumulative fresh purchases during the first 24 hours; compounds are excluded, and the cap expires at public opening. Source also confirms separate capital, fee and reward vault flows, immutable referral binding, and base referral weights of 100/105. A permanent hard holding cap is therefore a required protocol change, not a claim about current behavior. Live deployed configuration, balances and account migration state were not audited here. Closeout re-check: the `mainnet/rc-hardening` mainnet runbook is marked "PREPARED, NOT EXECUTED" and `Anchor.toml` has only localnet/devnet program entries, but repository documents are not chain evidence; mainnet and devnet RPC were unreachable from the review environment (proxy 403), so deployed state remains unverified (gate 14.2-A).
+Pre-ops result: source confirms that V2's current cap applies only to cumulative fresh purchases during the first 24 hours; compounds are excluded, and the cap expires at public opening. Source also confirms separate capital, fee and reward vault flows, immutable referral binding, and base referral weights of 100/105. A permanent hard holding cap is therefore a required protocol change, not a claim about current behavior. Live deployed configuration, balances and account migration state were not audited here. Closeout re-check: the `mainnet/rc-hardening` mainnet runbook is marked "PREPARED, NOT EXECUTED" and `Anchor.toml` has only localnet/devnet program entries, but repository documents are not chain evidence; mainnet and devnet RPC were unreachable from the review environment (proxy 403), so deployed state was not verifiable from the review environment. Founder-supplied read-only evidence (`solana account C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt --url mainnet-beta` → `AccountNotFound`) establishes that the declared production program does not exist on mainnet: initial-deployment case, gate 14.2-A closed.
 
 ## 1. Final equations
 
@@ -539,7 +539,7 @@ The closeout sections 1, 4, 5, 6, 7, 8, 9, 10 and 10a of this document supersede
 | # | Blocker | Status |
 |---|---|---|
 | 1 | External capital admission | **Closed by founder decision:** registry debt netting plus disclosure (section 5). Remaining input: registry contents (configuration, gate 14.2-D) |
-| 2 | Hard-cap protocol integration | **Rule closed by founder decision** (section 4, including legacy grandfather-freeze). **Open: deployed-state evidence** (gate 14.2-A) |
+| 2 | Hard-cap protocol integration | **Rule closed by founder decision** (section 4, including legacy grandfather-freeze). **Evidence closed** (gate 14.2-A): program account not found on mainnet → initial-deployment case; cap and `.skr` binding ship in the initial deployment; no migration and no legacy `S>250` wallet can exist under this deployment |
 | 3 | Actual budget and base ledger | Configuration/evidence (gate 14.2-C); does not block code |
 | 4 | Referral economics | Rule closed (section 7 clamp and reservation); `c=0` until m, φ and program changes exist |
 | 5 | Ownership settlement design | **Closed by founder decision:** on-chain Fruit ledger (section 10a) and time convention (section 3). Governance values are configuration (gate 14.2-D) |
@@ -549,6 +549,8 @@ The closeout sections 1, 4, 5, 6, 7, 8, 9, 10 and 10a of this document supersede
 ### 14.2 Evidence and configuration required
 
 A. **Deployed-state inspection (required before base-program implementation).** Read-only, from finalized mainnet state for program `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt` or the actual production program ID if different: whether the program account and ProgramData exist; programdata hash and last-deploy slot versus the release artifact; upgrade authority; Config account bytes and version; `launch_t0`; `genesis_cap_rigs`; `rig_price_lamports`; `purchase_fee_bps`; vault PDA balances; and the maximum `Miner.rigs` over all Miner accounts. Outcomes: if the program is not initialized, the cap and binding ship in the initial deployment and no legacy wallet can exist; if it is initialized with `launch_t0 == 0`, the cap migration completes before T0; if T0 is set, the section 4 legacy rule applies to every `S>250` found. `genesis_cap_rigs != 250` requires the migration to correct it.
+
+   **Result (closed):** founder-supplied read-only check `solana account C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt --url mainnet-beta` returned `AccountNotFound`. The declared program does not exist on mainnet, so no ProgramData, Config or Miner state exists at this ID. Outcome: **initial-deployment case**. The cap and `.skr` binding ship in the initial deployment; the section 4 legacy grandfather-freeze rule and cap-migration path are retained in code and tests but have no mainnet population under this deployment. Deploy-time conditions (not reopened design): initialize with `genesis_cap_rigs == 250` (test 8); if deployment uses a different program ID, or this ID is found to exist before deployment, re-run this gate against that ID before initialization.
 
 B. **Release branch pin.** The exact implementation branch/commit and its test suite are recorded before code changes.
 
@@ -654,7 +656,7 @@ Every test asserts, after every transition: `V_k >= L_k + U_k + Z_k` per ledger 
 75. Reserve withdrawal touching L or U: rejected.
 76. Funding exhaustion mid-sequence: already committed tranches finish.
 
-Tests 1–76 are the implementation gate. Isolated accounting and tests may proceed now against explicit fixtures. Base-program changes proceed after gate 14.2-A. Feature activation additionally requires 14.2-C and the relevant 14.2-D inputs. No launch date is selected.
+Tests 1–76 are the implementation gate. Isolated accounting and tests may proceed now against explicit fixtures. Gate 14.2-A is closed (initial-deployment case), so base-program changes may proceed. Feature activation additionally requires 14.2-C and the relevant 14.2-D inputs. No launch date is selected.
 
 ### Source links
 

@@ -12,7 +12,7 @@ Applies the founder's final decisions to `docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCH
 | Fable solve (same branch) | Arithmetic unchanged; no correction needed |
 | Review (this branch, commit `5ffac43`) | All CB, H and AC items reconciled below |
 | V2 `mainnet/rc-hardening` source | Re-confirmed: `declare_id!` = `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt`; `Anchor.toml` lists localnet/devnet only; the mainnet runbook header says "PREPARED, NOT EXECUTED". Earlier source facts stand: no holding cap; `genesis_cap_rigs` has no setter; mutable price/fee via `set_pricing`; `withdraw_fees` has no reservation; `NothingToCompound` revert; `identity::prove` records no binding; base `assert_fully_funded` counts base ledger only |
-| Deployed mainnet state | **Not verified.** Mainnet and devnet RPC return proxy 403 from this environment. Repository documents suggest mainnet is not yet initialized, but that is not chain evidence |
+| Deployed mainnet state | **Verified by founder-supplied read-only evidence.** `solana account C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt --url mainnet-beta` → `AccountNotFound`. The declared production program does not exist on mainnet: no ProgramData, Config or Miner state. Initial-deployment case (Architecture §14.2-A). (RPC from this environment returns proxy 403, so the check was run by the founder, not reproduced here.) |
 
 ## 2. CRITICAL BLOCKERS
 
@@ -23,12 +23,11 @@ Applies the founder's final decisions to `docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCH
 | CB-1 Borrowed-capital exclusion admits nothing | Founder decision 1 | `X_i = max(0, Σ A_ij G_ij − D_i)`, with `D_i` = wallet debt across a fixed registry of on-chain lending/perp/margin programs. Off-registry and off-chain borrowing are undetectable and disclosed. No proof of non-borrowing is required (Architecture §5) |
 | CB-2 Settlement layer undefined | Founder decision 2 | On-chain Fruit ledger with minimum state and 11 invariants (Architecture §10a) |
 | CB-3 (rule part) Hard cap and legacy treatment | Founder decision 3 | Permanent `S≤250` enforced in engine `buy_rigs`/`compound`. Legacy `S>250` wallets are grandfathered and frozen (Architecture §4) |
+| CB-3 (evidence part) Deployed state | Founder-supplied mainnet check: `AccountNotFound` | Initial-deployment case. Cap and `.skr` binding ship in the initial deployment; no migration; no legacy `S>250` wallet can exist under this deployment (Architecture §14.2-A) |
 
 **STILL OPEN**
 
-| # | What remains | Required evidence |
-|---|---|---|
-| CB-3 (evidence part) | Deployed state is unknown, so the correct upgrade path cannot be chosen. There are three cases: initial deploy with the cap built in; migration before T0; or migration after T0 with legacy freeze | Read-only finalized mainnet read (Architecture §14.2-A): program/ProgramData existence and hash; upgrade authority; Config bytes and version; `launch_t0`; `genesis_cap_rigs`; price; fee; vault balances; maximum `Miner.rigs` |
+None.
 
 ## 3. HIGH-RISK ITEMS
 
@@ -184,33 +183,22 @@ Every test asserts per-ledger and aggregate `V ≥ L+U+Z`, `ΣR ≤ E`, `R_i ≤
 
 ## 10. IMPLEMENTATION-READINESS VERDICT
 
-**NEEDS CORRECTION**
+**PASS FOR IMPLEMENTATION**
 
-The architecture text is closed. All three critical blockers are closed at the rule level, H-1 to H-15 and AC-1 to AC-10 are reconciled, and no rule-level item is open. No further tokenomics decision is required.
+The single remaining blocker (CB-3 evidence part, Architecture §14.2-A) is closed. Founder-supplied read-only evidence shows program `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt` does not exist on mainnet (`AccountNotFound`). That is the initial-deployment case: the 250 cap and `.skr` binding ship in the initial deployment, no Config/Miner migration is required, and no legacy `S>250` wallet can exist under this deployment. All three critical blockers are closed, H-1 to H-15 and AC-1 to AC-10 are reconciled, and no rule-level item is open.
 
-**Exact remaining blocker**
+**Architecture frozen.** `docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md` at this revision is the implementation baseline. No tokenomics parameter was changed by this closeout.
 
-Deployed-state evidence (CB-3 evidence part, Architecture §14.2-A). The founder requires this inspection before implementation, and it could not be performed from this environment because RPC access was denied. It determines which of the three upgrade paths applies and whether legacy wallets exist.
+**Deploy-time conditions (not blockers to code):**
+- initialize with `genesis_cap_rigs == 250` (test 8);
+- if deployment uses a different program ID, or this ID exists before deployment, re-run §14.2-A against it before initialization;
+- record the release branch/commit (§14.2-B) before code changes.
 
-**Evidence required**
-
-A read-only, finalized mainnet report covering:
-- whether program `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt` (or the actual production ID) and its ProgramData exist;
-- ProgramData hash versus the release artifact;
-- upgrade authority;
-- Config bytes and version;
-- `launch_t0`, `genesis_cap_rigs`, `rig_price_lamports`, `purchase_fee_bps`;
-- vault balances;
-- maximum `Miner.rigs` via `getProgramAccounts`.
-
-**When it arrives**
-
-Once that report is supplied and matches one of the three §14.2-A cases, the verdict becomes PASS FOR IMPLEMENTATION with no further architecture edits. The architecture is then frozen, and the next step is the architecture→code gap map and implementation sequence.
+**Next step:** the architecture → code gap map and implementation sequence.
 
 **What can proceed now**
 
-- Fruit-ledger accounting.
-- Engine-level cap logic and tests against fixtures.
+- All code work in §14.3 scope: base-program cap/binding/referral-reservation changes, Fruit ledger, adapters and tests 1–76.
 
 **Activation-only inputs**
 

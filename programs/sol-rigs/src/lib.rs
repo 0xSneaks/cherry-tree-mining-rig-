@@ -32,12 +32,25 @@
 //!
 //! All accounting lives in the dependency-free [`rigs_engine`] crate; the
 //! handlers here validate accounts and move lamports.
+//!
+//! ## Fruit ledgers (architecture §10 / §10a)
+//!
+//! Fruit core, loyalty and lock SOL live in three further program-owned
+//! FRUIT VAULTs, one per ledger, each with its own `L`/`U`/`Z` counters and
+//! `V >= L + U + Z` checked against the vault's real balance after every
+//! Fruit instruction. No Fruit instruction touches a base vault, a miner
+//! position or a seed count, and no base instruction touches a Fruit
+//! account. Fruit lamports leave a Fruit vault only as a claim against `L`
+//! (cumulative Merkle leaf under a Final root) or a reserve withdrawal
+//! against `Z`.
 
 use anchor_lang::prelude::*;
 
 pub mod constants;
 pub mod error;
 pub mod events;
+pub mod fruit_merkle;
+pub mod fruit_state;
 pub mod identity;
 pub mod instructions;
 pub mod skr_binding;
@@ -149,5 +162,133 @@ pub mod sol_rigs {
     /// `config.fee_recipient`.
     pub fn withdraw_fees(ctx: Context<WithdrawFees>, amount: u64) -> Result<()> {
         instructions::admin::withdraw_fees(ctx, amount)
+    }
+
+    // --- Fruit ledger (§10 / §10a) ---
+
+    /// Create the Fruit config. Base authority only; it becomes the Fruit
+    /// admin. Governance values are inputs, validated, never defaulted.
+    pub fn init_fruit_config(
+        ctx: Context<InitFruitConfig>,
+        root_poster: Pubkey,
+        veto_signers: Vec<Pubkey>,
+        veto_threshold: u8,
+        challenge_window_secs: i64,
+        reserve_recipient: Pubkey,
+    ) -> Result<()> {
+        instructions::fruit_ledger::init_fruit_config(
+            ctx,
+            root_poster,
+            veto_signers,
+            veto_threshold,
+            challenge_window_secs,
+            reserve_recipient,
+        )
+    }
+
+    /// Create one Fruit ledger and its own vault. Fruit admin only.
+    pub fn init_fruit_ledger(ctx: Context<InitFruitLedger>, kind: u8) -> Result<()> {
+        instructions::fruit_ledger::init_fruit_ledger(ctx, kind)
+    }
+
+    /// FUND: `V += a; Z += a`.
+    pub fn fund_fruit(ctx: Context<FundFruit>, kind: u8, amount: u64) -> Result<()> {
+        instructions::fruit_ledger::fund_fruit(ctx, kind, amount)
+    }
+
+    /// COMMIT POOL: `Z -= E; U += E`, before `t_start`, once per pool id.
+    pub fn commit_fruit_pool(
+        ctx: Context<CommitFruitPool>,
+        kind: u8,
+        pool_id: u64,
+        budget: u64,
+        t_start: i64,
+        t_end: i64,
+        reference_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::fruit_ledger::commit_fruit_pool(
+            ctx,
+            kind,
+            pool_id,
+            budget,
+            t_start,
+            t_end,
+            reference_hash,
+        )
+    }
+
+    /// Post a Pending cumulative root. Root poster only.
+    pub fn post_fruit_root(
+        ctx: Context<PostFruitRoot>,
+        version: u64,
+        merkle_root: [u8; 32],
+        checkpoint_time: i64,
+        total: u64,
+        complete: bool,
+    ) -> Result<()> {
+        instructions::fruit_roots::post_fruit_root(
+            ctx,
+            version,
+            merkle_root,
+            checkpoint_time,
+            total,
+            complete,
+        )
+    }
+
+    /// One veto signature against a Pending root, inside its window.
+    pub fn veto_fruit_root(ctx: Context<VetoFruitRoot>) -> Result<()> {
+        instructions::fruit_roots::veto_fruit_root(ctx)
+    }
+
+    /// Finalize an unvetoed root after its window: `U -= Δ; L += Δ`.
+    pub fn finalize_fruit_root(ctx: Context<FinalizeFruitRoot>) -> Result<()> {
+        instructions::fruit_roots::finalize_fruit_root(ctx)
+    }
+
+    /// Veto-quorum terminal settlement after `t_end`. Never reduces `L`.
+    /// Remaining accounts: the signing veto signers.
+    pub fn resolve_fruit_pool_terminal<'info>(
+        ctx: Context<'_, '_, 'info, 'info, ResolveFruitPoolTerminal<'info>>,
+        version: u64,
+        merkle_root: [u8; 32],
+        checkpoint_time: i64,
+        total: u64,
+    ) -> Result<()> {
+        instructions::fruit_roots::resolve_fruit_pool_terminal(
+            ctx,
+            version,
+            merkle_root,
+            checkpoint_time,
+            total,
+        )
+    }
+
+    /// Cumulative claim against the pool's latest Final root.
+    pub fn claim_fruit(
+        ctx: Context<ClaimFruit>,
+        cumulative_amount: u64,
+        proof: Vec<[u8; 32]>,
+    ) -> Result<()> {
+        instructions::fruit_claim::claim_fruit(ctx, cumulative_amount, proof)
+    }
+
+    /// Reconciled close: `U -= E - final_total; Z += E - final_total`.
+    pub fn close_fruit_pool(ctx: Context<CloseFruitPool>) -> Result<()> {
+        instructions::fruit_roots::close_fruit_pool(ctx)
+    }
+
+    /// RESERVE WITHDRAWAL: `V -= z; Z -= z`, to the reserve recipient only.
+    pub fn withdraw_fruit_reserve(
+        ctx: Context<WithdrawFruitReserve>,
+        kind: u8,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::fruit_ledger::withdraw_fruit_reserve(ctx, kind, amount)
+    }
+
+    /// Pause or resume one Fruit ledger (pools, roots, finalize, close).
+    pub fn set_fruit_paused(ctx: Context<FruitAdminOnly>, kind: u8, paused: bool) -> Result<()> {
+        instructions::fruit_ledger::set_fruit_paused(ctx, kind, paused)
     }
 }

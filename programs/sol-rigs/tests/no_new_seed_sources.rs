@@ -1,8 +1,11 @@
 //! Frozen-architecture test 11: only base rewards compound.
 //!
-//! No Fruit, loyalty, lock, bonus or referral-commission path exists in this
-//! program, and the only ways a seed count changes are the two capped engine
-//! transitions (`buy_rigs`, `compound`). These are source-level guards: a
+//! No loyalty, lock, bonus or referral-commission instruction exists in this
+//! program. The Fruit ledger instructions (§10a) are an exact, reviewed set
+//! whose sources never touch a miner position, a seed count, a base vault or
+//! the compound path, and no base instruction touches a Fruit account. The
+//! only ways a seed count changes are the two capped engine transitions
+//! (`buy_rigs`, `compound`). These are source-level guards: a
 //! new instruction, or a new write to a seed count, fails here and has to be
 //! reviewed against the cap and the no-new-compound-source rule before this
 //! test is updated.
@@ -10,6 +13,26 @@
 const PROGRAM_LIB: &str = include_str!("../src/lib.rs");
 const ENGINE_POSITION: &str = include_str!("../../../crates/rigs-engine/src/position.rs");
 const ENGINE_ACCUMULATOR: &str = include_str!("../../../crates/rigs-engine/src/accumulator.rs");
+const FRUIT_SOURCES: &[(&str, &str)] = &[
+    ("fruit_state.rs", include_str!("../src/fruit_state.rs")),
+    ("fruit_merkle.rs", include_str!("../src/fruit_merkle.rs")),
+    (
+        "instructions/fruit_ledger.rs",
+        include_str!("../src/instructions/fruit_ledger.rs"),
+    ),
+    (
+        "instructions/fruit_roots.rs",
+        include_str!("../src/instructions/fruit_roots.rs"),
+    ),
+    (
+        "instructions/fruit_claim.rs",
+        include_str!("../src/instructions/fruit_claim.rs"),
+    ),
+    (
+        "engine fruit.rs",
+        include_str!("../../../crates/rigs-engine/src/fruit.rs"),
+    ),
+];
 const PROGRAM_SOURCES: &[(&str, &str)] = &[
     ("state.rs", include_str!("../src/state.rs")),
     ("skr_binding.rs", include_str!("../src/skr_binding.rs")),
@@ -73,8 +96,25 @@ fn fns_containing(src: &str, needle: &str) -> Vec<String> {
     out
 }
 
+/// The Fruit ledger instructions: an exact set, each reviewed against the
+/// no-seed / no-base-vault rule below.
+const FRUIT_INSTRUCTIONS: &[&str] = &[
+    "claim_fruit",
+    "close_fruit_pool",
+    "commit_fruit_pool",
+    "finalize_fruit_root",
+    "fund_fruit",
+    "init_fruit_config",
+    "init_fruit_ledger",
+    "post_fruit_root",
+    "resolve_fruit_pool_terminal",
+    "set_fruit_paused",
+    "veto_fruit_root",
+    "withdraw_fruit_reserve",
+];
+
 #[test]
-fn the_instruction_set_has_no_fruit_bonus_lock_or_commission_path() {
+fn the_instruction_set_has_no_bonus_lock_or_commission_path() {
     let mut ixs = program_instructions();
     ixs.sort();
     let mut expected = vec![
@@ -92,13 +132,68 @@ fn the_instruction_set_has_no_fruit_bonus_lock_or_commission_path() {
         "transfer_authority",
         "withdraw_fees",
     ];
+    expected.extend_from_slice(FRUIT_INSTRUCTIONS);
     expected.sort();
     assert_eq!(ixs, expected);
-    for banned in ["fruit", "loyalty", "lock", "bonus", "commission"] {
+    for banned in ["loyalty", "lock", "bonus", "commission"] {
         assert!(
             !ixs.iter().any(|i| i.contains(banned)),
             "a `{banned}` instruction exists; it must never create seeds"
         );
+    }
+    // Every instruction naming Fruit is one of the reviewed Fruit set.
+    for i in ixs.iter().filter(|i| i.contains("fruit")) {
+        assert!(
+            FRUIT_INSTRUCTIONS.contains(&i.as_str()),
+            "unreviewed Fruit instruction {i}"
+        );
+    }
+}
+
+/// Test 11 (Fruit part): no Fruit source reaches a seed count, a miner
+/// position, the compound/purchase path or a base vault; no base source
+/// reaches a Fruit account. Fruit lamports can therefore never become seeds
+/// or base-vault backing.
+#[test]
+fn fruit_code_never_reaches_seeds_or_base_vaults() {
+    let code = |src: &str| -> String {
+        src.lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    for (file, src) in FRUIT_SOURCES {
+        let src = code(src);
+        for needle in [
+            "Miner",
+            "MinerPosition",
+            ".rigs",
+            "add_rigs",
+            "buy_rigs",
+            "compound",
+            "RewardGlobals",
+            "RewardLedger",
+            "CAPITAL_VAULT_SEED",
+            "REWARD_VAULT_SEED",
+            "FEE_VAULT_SEED",
+            "state::Vault",
+            "crate::state::{",
+            "VaultKind",
+        ] {
+            assert!(!src.contains(needle), "{file} references `{needle}`");
+        }
+    }
+    for (file, src) in PROGRAM_SOURCES {
+        let src = code(src);
+        for needle in [
+            "FRUIT_",
+            "fruit_state",
+            "fruit_merkle",
+            "FruitVault",
+            "fruit::",
+        ] {
+            assert!(!src.contains(needle), "base {file} references `{needle}`");
+        }
     }
 }
 
@@ -126,5 +221,11 @@ fn seed_counts_change_only_in_the_two_capped_engine_transitions() {
             .count();
         let expected = usize::from(*file == "state.rs");
         assert_eq!(writes, expected, "unexpected seed-count write in {file}");
+    }
+    for (file, src) in FRUIT_SOURCES {
+        assert!(
+            !src.contains(".rigs = ") && !src.contains(".rigs += "),
+            "seed-count write in {file}"
+        );
     }
 }

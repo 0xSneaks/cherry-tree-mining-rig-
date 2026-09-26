@@ -476,7 +476,8 @@ fn exhaustion_is_defined() {
 /// once, as a reward weight). There is no referral instruction and no
 /// referrer payout: the instruction set is exactly the one below, so a
 /// referral can never move lamports on its own. Adding one would have to be
-/// done here, deliberately.
+/// done here, deliberately. The Fruit ledger instructions were added this way
+/// and none names or pays a referrer.
 #[test]
 fn exploit_referral_has_no_payout_surface() {
     let src = std::fs::read_to_string(concat!(
@@ -491,24 +492,37 @@ fn exploit_referral_has_no_payout_surface() {
         .map(|l| l.split(['(', '<']).next().unwrap())
         .collect();
     fns.sort_unstable();
-    assert_eq!(
-        fns,
-        [
-            "accept_authority",
-            "buy_rigs",
-            "claim",
-            "compound",
-            "fund_rewards",
-            "initialize",
-            "migrate_v2",
-            "set_fee_recipient",
-            "set_paused",
-            "set_pricing",
-            "set_reward_funder",
-            "transfer_authority",
-            "withdraw_fees",
-        ]
-    );
+    let mut expected = vec![
+        "accept_authority",
+        "buy_rigs",
+        "claim",
+        "compound",
+        "fund_rewards",
+        "initialize",
+        "migrate_v2",
+        "set_fee_recipient",
+        "set_paused",
+        "set_pricing",
+        "set_reward_funder",
+        "transfer_authority",
+        "withdraw_fees",
+        // Fruit ledger (§10a): claims pay only against Fruit liabilities
+        // from Fruit vaults; none is a referral path.
+        "claim_fruit",
+        "close_fruit_pool",
+        "commit_fruit_pool",
+        "finalize_fruit_root",
+        "fund_fruit",
+        "init_fruit_config",
+        "init_fruit_ledger",
+        "post_fruit_root",
+        "resolve_fruit_pool_terminal",
+        "set_fruit_paused",
+        "veto_fruit_root",
+        "withdraw_fruit_reserve",
+    ];
+    expected.sort_unstable();
+    assert_eq!(fns, expected);
     let events = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../programs/sol-rigs/src/events.rs"

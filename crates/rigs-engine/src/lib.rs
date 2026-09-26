@@ -21,6 +21,7 @@
 
 pub mod accumulator;
 pub mod error;
+pub mod fruit;
 pub mod launch;
 pub mod penalty;
 pub mod position;
@@ -33,6 +34,11 @@ pub use accumulator::{
     MAX_REWARD_RATE_LAMPORTS_PER_SECOND, PRECISION, WEIGHT_BASE, WEIGHT_REFERRED, ZERO_RIG_POLICY,
 };
 pub use error::{EngineError, EngineResult};
+pub use fruit::{
+    close_pool, commit_pool, finalize_root, post_root, scheduled_capacity, terminal_resolution,
+    veto_vote, wallet_cap, FruitLedger, FruitPool, FruitRoot, LedgerKind, PoolStatus, RootStatus,
+    FRUIT_M, P_REF_LAMPORTS, QMAX_DEN, QMAX_NUM,
+};
 pub use launch::{
     access_phase, gate_purchase, genesis_cap_check, purchase_allowed, seconds_to_next_phase,
     skr_day1_binding, t0_after_success, validate_genesis_cap, AccessPhase, ProvenIdentity,

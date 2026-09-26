@@ -56,6 +56,57 @@ pub enum EngineError {
     /// Day-1 access: this `.skr` domain is already bound to another wallet.
     /// Appended for the hard-cap build; existing codes are unchanged.
     SkrDomainBound,
+    // --- Fruit ledger (§10 / §10a). Appended; existing codes are unchanged. ---
+    /// A Fruit vault's spendable lamports fell below `L + U + Z`.
+    FruitInsolvent,
+    /// Committing more than the ledger's uncommitted reserve `Z`.
+    InsufficientFruitReserve,
+    /// A transition would take `U` below zero.
+    FruitCommitmentUnderflow,
+    /// A transition would take `L` below zero.
+    FruitLiabilityUnderflow,
+    /// Reserve withdrawal above `Z`; `L` and `U` are never withdrawable.
+    ReserveWithdrawalExceedsReserve,
+    /// Unknown ledger kind.
+    InvalidLedgerKind,
+    /// Stored pool/root status byte is not a known value.
+    InvalidFruitState,
+    /// Pool window with `t_end <= t_start`.
+    InvalidPoolWindow,
+    /// Pool committed at or after its `t_start`.
+    FruitPoolStarted,
+    /// Root checkpoint in the future.
+    FutureCheckpoint,
+    /// Root version not strictly above every earlier version for the pool.
+    StaleRootVersion,
+    /// A pool already has a Pending root.
+    RootAlreadyPending,
+    /// Root total above the pool's scheduled capacity at its checkpoint.
+    RootExceedsCapacity,
+    /// Root total below the pool's already-final total.
+    RootBelowFinalTotal,
+    /// A root marked complete must checkpoint at or after `t_end`.
+    IncompleteCheckpoint,
+    /// Veto or finalize on a root that is not the pool's Pending root.
+    RootNotPending,
+    /// Finalize before the challenge window has elapsed.
+    ChallengeWindowOpen,
+    /// Veto after the challenge window has elapsed.
+    ChallengeWindowClosed,
+    /// Claim on a pool with no Final root.
+    NoFinalRoot,
+    /// Claim leaf above the pool's per-wallet cap `floor(E/5)`.
+    LeafAboveWalletCap,
+    /// A payment would take the pool's `paid_cum` above `final_total`.
+    PaidExceedsFinalTotal,
+    /// The pool is Closed.
+    FruitPoolClosed,
+    /// The pool has not reached `t_end`.
+    FruitPoolNotEnded,
+    /// Close without a complete, Final, unvetoed root.
+    FruitPoolNotReconciled,
+    /// Invalid governance configuration (veto set, threshold, window, poster).
+    InvalidFruitGovernance,
 }
 
 impl fmt::Display for EngineError {
@@ -82,6 +133,33 @@ impl fmt::Display for EngineError {
             EngineError::GenesisCapExceeded => "genesis cumulative fresh-purchase cap exceeded",
             EngineError::WalletCapExceeded => "permanent per-wallet seed cap reached",
             EngineError::SkrDomainBound => "this .skr domain is bound to another wallet for Day 1",
+            EngineError::FruitInsolvent => "fruit vault does not cover L + U + Z",
+            EngineError::InsufficientFruitReserve => "fruit reserve Z is below the pool budget",
+            EngineError::FruitCommitmentUnderflow => "fruit committed capacity U would go negative",
+            EngineError::FruitLiabilityUnderflow => "fruit liabilities L would go negative",
+            EngineError::ReserveWithdrawalExceedsReserve => "reserve withdrawal exceeds Z",
+            EngineError::InvalidLedgerKind => "unknown fruit ledger kind",
+            EngineError::InvalidFruitState => "unknown fruit pool or root status",
+            EngineError::InvalidPoolWindow => "pool window must have t_end > t_start",
+            EngineError::FruitPoolStarted => "pool cannot be committed at or after t_start",
+            EngineError::FutureCheckpoint => "root checkpoint is in the future",
+            EngineError::StaleRootVersion => "root version must strictly increase",
+            EngineError::RootAlreadyPending => "pool already has a pending root",
+            EngineError::RootExceedsCapacity => "root total exceeds scheduled capacity",
+            EngineError::RootBelowFinalTotal => "root total is below the final total",
+            EngineError::IncompleteCheckpoint => {
+                "a complete root must checkpoint at or after t_end"
+            }
+            EngineError::RootNotPending => "root is not the pending root",
+            EngineError::ChallengeWindowOpen => "challenge window has not elapsed",
+            EngineError::ChallengeWindowClosed => "challenge window has elapsed",
+            EngineError::NoFinalRoot => "pool has no final root",
+            EngineError::LeafAboveWalletCap => "leaf exceeds the per-wallet cap",
+            EngineError::PaidExceedsFinalTotal => "payment would exceed the final total",
+            EngineError::FruitPoolClosed => "pool is closed",
+            EngineError::FruitPoolNotEnded => "pool has not ended",
+            EngineError::FruitPoolNotReconciled => "pool has no complete final root",
+            EngineError::InvalidFruitGovernance => "invalid fruit governance configuration",
         };
         f.write_str(s)
     }

@@ -129,3 +129,102 @@ pub struct SkrDomainBound {
     pub wallet: Pubkey,
     pub bound_at: i64,
 }
+
+// --- Fruit ledger (§10 / §10a) ---
+
+#[event]
+pub struct FruitConfigInitialized {
+    pub admin: Pubkey,
+    pub root_poster: Pubkey,
+    pub veto_signer_count: u8,
+    pub veto_threshold: u8,
+    pub challenge_window_secs: i64,
+    pub reserve_recipient: Pubkey,
+}
+
+#[event]
+pub struct FruitLedgerInitialized {
+    pub kind: u8,
+    pub ledger: Pubkey,
+    pub vault: Pubkey,
+}
+
+#[event]
+pub struct FruitFunded {
+    pub kind: u8,
+    pub funder: Pubkey,
+    pub amount: u64,
+    pub reserve: u64,
+}
+
+#[event]
+pub struct FruitPoolCommitted {
+    pub kind: u8,
+    pub pool: Pubkey,
+    pub pool_id: u64,
+    pub budget: u64,
+    pub t_start: i64,
+    pub t_end: i64,
+    pub wallet_cap: u64,
+    pub reference_hash: [u8; 32],
+}
+
+#[event]
+pub struct FruitRootPosted {
+    pub pool: Pubkey,
+    pub version: u64,
+    pub merkle_root: [u8; 32],
+    pub checkpoint_time: i64,
+    pub total: u64,
+    pub complete: bool,
+    pub final_after: i64,
+}
+
+#[event]
+pub struct FruitRootVetoVote {
+    pub pool: Pubkey,
+    pub version: u64,
+    pub signer: Pubkey,
+    pub veto_count: u8,
+    pub vetoed: bool,
+}
+
+#[event]
+pub struct FruitRootFinalized {
+    pub pool: Pubkey,
+    pub version: u64,
+    pub total: u64,
+    pub established: u64,
+    pub complete: bool,
+    pub terminal: bool,
+}
+
+#[event]
+pub struct FruitClaimed {
+    pub pool: Pubkey,
+    pub wallet: Pubkey,
+    pub cumulative_amount: u64,
+    pub payment: u64,
+    pub claimed_cum: u64,
+}
+
+#[event]
+pub struct FruitPoolClosed {
+    pub pool: Pubkey,
+    pub final_total: u64,
+    pub released: u64,
+}
+
+#[event]
+pub struct FruitReserveWithdrawn {
+    pub kind: u8,
+    pub destination: Pubkey,
+    pub amount: u64,
+    pub reserve: u64,
+}
+
+#[event]
+pub struct FruitPausedSet {
+    pub kind: u8,
+    pub paused: bool,
+}

@@ -72,3 +72,33 @@ pub const SNS_NAME_TOKENIZER_ID: Pubkey = pubkey!("nftD3vbNkNqfj2Sd3HZwbpw4BxxKW
 
 /// SPL Token program: both registries mint their name NFTs here.
 pub const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+
+// --- Fruit ledger (architecture §10 / §10a) ---
+//
+// Every Fruit account lives under its own seed prefix and its own account
+// type, so no Fruit account can be passed where a base account is expected
+// (or the reverse): the seeds differ and the Anchor discriminators differ.
+
+/// Singleton FRUIT CONFIG PDA.
+pub const FRUIT_CONFIG_SEED: &[u8] = b"fruit_config";
+/// FRUIT LEDGER PDA: `["fruit_ledger", kind]`.
+pub const FRUIT_LEDGER_SEED: &[u8] = b"fruit_ledger";
+/// FRUIT VAULT PDA: `["fruit_vault", kind]`. Holds that ledger's lamports.
+pub const FRUIT_VAULT_SEED: &[u8] = b"fruit_vault";
+/// FRUIT POOL PDA: `["fruit_pool", kind, pool_id_le]`.
+pub const FRUIT_POOL_SEED: &[u8] = b"fruit_pool";
+/// FRUIT ROOT PDA: `["fruit_root", pool, version_le]`.
+pub const FRUIT_ROOT_SEED: &[u8] = b"fruit_root";
+/// FRUIT CLAIM RECORD PDA: `["fruit_claim", pool, wallet]`.
+pub const FRUIT_CLAIM_SEED: &[u8] = b"fruit_claim";
+
+/// Layout version carried by every Fruit account. Every Fruit instruction
+/// refuses an account whose version differs (fail closed); a future layout
+/// ships with a one-shot migration that preserves vault lamports, `L`, `U`,
+/// `claimed_cum` and pool/root history.
+pub const FRUIT_STATE_VERSION: u16 = 1;
+
+/// Upper bound on the veto signer set.
+pub const MAX_VETO_SIGNERS: usize = 7;
+/// Upper bound on a Merkle proof (2^32 leaves).
+pub const MAX_FRUIT_PROOF_LEN: usize = 32;

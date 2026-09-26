@@ -41,6 +41,9 @@ async fn first_buy_below_cap_and_exact_cap_are_allowed() {
 
     // Repeat buys reaching the cap exactly: (C - 2) + 1 + 1 = C.
     env.buy(&f, 1).await.unwrap();
+    // A new slot, so the identical second purchase is a new transaction and
+    // not deduplicated against the first by the runtime's status cache.
+    env.warp(1).await;
     env.buy(&f, 1).await.unwrap();
     let m = env.miner(&f.pubkey()).await;
     assert_eq!((m.rigs, m.lifetime_rigs_bought), (C, C));

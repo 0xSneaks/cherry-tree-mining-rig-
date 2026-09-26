@@ -8,7 +8,7 @@
  */
 
 /** Full display name. Used for the wordmark and the document title. */
-export const PRODUCT_NAME = 'THE CHERRY TREE';
+export const PRODUCT_NAME = 'THE CHERRY TREE 🌸';
 
 /** Shorter reference, for running prose. */
 export const PRODUCT_NAME_SHORT = 'The Cherry Tree';

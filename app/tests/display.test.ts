@@ -11,6 +11,7 @@ import {
   formatSharePercent,
   formatSol,
   formatUtcInstant,
+  parseSolInput,
   shortAddress,
 } from '../src/lib/format';
 import { rigTier } from '../src/components/RigVisual';
@@ -92,5 +93,23 @@ describe('lamport formatting', () => {
   it('groups rig counts', () => {
     expect(formatCount(14_281n)).toBe('14,281');
     expect(formatCount(0n)).toBe('0');
+  });
+});
+
+describe('SOL amount input', () => {
+  it('parses typed SOL to exact lamports, no float', () => {
+    expect(parseSolInput('0.1')).toBe(100_000_000n);
+    expect(parseSolInput('1')).toBe(1_000_000_000n);
+    expect(parseSolInput('.25')).toBe(250_000_000n);
+    expect(parseSolInput('2.')).toBe(2_000_000_000n);
+    expect(parseSolInput(' 0.000000001 ')).toBe(1n);
+    expect(parseSolInput('0.3')).toBe(300_000_000n);
+    expect(parseSolInput('0')).toBe(0n);
+  });
+
+  it('rejects what is not a plain amount', () => {
+    for (const bad of ['', '.', 'abc', '1.2.3', '-1', '0.0000000001', '1e3', '1,5']) {
+      expect(parseSolInput(bad), bad).toBeNull();
+    }
   });
 });

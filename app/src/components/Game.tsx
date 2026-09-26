@@ -276,6 +276,50 @@ export function Game({ host }: { host: Host }) {
   const buyError = actionError?.kind === 'buy' ? actionError.message : null;
   const positionError = actionError && actionError.kind !== 'buy' ? actionError.message : null;
 
+  // The position (cockpit + claim confirmation) and the opportunity (yield)
+  // swap places by whether this wallet already holds seeds: see the page
+  // order below.
+  const positionBlock =
+    config && snap ? (
+      <>
+        <MinerCockpit
+          config={config}
+          miner={miner}
+          claimable={claimable}
+          rewardVaultLamports={snap.rewardVaultDistributable}
+          chainTime={chainTime}
+          currentOutputPerDay={outputPerDay}
+          canAct={canAct}
+          busy={busy}
+          onReplant={onCompound}
+          onHarvest={() => setConfirmingClaim(true)}
+          claimLabel={CLAIM_ACTION_LABEL}
+          error={positionError}
+        />
+        {confirmingClaim && claimQuote ? (
+          <ClaimConfirm
+            quote={claimQuote}
+            busy={busy === 'claim'}
+            onConfirm={() => {
+              setConfirmingClaim(false);
+              onClaim();
+            }}
+            onCancel={() => setConfirmingClaim(false)}
+          />
+        ) : null}
+      </>
+    ) : null;
+  const opportunityBlock =
+    config && snap ? (
+      <YieldPanel
+        config={config}
+        miner={miner}
+        rewardVaultLamports={snap.rewardVaultDistributable}
+        chainTime={chainTime}
+        snapshotTime={snap.chainTimeSeconds}
+      />
+    ) : null;
+
   return (
     <main className="shell">
       {/* 1 · What this is, which network, whether it is live. */}
@@ -340,14 +384,11 @@ export function Game({ host }: { host: Host }) {
           {/* The grove itself, from the real seed count. */}
           <RigVisual rigs={rigs} running={scheduleLive && !paused} />
 
-          {/* 2 · The opportunity: rate, pool, runway, price. */}
-          <YieldPanel
-            config={config}
-            miner={miner}
-            rewardVaultLamports={snap.rewardVaultDistributable}
-            chainTime={chainTime}
-            snapshotTime={snap.chainTimeSeconds}
-          />
+          {/* 2 · A returning planter sees their own grove and its two
+              actions first — the daily loop is claim or replant, not a
+              re-read of the pitch. A first-time visitor sees the
+              opportunity instead, and the cockpit waits below Plant. */}
+          {hasPosition ? positionBlock : opportunityBlock}
 
           {/* 3 · The rules that decide whether and how this wallet can plant. */}
           <LaunchPanel
@@ -370,7 +411,7 @@ export function Game({ host }: { host: Host }) {
             <FounderActivation founder={host.address} signer={host.signer} onDone={refresh} />
           ) : null}
 
-          {/* 4 · The primary action. */}
+          {/* 4 · Planting, SOL first. */}
           <BuyPanel
             config={config}
             chainTime={chainTime}
@@ -395,42 +436,26 @@ export function Game({ host }: { host: Host }) {
             error={buyError}
           />
 
-          {/* 5 · The position and its two actions. */}
-          <MinerCockpit
-            config={config}
-            miner={miner}
-            claimable={claimable}
-            rewardVaultLamports={snap.rewardVaultDistributable}
-            chainTime={chainTime}
-            currentOutputPerDay={outputPerDay}
-            canAct={canAct}
-            busy={busy}
-            onReplant={onCompound}
-            onHarvest={() => setConfirmingClaim(true)}
-            claimLabel={CLAIM_ACTION_LABEL}
-            error={positionError}
-          />
-
-          {confirmingClaim && claimQuote ? (
-            <ClaimConfirm
-              quote={claimQuote}
-              busy={busy === 'claim'}
-              onConfirm={() => {
-                setConfirmingClaim(false);
-                onClaim();
-              }}
-              onCancel={() => setConfirmingClaim(false)}
-            />
-          ) : null}
-
-          {/* 6 · The decoded account behind the position. */}
-          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
+          {hasPosition ? opportunityBlock : positionBlock}
 
           <hr className="rule" />
 
-          {/* 7 · Status and social: milestones, referrals, the room. */}
+          {/* 5 · Yours: the record, history, milestones, sharing, dilution. */}
+          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
+          <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
           {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          <ProgressShareCard
+            wallet={host.address}
+            miner={miner}
+            chainTime={chainTime}
+            onShare={host.share}
+          />
           <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
+          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
+
+          <hr className="rule" />
+
+          {/* 6 · Everyone's: the room, the grove-wide distribution. */}
           {host.room ? (
             <RoomLeaderboard
               roomId={host.room.id}
@@ -440,25 +465,11 @@ export function Game({ host }: { host: Host }) {
               onOpenProfile={host.openProfile}
             />
           ) : null}
-
-          {/* 8 · Share the position; see how it dilutes. */}
-          <ProgressShareCard
-            wallet={host.address}
-            miner={miner}
-            chainTime={chainTime}
-            onShare={host.share}
-          />
-          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
-
-          <hr className="rule" />
-
-          {/* 9 · History: this wallet's, then the whole grove's. */}
-          <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
           <DistributionPanel viewer={host.address} />
 
           <hr className="rule" />
 
-          {/* 10 · Verification: vaults, accounts, authorities. */}
+          {/* 7 · Verification: vaults, accounts, authorities. */}
           <TransparencyPanel
             config={config}
             miner={miner}

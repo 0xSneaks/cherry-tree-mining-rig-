@@ -1,209 +1,203 @@
 /**
- * The mine shaft: a cross-section, not a scene.
+ * The grove: one cherry tree that grows with the seeds this wallet holds.
  *
- * Deterministic tier from the real rig count, cosmetic only — it never
- * affects a number. Individual machines are deliberately not drawn: at 500
- * rigs that is a pointless render, and a tier reads faster anyway.
+ * Cosmetic only — it never affects a number. The drawing stage comes from the
+ * real seed count (`rigTier`, finer steps early so the first few plantings
+ * visibly change the tree); the stage *name* and the next-stage progress come
+ * from the growth layer (`groveTier`), the same names the share card and
+ * milestones use, so the screen never calls one grove two different things.
  *
- * The canvas is sized to its content so a small operation does not sit in a
- * field of empty rock.
+ * Petals fall and the canopy sways only while the funded schedule is paying;
+ * both stop under prefers-reduced-motion.
  */
+import { formatCount } from '../lib/format';
+import { groveTier, nextGroveTier } from '../lib/growth/milestones';
+
 export type RigTier = {
-  key: string;
-  label: string;
-  /** Gallery levels cut into the rock. */
-  levels: number;
-  /** Machines drawn per gallery, split either side of the hoist shaft. */
-  perLevel: number;
+  key: 'empty' | 'hand' | 'small' | 'industrial' | 'multi' | 'facility';
+  /** Blossom clusters in the main canopy. */
+  clusters: number;
+  /** Trunk height in viewBox units. */
+  trunk: number;
+  /** Canopy scale. */
+  scale: number;
 };
 
 export function rigTier(rigs: bigint): RigTier {
-  if (rigs >= 500n)
-    return { key: 'facility', label: 'CHERRY GROVE', levels: 4, perLevel: 6 };
-  if (rigs >= 100n)
-    return { key: 'multi', label: 'CHERRY TREE', levels: 3, perLevel: 4 };
-  if (rigs >= 25n)
-    return { key: 'industrial', label: 'YOUNG TREE', levels: 2, perLevel: 3 };
-  if (rigs >= 5n)
-    return { key: 'small', label: 'SAPLING', levels: 1, perLevel: 2 };
-  if (rigs >= 1n)
-    return { key: 'hand', label: 'SEEDLING', levels: 1, perLevel: 1 };
-  return { key: 'empty', label: 'BARE SOIL', levels: 1, perLevel: 0 };
+  if (rigs >= 500n) return { key: 'facility', clusters: 12, trunk: 52, scale: 1.15 };
+  if (rigs >= 100n) return { key: 'multi', clusters: 12, trunk: 54, scale: 1.25 };
+  if (rigs >= 25n) return { key: 'industrial', clusters: 8, trunk: 50, scale: 1.1 };
+  if (rigs >= 5n) return { key: 'small', clusters: 6, trunk: 44, scale: 0.95 };
+  if (rigs >= 1n) return { key: 'hand', clusters: 0, trunk: 20, scale: 0.6 };
+  return { key: 'empty', clusters: 0, trunk: 0, scale: 0 };
 }
 
-// A narrow viewBox on purpose: the SVG scales to the column width, so fewer
-// user units means larger machines on a 390px phone.
-const WIDTH = 300;
-const SURFACE_Y = 44;
-const LEVEL_GAP = 40;
-const CENTRE = WIDTH / 2;
-/** Half-width of the hoist shaft; galleries start clear of it. */
-const SHAFT_CLEARANCE = 22;
-const MARGIN = 22;
+const WIDTH = 260;
+const HEIGHT = 150;
+const GROUND = 134;
 
 /**
- * Machine positions along one gallery: evenly spaced either side of the
- * hoist shaft, with the left bank filled first so an odd count leans the way
- * the headframe does.
+ * Canopy clusters around the top of the trunk, [dx, dy, r], ordered so the
+ * first few already read as a rounded crown and later ones fill it out.
  */
-function galleryPositions(count: number): number[] {
-  if (count === 0) return [];
-  if (count === 1) return [CENTRE - SHAFT_CLEARANCE - 26];
+const CANOPY: readonly [number, number, number][] = [
+  [0, -16, 17],
+  [-22, -4, 14],
+  [22, -4, 14],
+  [0, -40, 13],
+  [-18, -30, 13],
+  [18, -30, 13],
+  [-38, 8, 11],
+  [38, 8, 11],
+  [-34, -18, 11],
+  [34, -18, 11],
+  [-10, 4, 10],
+  [12, 6, 10],
+];
 
-  const left = Math.ceil(count / 2);
-  const right = count - left;
+/** Petal start points (relative to canopy centre) and animation delays. */
+const PETALS: readonly [number, number, number][] = [
+  [-30, 6, 0],
+  [18, 10, 1.6],
+  [-8, 12, 3.1],
+  [34, 0, 4.4],
+  [-42, -4, 5.7],
+];
 
-  const spread = (n: number, from: number, to: number): number[] => {
-    if (n === 0) return [];
-    if (n === 1) return [(from + to) / 2];
-    const step = (to - from) / (n - 1);
-    return Array.from({ length: n }, (_, i) => from + step * i);
-  };
+function Tree({ x, tier, sway }: { x: number; tier: RigTier; sway: boolean }) {
+  const top = GROUND - tier.trunk;
+  const s = tier.scale;
 
-  return [
-    ...spread(left, MARGIN + 14, CENTRE - SHAFT_CLEARANCE - 14),
-    ...spread(right, CENTRE + SHAFT_CLEARANCE + 14, WIDTH - MARGIN - 14),
-  ];
-}
+  if (tier.key === 'hand') {
+    // A seedling: one stem, two leaves, no blossom yet.
+    return (
+      <g>
+        <path d={`M${x} ${GROUND} Q${x - 2} ${top + 6} ${x} ${top}`} stroke="var(--foliage)" strokeWidth="2" fill="none" />
+        <ellipse cx={x - 6} cy={top + 2} rx="6" ry="3" fill="var(--foliage)" transform={`rotate(-25 ${x - 6} ${top + 2})`} />
+        <ellipse cx={x + 6} cy={top} rx="6" ry="3" fill="var(--foliage)" transform={`rotate(25 ${x + 6} ${top})`} />
+      </g>
+    );
+  }
 
-function Machine({
-  x,
-  y,
-  running,
-  delay,
-}: {
-  x: number;
-  y: number;
-  running: boolean;
-  delay: number;
-}) {
+  const clusters = CANOPY.slice(0, tier.clusters);
+  const cy = top - 6 * s;
   return (
     <g>
-      {/* Drill head biting into the gallery floor */}
-      <line x1={x} y1={y - 4} x2={x} y2={y} stroke="var(--steel)" strokeWidth="1.2" />
-      <line x1={x - 3} y1={y - 1} x2={x + 3} y2={y - 1} stroke="var(--steel)" strokeWidth="1.2" />
-      {/* Housing */}
-      <rect
-        x={x - 11}
-        y={y - 17}
-        width="22"
-        height="13"
-        fill="var(--bg)"
-        stroke="var(--steel)"
-        strokeWidth="1.2"
+      {/* Trunk, tapering, with two main limbs into the crown. */}
+      <path
+        d={`M${x - 6 * s} ${GROUND} Q${x - 3 * s} ${top + 14 * s} ${x - 2} ${top} L${x + 2} ${top} Q${x + 3 * s} ${top + 14 * s} ${x + 6 * s} ${GROUND} Z`}
+        fill="var(--bark)"
       />
-      {/* Status lamp — amber only while the schedule is actually paying */}
-      <rect
-        x={x - 8}
-        y={y - 14}
-        width="5"
-        height="7"
-        fill={running ? 'var(--blossom)' : 'var(--rule-strong)'}
-      >
-        {running ? (
-          <animate
-            attributeName="opacity"
-            values="0.25;1;0.25"
-            dur="1.8s"
-            begin={`${delay}s`}
-            repeatCount="indefinite"
-          />
-        ) : null}
-      </rect>
-      {/* Vent slots */}
-      <line x1={x - 1} y1={y - 13} x2={x + 7} y2={y - 13} stroke="var(--rule-strong)" strokeWidth="1" />
-      <line x1={x - 1} y1={y - 10} x2={x + 7} y2={y - 10} stroke="var(--rule-strong)" strokeWidth="1" />
-      <line x1={x - 1} y1={y - 7} x2={x + 7} y2={y - 7} stroke="var(--rule-strong)" strokeWidth="1" />
+      <path
+        d={`M${x} ${top + 8 * s} Q${x - 14 * s} ${top} ${x - 24 * s} ${cy - 2}`}
+        stroke="var(--bark)"
+        strokeWidth={3 * s}
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path
+        d={`M${x} ${top + 4 * s} Q${x + 14 * s} ${top - 4} ${x + 22 * s} ${cy - 8 * s}`}
+        stroke="var(--bark)"
+        strokeWidth={3 * s}
+        fill="none"
+        strokeLinecap="round"
+      />
+      <g className={sway ? 'tree-crown tree-crown--sway' : 'tree-crown'}>
+        {clusters.map(([dx, dy, r], i) => (
+          <g key={i}>
+            <circle cx={x + dx * s} cy={cy + dy * s} r={r * s} fill="var(--blossom-dim)" />
+            <circle cx={x + dx * s - 2 * s} cy={cy + dy * s - 2 * s} r={r * s * 0.72} fill="var(--blossom)" opacity="0.85" />
+            <circle cx={x + dx * s - 4 * s} cy={cy + dy * s - 4 * s} r={r * s * 0.22} fill="var(--blossom-soft)" opacity="0.8" />
+          </g>
+        ))}
+      </g>
     </g>
   );
 }
 
-export function RigVisual({ rigs, running }: { rigs: bigint; running: boolean }) {
-  const tier = rigTier(rigs);
-  const height = SURFACE_Y + tier.levels * LEVEL_GAP + 16;
-  const shaftBottom = SURFACE_Y + tier.levels * LEVEL_GAP;
+export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boolean }) {
+  const tier = rigTier(seeds);
+  const named = groveTier(seeds);
+  const next = nextGroveTier(seeds);
+  const stageName = named?.label ?? 'Bare soil';
+  const cx = WIDTH / 2;
+  const canopyY = GROUND - tier.trunk - 6 * tier.scale;
+  const blooming = tier.clusters > 0;
+  const growing = running && seeds > 0n;
+  // Bare soil and a seedling have nothing above the ground worth a tall
+  // frame: crop the empty sky so the card stays compact.
+  const viewTop = tier.key === 'empty' || tier.key === 'hand' ? 70 : 0;
+
+  // Progress from the current named stage to the next, in whole seeds.
+  const from = named?.minSeeds ?? 0n;
+  const progress =
+    next === null ? 100 : Number(((seeds - from) * 100n) / (next.tier.minSeeds - from));
 
   return (
-    <figure style={{ margin: '14px 0 0' }} aria-label={`Grove: ${tier.label.toLowerCase()}`}>
-      <svg
-        viewBox={`0 0 ${WIDTH} ${height}`}
-        width="100%"
-        role="img"
-        aria-hidden="true"
-        style={{ display: 'block', background: 'var(--bg-inset)' }}
-      >
-        {/* Headframe: winding wheel and A-frame above the surface */}
-        <circle cx={CENTRE} cy="13" r="8" fill="none" stroke="var(--steel)" strokeWidth="1.4" />
-        <circle cx={CENTRE} cy="13" r="2" fill="var(--steel)" />
-        <path
-          d={`M${CENTRE - 24} ${SURFACE_Y} L${CENTRE} 20 L${CENTRE + 24} ${SURFACE_Y}`}
-          fill="none"
-          stroke="var(--steel)"
-          strokeWidth="1.4"
-        />
-        <line
-          x1={CENTRE - 12}
-          y1={SURFACE_Y - 11}
-          x2={CENTRE + 12}
-          y2={SURFACE_Y - 11}
-          stroke="var(--rule-strong)"
-          strokeWidth="1"
-        />
+    <figure className="grove-visual" aria-label={`Your grove: ${stageName.toLowerCase()}, ${seeds.toString()} seeds`}>
+      <svg viewBox={`0 ${viewTop} ${WIDTH} ${HEIGHT - viewTop}`} width="100%" role="img" aria-hidden="true" className="grove-svg">
+        {/* Soft ground and a low hill the tree stands on. */}
+        <ellipse cx={cx} cy={GROUND + 8} rx="112" ry="12" fill="var(--bg-raised)" />
+        <line x1="12" y1={GROUND} x2={WIDTH - 12} y2={GROUND} stroke="var(--rule-strong)" strokeWidth="1" />
 
-        {/* Surface line */}
-        <line x1="0" y1={SURFACE_Y} x2={WIDTH} y2={SURFACE_Y} stroke="var(--rule-strong)" strokeWidth="1" />
+        {tier.key === 'empty' ? (
+          // Bare soil: a planting mark waiting for the first seed.
+          <g>
+            <ellipse cx={cx} cy={GROUND - 1} rx="16" ry="4" fill="var(--bark)" opacity="0.7" />
+            <circle cx={cx} cy={GROUND - 12} r="3.5" fill="none" stroke="var(--blossom-dim)" strokeDasharray="2 2" />
+          </g>
+        ) : null}
 
-        {/* Hoist shaft */}
-        <line x1={CENTRE - 7} y1={SURFACE_Y} x2={CENTRE - 7} y2={shaftBottom} stroke="var(--rule-strong)" strokeWidth="1.2" />
-        <line x1={CENTRE + 7} y1={SURFACE_Y} x2={CENTRE + 7} y2={shaftBottom} stroke="var(--rule-strong)" strokeWidth="1.2" />
-        {/* Cage, riding the shaft only while the mine is producing */}
-        <rect x={CENTRE - 5} y={SURFACE_Y + 6} width="10" height="12" fill="var(--steel)" opacity="0.5">
-          {running ? (
-            <animate
-              attributeName="y"
-              values={`${SURFACE_Y + 6};${shaftBottom - 18};${SURFACE_Y + 6}`}
-              dur="7s"
-              repeatCount="indefinite"
-            />
-          ) : null}
-        </rect>
+        {/* A full grove: two younger trees either side of the main one. */}
+        {tier.key === 'facility' ? (
+          <>
+            <Tree x={cx - 82} tier={rigTier(5n)} sway={running} />
+            <Tree x={cx + 82} tier={rigTier(5n)} sway={running} />
+          </>
+        ) : null}
 
-        {Array.from({ length: tier.levels }, (_, level) => {
-          const y = SURFACE_Y + (level + 1) * LEVEL_GAP;
-          return (
-            <g key={level}>
-              {/* Gallery floor */}
-              <line x1={MARGIN} y1={y} x2={WIDTH - MARGIN} y2={y} stroke="var(--rule-strong)" strokeWidth="1.2" />
-              {/* Rock either side, hatched lightly */}
-              <line x1="0" y1={y} x2={MARGIN} y2={y} stroke="var(--rule)" strokeWidth="1" strokeDasharray="2 4" />
-              <line
-                x1={WIDTH - MARGIN}
-                y1={y}
-                x2={WIDTH}
-                y2={y}
-                stroke="var(--rule)"
-                strokeWidth="1"
-                strokeDasharray="2 4"
+        {tier.key !== 'empty' ? <Tree x={cx} tier={tier} sway={running} /> : null}
+
+        {running && blooming
+          ? PETALS.map(([dx, dy, delay], i) => (
+              <ellipse
+                key={i}
+                className="petal"
+                cx={cx + dx * tier.scale}
+                cy={canopyY + dy * tier.scale}
+                rx="2.6"
+                ry="1.6"
+                fill="var(--blossom-soft)"
+                style={{ animationDelay: `${delay}s` }}
               />
-              {galleryPositions(tier.perLevel).map((x, i) => (
-                <Machine key={i} x={x} y={y} running={running} delay={(level * 3 + i) * 0.23} />
-              ))}
-            </g>
-          );
-        })}
+            ))
+          : null}
       </svg>
-      <figcaption
-        style={{
-          fontSize: 11,
-          letterSpacing: '0.18em',
-          color: 'var(--text-faint)',
-          marginTop: 8,
-          display: 'flex',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span>{tier.label}</span>
-        <span>{running ? 'PRODUCING' : 'IDLE'}</span>
+      <figcaption className="grove-caption">
+        <div className="grove-caption-row">
+          <span className="grove-stage" data-testid="grove-stage">
+            {stageName}
+            <span className="grove-seeds">
+              {' '}
+              · {formatCount(seeds)} seed{seeds === 1n ? '' : 's'}
+            </span>
+          </span>
+          <span className={growing ? 'grove-state grove-state--live' : 'grove-state'}>
+            {seeds === 0n ? 'Not planted' : growing ? 'Growing' : 'Resting'}
+          </span>
+        </div>
+        {next ? (
+          <div className="grove-next">
+            <div className="grove-meter" aria-hidden="true">
+              <span style={{ width: `${Math.max(progress, 2)}%` }} />
+            </div>
+            <span>
+              {seeds === 0n
+                ? 'Plant your first seed to sprout a seedling'
+                : `${next.tier.label} at ${formatCount(next.tier.minSeeds)} seeds`}
+            </span>
+          </div>
+        ) : null}
       </figcaption>
     </figure>
   );

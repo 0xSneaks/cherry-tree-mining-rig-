@@ -1,7 +1,12 @@
 'use client';
 
 /**
- * BUY MORE HASHPOWER.
+ * PLANT SEEDS — SOL first.
+ *
+ * The planter says how much SOL to spend; the seed count is the largest whole
+ * number the program's own price admits within it (`rigsAffordable`, the same
+ * function the program mirrors). The instruction still carries a seed count —
+ * nothing about the transaction changes, only which number the person types.
  *
  * The quote shown here is produced by the same pricing function the program
  * runs (`quotePurchase`, a port cross-checked against the Rust engine in
@@ -10,7 +15,7 @@
  */
 import { useMemo, useState } from 'react';
 
-import { formatSol } from '../lib/format';
+import { formatCount, formatSol, parseSolInput } from '../lib/format';
 import { buyResetDisclosure } from '../lib/minerCadence';
 import type { Config } from '../lib/program/accounts';
 import { MAX_RIGS_PER_PURCHASE } from '../lib/program/constants';
@@ -19,7 +24,14 @@ import { aprBps, formatAprBps, yieldInputs } from '../lib/program/yield';
 import { projectionsAllowed } from '../lib/growth/runway';
 import { Readout } from './Readout';
 
-const QUICK = [1n, 5n, 10n, 25n];
+/** Quick amounts, in SOL. The seed count follows from the program's price. */
+const QUICK_SOL = ['0.1', '0.25', '0.5', '1'];
+const DEFAULT_SOL = '0.1';
+
+/** `0.103000000` → `0.103`: a lamport amount as a person would type it. */
+function solInputText(lamports: bigint): string {
+  return formatSol(lamports, 9).replace(/\.?0+$/, '');
+}
 
 export function BuyPanel({
   config,
@@ -56,22 +68,10 @@ export function BuyPanel({
   /** The last failed planting, in product language. */
   error?: string | null;
 }) {
-  const [count, setCount] = useState<bigint>(10n);
+  const [solText, setSolText] = useState<string>(DEFAULT_SOL);
   const [pendingCount, setPendingCount] = useState<bigint | null>(null);
   const emissionLive = projectionsAllowed(config, chainTime);
   const resetDisclosure = buyResetDisclosure(hasPosition, accruedRewardLamports);
-
-  const quote = useMemo(() => {
-    try {
-      return quotePurchase(
-        count,
-        config.rigPriceLamports,
-        BigInt(config.purchaseFeeBps),
-      );
-    } catch {
-      return null;
-    }
-  }, [count, config.rigPriceLamports, config.purchaseFeeBps]);
 
   const maxAllowed =
     genesisRemaining === null
@@ -79,23 +79,57 @@ export function BuyPanel({
       : genesisRemaining < MAX_RIGS_PER_PURCHASE
         ? genesisRemaining
         : MAX_RIGS_PER_PURCHASE;
-  const clamp = (n: bigint) =>
-    maxAllowed === 0n ? 1n : n < 1n ? 1n : n > maxAllowed ? maxAllowed : n;
+
+  const budget = parseSolInput(solText);
+  let affordable = 0n;
+  try {
+    if (budget !== null) {
+      affordable = rigsAffordable(budget, config.rigPriceLamports, BigInt(config.purchaseFeeBps));
+    }
+  } catch {
+    affordable = 0n;
+  }
+  const count = affordable > maxAllowed ? maxAllowed : affordable;
+  const capped = affordable > maxAllowed && maxAllowed > 0n;
+
+  const quote = useMemo(() => {
+    if (count <= 0n) return null;
+    try {
+      return quotePurchase(count, config.rigPriceLamports, BigInt(config.purchaseFeeBps));
+    } catch {
+      return null;
+    }
+  }, [count, config.rigPriceLamports, config.purchaseFeeBps]);
+
+  // The smallest planting there is: one seed, fee included.
+  let oneSeed: bigint | null = null;
+  try {
+    oneSeed = quotePurchase(1n, config.rigPriceLamports, BigInt(config.purchaseFeeBps)).totalLamports;
+  } catch {
+    oneSeed = null;
+  }
+
+  const setAmount = (text: string) => {
+    setSolText(text);
+    setPendingCount(null);
+  };
 
   const max = () => {
     if (walletLamports === null) return;
     // Leave a little behind for the transaction fee and the miner PDA rent.
     const reserve = 5_000_000n;
-    const budget = walletLamports > reserve ? walletLamports - reserve : 0n;
-    const n = rigsAffordable(
-      budget,
-      config.rigPriceLamports,
-      BigInt(config.purchaseFeeBps),
-    );
+    const available = walletLamports > reserve ? walletLamports - reserve : 0n;
+    const n = rigsAffordable(available, config.rigPriceLamports, BigInt(config.purchaseFeeBps));
     const allowed = n > maxAllowed ? maxAllowed : n;
-    setCount(allowed > 0n ? allowed : 1n);
-    setPendingCount(null);
+    const spend =
+      allowed > 0n
+        ? quotePurchase(allowed, config.rigPriceLamports, BigInt(config.purchaseFeeBps)).totalLamports
+        : 0n;
+    setAmount(solInputText(spend));
   };
+
+  const overBalance = quote !== null && walletLamports !== null && quote.totalLamports > walletLamports;
+  const unspent = budget !== null && quote ? budget - quote.totalLamports : 0n;
 
   return (
     <section className="plant" data-testid="plant-panel">
@@ -111,58 +145,64 @@ export function BuyPanel({
         </p>
       ) : null}
 
-      <div className="stepper">
-        <button
-          type="button"
-          onClick={() => {
-            setCount((c) => clamp(c - 1n));
-            setPendingCount(null);
-          }}
-          aria-label="One fewer seed"
-        >
-          –
-        </button>
-        <input
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={count.toString()}
-          aria-label="Number of seeds"
-          onChange={(e) => {
-            const digits = e.target.value.replace(/\D/g, '');
-            setCount(digits ? clamp(BigInt(digits)) : 1n);
-            setPendingCount(null);
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            setCount((c) => clamp(c + 1n));
-            setPendingCount(null);
-          }}
-          aria-label="One more seed"
-        >
-          +
-        </button>
-      </div>
+      <label className="sol-field">
+        <span className="sol-field-label">Amount to plant</span>
+        <span className="sol-field-input">
+          <input
+            inputMode="decimal"
+            autoComplete="off"
+            value={solText}
+            aria-label="Amount in SOL"
+            aria-invalid={budget === null}
+            onChange={(e) => setAmount(e.target.value.replace(',', '.').replace(/[^\d.]/g, ''))}
+          />
+          <span className="sol-field-unit">SOL</span>
+        </span>
+      </label>
 
       <div className="quick">
-        {QUICK.map((n) => (
+        {QUICK_SOL.map((sol) => (
           <button
-            key={n.toString()}
+            key={sol}
             type="button"
-            aria-pressed={count === n}
-            onClick={() => {
-              setCount(clamp(n));
-              setPendingCount(null);
-            }}
+            aria-pressed={solText === sol}
+            aria-label={`${sol} SOL`}
+            onClick={() => setAmount(sol)}
           >
-            {n.toString()}
+            {sol}
           </button>
         ))}
         <button type="button" onClick={max} disabled={walletLamports === null}>
           Max
         </button>
       </div>
+
+      <p className="sol-hint" data-testid="plant-seeds-preview">
+        {quote ? (
+          <>
+            You plant <strong>{formatCount(quote.count)} seed{quote.count === 1n ? '' : 's'}</strong>
+            {' '}at {formatSol(config.rigPriceLamports, 4)} SOL each
+            {unspent > 0n ? ` · ${formatSol(unspent, 4)} SOL stays in your wallet` : ''}.
+          </>
+        ) : budget === null ? (
+          'Enter an amount in SOL.'
+        ) : oneSeed !== null ? (
+          `One seed needs at least ${formatSol(oneSeed, 4)} SOL, fee included.`
+        ) : (
+          '—'
+        )}
+      </p>
+      {capped ? (
+        <p className="note">
+          Capped at {formatCount(maxAllowed)} seeds per planting
+          {genesisRemaining !== null ? ' (Genesis allowance)' : ''}.
+        </p>
+      ) : null}
+      {overBalance ? (
+        <p className="note" data-testid="over-balance">
+          That is more than this wallet holds ({formatSol(walletLamports ?? 0n, 4)} SOL).
+        </p>
+      ) : null}
 
       <div className="quote">
         <Readout label="Cost" value={quote ? formatSol(quote.capitalLamports, 4) : '—'} unit="SOL" />
@@ -218,7 +258,11 @@ export function BuyPanel({
         disabled={disabled || busy || !quote || count > maxAllowed}
         onClick={() => quote && setPendingCount(quote.count)}
       >
-        {busy ? 'Planting…' : `Plant ${count.toString()} seed${count === 1n ? '' : 's'} · review`}
+        {busy
+          ? 'Planting…'
+          : quote
+            ? `Review · ${formatSol(quote.totalLamports, 4)} SOL for ${formatCount(quote.count)} seed${quote.count === 1n ? '' : 's'}`
+            : 'Plant seeds'}
       </button>
 
       {pendingCount !== null && quote ? (
@@ -239,7 +283,9 @@ export function BuyPanel({
                 onBuy(confirmedCount);
               }}
             >
-              {busy ? 'Planting…' : `Confirm plant · ${formatSol(quote.totalLamports, 4)} SOL`}
+              {busy
+                ? 'Planting…'
+                : `Confirm plant · ${formatSol(quote.totalLamports, 4)} SOL · ${formatCount(pendingCount)} seed${pendingCount === 1n ? '' : 's'}`}
             </button>
           </div>
         </div>

@@ -3,8 +3,10 @@
  *
  * Midnight navy ground, one cherry-blossom pink, off-white type. Taken from
  * the shipped UI, the banner and the logo: dark base, luminous blossom, a
- * glow only where it is the brand (the wordmark). Terminal-adjacent, not a
- * casino and not a glowing-card dashboard.
+ * glow only where it is the brand (the wordmark). Set in a humanist system
+ * sans with sentence-case labels — a garden you tend, not a terminal — and
+ * never a casino or a glowing-card dashboard. Figures keep tabular numerals;
+ * monospace is reserved for addresses, where exact characters matter.
  *
  * Every colour lives in :root below. Rules reference tokens; derived states
  * (washes, glow) are mixed from `--blossom` rather than restated as rgba, so
@@ -58,6 +60,11 @@
   --live: #6ee7b7;
   --alert: #ff6b81;
 
+  /* Bark and foliage for the grove drawing only — never a surface or text. */
+  --bark: #6b4a57;
+  --foliage: #4f9a7c;
+
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
   --safe-top: env(safe-area-inset-top, 0px);
@@ -74,9 +81,9 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.45;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
 }
@@ -102,9 +109,9 @@ body {
 }
 
 .wordmark {
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   margin: 0;
   color: var(--blossom);
   text-shadow: 0 0 18px var(--blossom-glow);
@@ -114,18 +121,17 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 2px;
-  font-size: 11px;
-  letter-spacing: 0.18em;
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0;
   color: var(--text-faint);
-  text-transform: uppercase;
 }
 
 .status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0;
 }
 
 .status-dot {
@@ -176,10 +182,9 @@ body {
 }
 
 .readout-label {
-  font-size: 11px;
-  letter-spacing: 0.14em;
+  font-size: 13px;
+  letter-spacing: 0;
   color: var(--text-dim);
-  text-transform: uppercase;
 }
 
 /* A label or value wider than a phone (a long dilution label, a full
@@ -189,13 +194,15 @@ body {
 .readout-value {
   font-variant-numeric: tabular-nums;
   font-size: 15px;
+  font-weight: 600;
   text-align: right;
   overflow-wrap: anywhere;
 }
 
 .readout-value--hero {
-  font-size: 26px;
-  letter-spacing: -0.01em;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--blossom);
   overflow-wrap: anywhere;
 }
@@ -213,12 +220,13 @@ body {
 .unit {
   color: var(--text-faint);
   font-size: 12px;
+  font-weight: 400;
   margin-left: 5px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .note {
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--text-faint);
   margin: 6px 0 0;
@@ -249,13 +257,13 @@ body {
 
 button {
   font-family: inherit;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--text);
   background: var(--bg-panel);
   border: 1px solid var(--rule-strong);
-  border-radius: 3px;
+  border-radius: 12px;
   padding: 14px 10px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
@@ -324,7 +332,7 @@ button.primary.cta:disabled {
   color: var(--text);
   background: var(--bg-inset);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: 8px;
   padding: 10px;
   font-variant-numeric: tabular-nums;
   width: 100%;
@@ -341,7 +349,7 @@ button.primary.cta:disabled {
   flex: 1 1 0;
   min-width: 48px;
   padding: 9px 4px;
-  font-size: 11px;
+  font-size: 13px;
   /* Touch-safe on a phone: 44px is the minimum comfortable target. */
   min-height: 44px;
 }
@@ -354,17 +362,17 @@ button.primary.cta:disabled {
 /* --- panels --- */
 
 .section-title {
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  color: var(--text-dim);
-  text-transform: uppercase;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: var(--text);
   margin: 0 0 8px;
 }
 
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--rule);
-  border-radius: 3px;
+  border-radius: 12px;
   padding: 12px 14px;
 }
 
@@ -375,8 +383,8 @@ details.panel {
 
 /* One sentence under the status line: what this is. */
 .lede {
-  margin: 10px 0 0;
-  font-size: 12px;
+  margin: 12px 0 0;
+  font-size: 15px;
   line-height: 1.55;
   color: var(--text-dim);
 }
@@ -386,14 +394,13 @@ details.panel {
   background: var(--bg-panel);
   border: 1px solid var(--rule-strong);
   border-top: 2px solid var(--blossom);
-  border-radius: 3px;
+  border-radius: 12px;
   padding: 14px;
   margin: 14px 0;
 }
 .plant > .section-title {
-  color: var(--blossom);
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--text);
+  font-size: 20px;
 }
 
 /* Daily cadence: one dense instrument panel, still the same terminal grove. */
@@ -401,7 +408,7 @@ details.panel {
   background: var(--bg-panel);
   border: 1px solid var(--rule-strong);
   border-top: 2px solid var(--blossom);
-  border-radius: 3px;
+  border-radius: 12px;
   padding: 14px;
   margin: 14px 0;
 }
@@ -421,10 +428,9 @@ details.panel {
 .cockpit-cadence {
   margin: 0;
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.65;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .cockpit-cadence span {
@@ -437,9 +443,8 @@ details.panel {
   border-radius: 999px;
   padding: 3px 7px;
   color: var(--text-dim);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 12.5px;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
@@ -471,9 +476,9 @@ details.panel {
 .trust-kicker {
   margin: 0 0 5px;
   color: var(--blossom-soft);
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .cockpit-block .readout {
@@ -494,18 +499,17 @@ details.panel {
   margin: 10px 0;
   border: 1px solid var(--blossom-dim);
   border-left: 2px solid var(--blossom);
-  border-radius: 2px;
+  border-radius: 8px;
   padding: 10px 12px;
   color: var(--text-dim);
   background: var(--blossom-wash);
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.5;
 }
 
 .buy-reset-warning strong {
   color: var(--text);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .trust-details {
@@ -530,8 +534,14 @@ details.panel {
   word-break: break-word;
 }
 
+.trust-address,
+.share-link,
+.cluster {
+  font-family: var(--mono);
+}
+
 .trust-address {
-  font-size: 11px;
+  font-size: 12.5px;
   text-decoration: none;
 }
 
@@ -550,8 +560,8 @@ details.panel {
 
 .activity-list li:last-child { border-bottom: 0; }
 .activity-list li > div:first-child { display: grid; gap: 2px; }
-.activity-list strong { color: var(--text); font-size: 12px; }
-.activity-list span { color: var(--text-dim); font-size: 11px; }
+.activity-list strong { color: var(--text); font-size: 14px; }
+.activity-list span { color: var(--text-dim); font-size: 12.5px; }
 
 .activity-meta {
   display: flex;
@@ -572,7 +582,7 @@ details.panel {
   margin: 12px 0;
   padding: 14px;
   border: 1px solid var(--blossom-dim);
-  border-radius: 3px;
+  border-radius: 12px;
   background: linear-gradient(145deg, var(--blossom-wash), var(--bg-panel) 58%);
 }
 
@@ -594,7 +604,7 @@ details.panel {
 
 .share-link {
   margin: 0;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 @media (max-width: 380px) {
@@ -610,7 +620,7 @@ details.panel {
   border: 1px solid var(--rule);
   border-left: 2px solid var(--rule-strong);
   background: var(--bg-inset);
-  border-radius: 2px;
+  border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 12px;
 }
@@ -627,8 +637,7 @@ details.panel {
 .launch-title {
   margin: 0;
   font-size: 12px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   color: var(--text);
 }
 .launch--skrGenesis .launch-title {
@@ -636,9 +645,8 @@ details.panel {
 }
 .launch-line {
   margin: 3px 0 0;
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 12.5px;
+  letter-spacing: 0;
   color: var(--text-dim);
 }
 .launch-countdown {
@@ -656,16 +664,16 @@ details.panel {
 .yield {
   background: var(--bg-panel);
   border: 1px solid var(--rule);
-  border-radius: 3px;
+  border-radius: 12px;
   padding: 14px 14px 12px;
   margin-bottom: 16px;
 }
 
 .yield-phase {
   margin: 0;
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
   color: var(--blossom);
 }
 
@@ -684,16 +692,15 @@ details.panel {
 .yield-apr .unit {
   font-size: 13px;
   font-weight: 400;
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   color: var(--blossom-soft);
   text-shadow: none;
 }
 
 .yield-tagline {
   margin: 6px 0 10px;
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-size: 12.5px;
+  letter-spacing: 0;
   color: var(--blossom-soft);
 }
 
@@ -724,7 +731,7 @@ details.panel {
 
 .yield-kicker {
   margin: 8px 0 0;
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--text-dim);
   font-style: italic;
 }
@@ -749,7 +756,7 @@ details.panel {
   list-style: none;
   margin: 10px 0;
   padding: 0;
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .preflight li {
   padding: 3px 0;
@@ -765,7 +772,7 @@ details.panel {
 .quote {
   background: var(--bg-inset);
   border: 1px solid var(--rule);
-  border-radius: 2px;
+  border-radius: 8px;
   padding: 10px 12px;
   margin: 10px 0;
 }
@@ -785,10 +792,10 @@ details.panel {
   border-left: 2px solid var(--blossom);
   background: var(--bg-panel);
   padding: 10px 12px;
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--text-dim);
-  border-radius: 2px;
+  border-radius: 8px;
   margin: 12px 0;
 }
 
@@ -818,7 +825,7 @@ details.panel {
 
 .leaderboard .rank {
   color: var(--text-faint);
-  font-size: 11px;
+  font-size: 12.5px;
 }
 
 .leaderboard .who {
@@ -845,9 +852,8 @@ details.panel {
 .verify {
   display: inline-block;
   margin-top: 10px;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 12.5px;
+  letter-spacing: 0;
   color: var(--steel);
   text-decoration: none;
   border-bottom: 1px solid var(--rule-strong);
@@ -858,7 +864,7 @@ details.panel {
 }
 
 .disclosure {
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--text-faint);
   margin-top: 20px;
@@ -867,10 +873,10 @@ details.panel {
 /* The cluster this build talks to — DEVNET during rehearsal. */
 .cluster {
   border: 1px solid var(--rule-strong);
-  border-radius: 3px;
+  border-radius: 12px;
   padding: 1px 6px;
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 12px;
+  letter-spacing: 0;
   color: var(--steel);
   white-space: nowrap;
 }
@@ -890,4 +896,215 @@ details.panel {
   border-top: 1px solid var(--rule);
   margin-top: 5px;
   padding-top: 8px;
+}
+
+/*
+ * THE GROVE — the wallet's cherry tree, drawn from its seed count. Motion is
+ * a slow sway and a few falling petals, only while the schedule pays.
+ */
+.grove-visual {
+  margin: 16px 0 14px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: radial-gradient(120% 90% at 50% 20%, var(--blossom-wash), transparent 70%), var(--bg-inset);
+}
+
+.grove-svg {
+  display: block;
+  overflow: visible;
+}
+
+.tree-crown {
+  transform-box: view-box;
+  transform-origin: 50% 88%;
+}
+.tree-crown--sway {
+  animation: sway 9s ease-in-out infinite;
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-0.6deg);
+  }
+  50% {
+    transform: rotate(0.6deg);
+  }
+}
+
+.petal {
+  opacity: 0;
+  animation: petal-fall 7s linear infinite;
+}
+
+@keyframes petal-fall {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0deg);
+  }
+  12% {
+    opacity: 0.9;
+  }
+  85% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(14px, 70px) rotate(160deg);
+  }
+}
+
+.grove-caption {
+  margin-top: 6px;
+}
+
+.grove-caption-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.grove-stage {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.grove-seeds {
+  font-weight: 400;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.grove-state {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+.grove-state--live {
+  color: var(--live);
+}
+
+.grove-next {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.grove-meter {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--rule);
+  overflow: hidden;
+}
+.grove-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blossom);
+}
+
+/* PLANT SEEDS — one SOL amount in; the seed count follows. */
+.sol-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 12px 0 10px;
+}
+
+.sol-field-label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.sol-field-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px;
+  background: var(--bg-inset);
+  border: 1px solid var(--rule-strong);
+  border-radius: 12px;
+}
+.sol-field-input:focus-within {
+  border-color: var(--blossom);
+}
+
+.sol-field-input input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  padding: 6px 0;
+}
+.sol-field-input input[aria-invalid='true'] {
+  color: var(--alert);
+}
+
+.sol-field-unit {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--blossom-soft);
+}
+
+.sol-hint {
+  margin: 10px 0 0;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+.sol-hint strong {
+  color: var(--text);
+}
+
+/*
+ * GLOBAL GROVE — the grove-wide figures sit on a slow drift of blossom.
+ * Decorative only: a gradient layer behind the text, never over it.
+ */
+.grove-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.grove-card-drift {
+  position: absolute;
+  inset: -40%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(20% 16% at 30% 32%, var(--blossom-wash-strong), transparent 70%),
+    radial-gradient(16% 14% at 70% 28%, var(--blossom-wash-strong), transparent 70%),
+    radial-gradient(24% 18% at 60% 70%, var(--blossom-wash), transparent 70%),
+    radial-gradient(14% 12% at 35% 72%, var(--blossom-wash-strong), transparent 70%);
+  animation: grove-drift 28s ease-in-out infinite alternate;
+}
+
+@keyframes grove-drift {
+  0% {
+    transform: translate(-4%, -3%) rotate(0deg);
+  }
+  100% {
+    transform: translate(4%, 3%) rotate(8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-crown--sway,
+  .grove-card-drift {
+    animation: none;
+  }
+  .petal {
+    display: none;
+  }
 }

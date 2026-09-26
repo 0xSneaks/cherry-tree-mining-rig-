@@ -63,7 +63,9 @@ export function TransparencyPanel({
   return (
     <section data-testid="trust-panel">
       <h2 className="section-title">Trust &amp; release</h2>
-      <div className="panel">
+      <div className="panel grove-card" data-testid="global-grove">
+        {/* Decorative only: a slow drift of blossom behind the figures. */}
+        <span className="grove-card-drift" aria-hidden="true" />
         <p className="trust-kicker">Global grove</p>
         <Readout label="Reward vault" value={formatSol(rewardVaultLamports, 3)} unit="SOL" />
         <Readout label="Reward backing" value={health.backed ? 'Backed' : 'Shortfall'} />

@@ -15,6 +15,20 @@ export function formatSol(lamports: bigint, decimals = 6): string {
   return decimals > 0 ? `${sign}${whole}.${fracStr}` : `${sign}${whole}`;
 }
 
+/**
+ * A SOL amount typed by a person → exact lamports, or null when it is not a
+ * plain non-negative decimal with at most 9 fractional digits. String math
+ * only: `0.1` is exactly 100_000_000 lamports, never a float approximation.
+ */
+export function parseSolInput(text: string): bigint | null {
+  const t = text.trim();
+  const m = /^(\d*)(?:\.(\d{0,9}))?$/.exec(t);
+  if (!m || t === '' || t === '.') return null;
+  const whole = BigInt(m[1] || '0');
+  const frac = BigInt((m[2] ?? '').padEnd(9, '0'));
+  return whole * LAMPORTS_PER_SOL + frac;
+}
+
 /** Thousands separators for rig counts. */
 export function formatCount(n: bigint | number): string {
   return n.toLocaleString('en-US');

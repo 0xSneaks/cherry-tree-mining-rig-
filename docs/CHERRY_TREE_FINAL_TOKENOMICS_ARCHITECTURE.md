@@ -1,6 +1,6 @@
 # THE CHERRY TREE — Final Tokenomics Architecture
 
-Date: 2026-09-26. Status: reconciled economic specification, **closeout revision** (founder final decisions and adversarial-review corrections applied; see `docs/OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md`). **Architecture FROZEN for implementation** (gate 14.2-A closed by founder-supplied mainnet evidence: initial-deployment case). **Post-freeze founder parameter correction (2026-09-26):** the lock ladder 1/2/3/5 days is removed; the only lock is 5 days (section 8). No other part of the model changes. Implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
+Date: 2026-09-26. Status: reconciled economic specification, **closeout revision** (founder final decisions and adversarial-review corrections applied; see `docs/OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md`). **Architecture FROZEN for implementation** (gate 14.2-A closed by founder-supplied mainnet evidence: initial-deployment case). **Post-freeze founder parameter correction (2026-09-26):** the lock ladder 1/2/3/5 days is removed; the only lock is 5 days (section 8). **Founder-approved fee amendment (2026-09-26):** the protocol fee architecture of section 7a (10% purchase fee, independent 10% compound fee with `compound_fee <= purchase_fee`, 72-hour fee-change timelock, 20/80 referral split with 8% retained margin, 30/20/10/0 early-claim fee split 60/40 treasury/grove, top-up warning, 80/20 lock-forfeit release) is adopted, with matching edits in sections 2, 7, 8, 12, 13 and 14. No other part of the model changes. Implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
 
 Authority: founder final decisions of the closeout (external debt netting, on-chain Fruit ledger, permanent 250 max wallet with legacy grandfathering, no Fruit/bonus compounding, one .skr domain = one Day-1 wallet), then founder overrides in the original request, then Fable's quantitative solve, then the existing Fruit baseline. This document defines one model. Unresolved inputs remain configuration variables; no illustrative budget is asserted to exist.
 
@@ -65,7 +65,7 @@ This is a funding equation, not a promise about actual participation.
 
 ## 2. Final constants versus unresolved configuration
 
-Fixed policy constants are the seed price reference, three 250-seed caps/benchmarks above, threshold 150, 1:1 coverage, 20% per-wallet budget ceiling, 12.5 denominator floor, one Fruit per wallet per epoch, 24-hour early access, epoch durations 1/2/3/5 days, and a single lock duration of 5 days (`D_lock = 5 days`; no 1-, 2- or 3-day locks).
+Fixed policy constants are the seed price reference, three 250-seed caps/benchmarks above, threshold 150, 1:1 coverage, 20% per-wallet budget ceiling, 12.5 denominator floor, one Fruit per wallet per epoch, 24-hour early access, epoch durations 1/2/3/5 days, and a single lock duration of 5 days (`D_lock = 5 days`; no 1-, 2- or 3-day locks). Founder-approved fee constants (section 7a): purchase fee 1,000 bps with ceiling 1,000 bps; compound fee a separate setting with `compound_fee_bps <= purchase_fee_bps` (production 1,000); fee-change timelock 259,200 s; referral cut c = 20%; retained margin m = 8%; early-claim fee 30/20/10/0% with boundaries at 86,400 / 172,800 / 259,200 s, split 60% treasury / 40% grove; lock-forfeit release 80% treasury / 20% next-Season reserve.
 
 The inherited continuation targets of 1,000%/500%/250% at the denominator floor and the approximately 25,000% Storm ceiling are retained baseline policy constraints. They are not mathematically optimal rates or newly invented percentages. They determine these exact budgets:
 
@@ -87,9 +87,9 @@ Unresolved configuration:
 | Net core Fruit budget F | Actual cleared funds assigned exclusively to core Fruit; after base and operational obligations are protected |
 | Separately funded bonus capital J | Actual cleared bonus donation/allocation; not counted in F or other commitments |
 | B_loy,p and B_lock,s | Nonnegative explicit committed budgets; aggregate commitments cannot exceed available bonus reserve |
-| Fee fraction φ | Actual configured purchase_fee_bps/10,000; rehearsal 3% is not adopted as production fact |
-| Required retained margin m | Fraction of fee-bearing principal volume, incorporating operations and any approved replenishment obligations |
-| Referral cut c | Unset until m and φ are known; 0 <= c <= 1-m/φ, if φ>0 and 0<=m<=φ |
+| Fee fraction φ | **Set (section 7a):** production purchase and compound fee 1,000 bps each. Remaining input is deploy-time verification that the initialized config matches; the rehearsal 3% is not production |
+| Required retained margin m | **Set (section 7a):** m = 8% of fee-bearing principal volume |
+| Referral cut c | **Set (section 7a):** c = 20% of the eligible fee; satisfies c <= 1-m/φ = 20% exactly at φ = 10%. c = 0 until the reservation program changes ship |
 | Asset adapters / prices | Verified identifiers, owner/position decoding, pinned program versions, manipulation-resistant reference feed, finality and staleness rules (section 5) |
 | Debt-protocol registry | Fixed whitelist of supported on-chain lending/perp/margin programs and their debt-account decoders used for debt netting (section 5). Each entry pinned to a verified program version. No adapter goes live until the registry exists; its contents are not selected here |
 | Risk overlays | Calibrated feed-confidence, quote/slippage and freshness bounds, and the EXTREME minimum-dwell/hysteresis period; no guessed thresholds |
@@ -285,11 +285,87 @@ f = φ v
 0 <= c <= 1-m/φ                   [φ>0 and 0<=m<=φ]
 ```
 
-The bound does not uniquely determine c. Leave c unset until m and the actual production fee are known and a value within the bound is selected. If m>φ, no referral cut is feasible, even at zero. If φ=0, no commission exists. Exact integer settlement must also preserve the per-event retained margin after fee rounding.
+The bound does not uniquely determine c; the founder selected **c = 20%, m = 8%** with φ = 10% (section 7a), which meets the bound with equality. If m>φ, no referral cut is feasible, even at zero. If φ=0, no commission exists. Exact integer settlement must also preserve the per-event retained margin after fee rounding.
 
-Reserve commissions atomically before any fee withdrawal; fee recipient withdrawals can use only the remaining unencumbered fee balance. V2 cannot do this: `withdraw_fees` checks only the distributable fee-vault balance. Required base-program changes: in `buy_rigs` and `compound`, in the instruction that moves the fee, increment a Config `reserved_commissions` counter and a per-referrer ledger PDA (separate from `Miner`, so no Miner realloc); `withdraw_fees` requires `distributable - reserved_commissions >= amount`; a referrer `claim_commission` instruction pays from the fee vault and decrements both. `c=0` until these changes ship and m and φ are set. Once a compound's fee has actually reached FEE, its eligible commission is funded there; do not deduct a second commission from the user's accrued rewards. No retroactive promise of commissions on fees already withdrawn.
+Reserve commissions atomically before any fee withdrawal; fee recipient withdrawals can use only the remaining unencumbered fee balance. V2 cannot do this: `withdraw_fees` checks only the distributable fee-vault balance. Required base-program changes: in `buy_rigs` and `compound`, in the instruction that moves the fee, increment a Config `reserved_commissions` counter and a per-referrer ledger PDA (separate from `Miner`, so no Miner realloc); `withdraw_fees` requires `distributable - reserved_commissions >= amount`; a referrer `claim_commission` instruction pays from the fee vault and decrements both. `c=0` until these changes ship; then c = 20% and m = 8% (section 7a). Once a compound's fee has actually reached FEE, its eligible commission is funded there; do not deduct a second commission from the user's accrued rewards. No retroactive promise of commissions on fees already withdrawn.
 
-Each fee event is consumed once. Immutable first-purchase binding to a pre-existing planter prevents ordinary referral cycles, but linked-wallet fee rebates remain possible. Never claim complete person-level abuse prevention. Referral revenues can be concentrated without violating reward-vault solvency. Retained fees fund future rewards only after a separate actual transfer and commitment.
+Each fee event is consumed once. Immutable first-purchase binding to a pre-existing planter prevents ordinary referral cycles, but linked-wallet fee rebates remain possible. Never claim complete person-level abuse prevention. Referral revenues can be concentrated without violating reward-vault solvency. Retained fees go to the Protocol Treasury. They never fund rewards automatically; any reward funding from the treasury is a separate, explicit funded transfer and commitment (section 7a, item 10).
+
+## 7a. Protocol fee architecture (founder-approved amendment)
+
+Founder approval, 2026-09-26, of `docs/CHERRY_TREE_FEE_OPTIMIZATION_MODEL.md` (status APPROVED / FINAL). This section is normative. It changes fees, the early-claim fee, referral parameters and the lock-forfeit destination only; no other part of this architecture is reopened. Nothing here is implemented yet: the fee implementation is its own pass, after the Fruit-ledger foundation.
+
+Terminology: all protocol revenue goes to the **Protocol Treasury** (also called the **Protocol Sustainability Fund**). On-chain that is `config.fee_recipient`, which must be the Protocol Treasury multisig. Product copy never says "founder fees" and never implies personal extraction.
+
+**1. Fresh purchase fee.** `purchase_fee_bps = 1,000` (10%) in production, charged on top of principal as today (`fee = floor(capital * bps / 10,000)`). The hard ceiling `MAX_PURCHASE_FEE_BPS = 1,000` stays and must not be raised.
+
+**2. Compound fee.** A separate configurable `compound_fee_bps`, used only by `compound`. Invariant at every moment, including across a scheduled change: `compound_fee_bps <= purchase_fee_bps <= 1,000`. Production target 1,000 / 1,000. A compound that creates no seed (the wallet is at the 250 cap, or rewards cannot buy one whole seed) mints nothing, charges no fee and moves no SOL; earned SOL stays claimable (test 3). The capped compound and 250-seed rules of section 4 are unchanged.
+
+**3. Fee-change timelock (72 hours).** Changes to `purchase_fee_bps` or `compound_fee_bps` after `initialize` are two-step:
+
+- `schedule_fee_change(new_purchase_bps, new_compound_bps)` (authority) validates both values against the ceiling and against each other, stores them as the pending change with `effective_at = now + 259,200`, and emits an event. The pending values and `effective_at` are readable on-chain from that moment, so users see the change before it applies.
+- `apply_fee_change` (permissionless) is accepted only when `now >= effective_at` and writes both values together.
+- Purchases and compounds before `effective_at` use the current fees. A new schedule replaces the pending one and restarts the full 72 hours; the authority may cancel a pending change. No path shortens or bypasses the delay.
+- The timelock covers increases and decreases alike. `initialize` sets the first values before launch without a delay. The early-claim schedule, its 60/40 split and the referral parameters are program constants, so changing them needs a disclosed program upgrade, never a configuration call.
+
+**4. Referral commission.** One direct level. The section 7 formula applies with the now-fixed parameters `c = 20%` of the eligible fee and `m = 8%` of fee-bearing principal volume:
+
+```text
+commission_e = min(floor(0.20 f_e), max(0, f_e - ceil(0.08 v_e)))
+retained_e   = f_e - commission_e              -> Protocol Treasury
+```
+
+At the production 10% fee, `(1-c)φ = 0.8 × 10% = 8% = m`, so the bound holds exactly: the referrer receives 20% of the eligible fee (2% of volume) and the Protocol Treasury receives 80% (8% of volume). If the fee is lower (for example a compound fee below 10%, or after a timelocked reduction), the clamp shrinks the commission first; at a fee of 8% or less the commission is 0. Integer rounding of the fee may reduce a commission by a lamport; it never reduces the margin. Commissions arise only from actual finalized eligible fees received in FEE (fresh purchase and completed compound fees of the referred wallet). They are never paid from principal, CAPITAL, REWARD, reward liabilities, the early-claim fee, or any Fruit / loyalty / lock ledger, and never on fees received or withdrawn before the commission program shipped (no retroactive commissions). The reservation, per-referrer ledger, `claim_commission` and `withdraw_fees` guard of section 7 are the required implementation. The 105/100 base referral weight is unchanged and separate.
+
+**5. Early-claim fee.** The base claim penalty is renamed and treated explicitly as an **early-claim fee**, disclosed before a user purchases or plants: the schedule, how it is computed, and its destination. The age is `now - last_planted_at` (the position's most recent fresh purchase), and the fee applies to the whole claimed amount:
+
+| Age since last fresh purchase | Early-claim fee |
+|---|---:|
+| `[0, 86,400)` s (under 24h) | 30% |
+| `[86,400, 172,800)` s (24–48h) | 20% |
+| `[172,800, 259,200)` s (48–72h) | 10% |
+| `>= 259,200` s (72h or more) | 0% |
+
+Boundaries are half-open (section 3 convention). For an early-claim fee `x` on a claim:
+
+```text
+x          = floor(gross * fee_bps / 10,000)
+treasury_x = floor(0.60 x)          -> moved REWARD -> FEE in the claim instruction, counted as Protocol Treasury revenue
+grove_x    = x - treasury_x          -> stays in REWARD and is redistributed to other planters exactly as today (dust if none)
+user receives gross - x
+```
+
+Rounding favours the grove share. The base fully-funded check covers the transfer: the treasury share leaves REWARD together with the liability it settles. The treasury share is not an eligible referral fee. Displayed claimable amounts are shown both gross and net of the current early-claim fee, so the product never presents already-netted value as confiscated after the fact. Compounding never triggers the fee.
+
+**6. Claim-anchor reset (retained behaviour, mandatory warning).** A fresh purchase sets `last_planted_at = now` for the whole position, so all pending rewards, including older ones, fall back under the 30% tier. This protocol behaviour is kept. Before any top-up purchase by a wallet with pending rewards above zero, the product must show, and the user must see before signing:
+
+> **Buying more seeds restarts your early-claim timer.** Your unclaimed rewards (X SOL) would then carry the 30% early-claim fee for the next 24 hours. Claim them first to keep the full amount.
+
+`X` is the current gross pending amount. The warning is not shown when nothing is pending. Compounding does not move the anchor and needs no warning.
+
+**7. Five-day lock early exit.** Unchanged from section 8: a single 5-day lock, cliff vesting, no additional percentage fee and no time-decaying schedule. A voluntary early exit forfeits only the unvested conditional bonus of the lost units. Seed principal, external principal, accrued core rewards, vested bonuses and all of L are untouched.
+
+**8. Lock-forfeit destination (80 / 20).** Only capacity released by voluntary lock forfeiture is split; see section 8 for the accounting. 80% goes to the Protocol Treasury / Sustainability Fund, and 20% stays in the lock ledger's Z as reserve for the next Season. This is unused bonus allocation coming back, not confiscation of vested or accrued user rewards; the accounting names it separately.
+
+**9. CAPITAL.** No change. CAPITAL stays locked and non-withdrawable, no instruction pays out of it, it is never protocol revenue, and no founder or treasury withdrawal path from user principal exists.
+
+**10. Reward funding.** Protocol fees never fund rewards automatically. Emissions stay separately and explicitly funded through `fund_rewards` (base) or Fruit funding (section 10a). Treasury revenue may support development, infrastructure, indexing/RPC, security, integrations, operations, maintenance and protocol sustainability. Any future allocation of treasury funds to a reward vault must be a separate, explicit funded transfer and commitment. It is never an accounting reclassification, and the current operations policy forbidding FEE → REWARD round trips remains in force.
+
+**11. Treasury accounting.**
+
+```text
+GROSS PROTOCOL FEES        = purchase fees + compound fees + early-claim fee treasury share
+ - REFERRAL LIABILITIES      (reserved commissions, paid and unpaid)
+ - OTHER RESERVED FEE OBLIGATIONS
+ = NET TREASURY REVENUE      (withdrawable from FEE to the Protocol Treasury)
+
+Reported separately, never as fee revenue: released lock-forfeit allocation (treasury share, section 8).
+Never counted: CAPITAL, the REWARD vault balance and reward liabilities, any Fruit ledger's V, L, U or Z (before an explicit release), dust, and unpaid referral balances.
+```
+
+`withdraw_fees` may move at most `distributable(FEE) - reserved_commissions`.
+
+**12. Day-1 `.skr` binding rent.** The binding PDA costs about **0.00145 SOL** of rent, paid by the binding wallet and not recoverable (no close path). This replaces the earlier "~0.0012 SOL" figure.
 
 ## 8. Lock model
 
@@ -323,6 +399,20 @@ This is explicitly conditional vesting progress in U, not claimable accrued L. A
 On a verified EXTREME event or route unavailability as defined in section 9, offer immediate safety release without forfeiture of the earned-to-date conditional progress: vest that progress into L and cancel only the future unearned part. Compute relief using the last valid surviving weight immediately before the safety event, not a post-event NAV-zero weight. End the election permanently; no second election. HOT alone does not force exit or vesting.
 
 Unknown history is held pending, not treated as voluntary exit; an indexer gap at t_s keeps all of B_lock reserved until H_lock is final. Every lock is five days, so the allocation is `B_lock ell_i/max(sum ell,12.5)` at maturity. Nobody choosing a lock returns all B_lock to Z. Locks cannot overrun the five-day Season.
+
+**Forfeiture destination (founder-approved amendment, section 7a).** Early exit carries no percentage fee and no decay; the cliff forfeit of unvested conditional bonus is the only consequence. At lock-pool close the released capacity `E - final_total` is split into named parts, all verified by the complete Final root of section 10a:
+
+```text
+unallocated = B_lock - sum A_i                        (floor shortfall, nobody locking)       -> 100% to Z
+forfeited   = voluntary-shortfall cancellations (unvested A_i of lost units)                    -> split below
+other       = (sum A_i - final_total) - forfeited     (future part cancelled by safety release)  -> 100% to Z
+0 <= forfeited <= sum A_i - final_total               (enforced on-chain; the complete root carries forfeited)
+
+treasury_release = floor(0.80 forfeited)  -> Z, then out of Z to the Protocol Treasury in the same close (reserve withdrawal: V -= t, Z -= t)
+next_season      = forfeited - treasury_release       -> stays in Z for the next Season
+```
+
+Vested L, accrued core rewards and seed or external principal are never part of `forfeited`. The treasury release is reported as released unused bonus allocation, never as fee revenue.
 
 ## 9. Safe Mode
 
@@ -394,8 +484,8 @@ Minimum state:
 |---|---|
 | `FruitConfig` (singleton) | state version; admin; root-poster key; veto signer set and threshold (poster is not a member); challenge-window seconds; frozen `P_ref`, `M=250`, `qmax=1/5`; per-ledger pause flags |
 | `Ledger` (one per ledger k ∈ {core, loyalty, lock}) | vault PDA; counters `L_k`, `U_k`, `Z_k`; `paid_cum_k` |
-| `Pool` (per ledger and epoch/Season) | pool id; budget `E`; `t_start`, `t_end`; `wallet_cap = floor(E/5)`; hash of committed per-asset references; `final_total`; `paid_cum`; status (Committed, Active, Ended, Reconciling, Closed); for lock pools the frozen `H_lock` |
-| `Root` (per pool and version) | Merkle root; version; `checkpoint_time`; `total`; `posted_at`; `final_after = posted_at + challenge window`; status (Pending, Vetoed, Final) |
+| `Pool` (per ledger and epoch/Season) | pool id; budget `E`; `t_start`, `t_end`; `wallet_cap = floor(E/5)`; hash of committed per-asset references; `final_total`; `paid_cum`; status (Committed, Active, Ended, Reconciling, Closed); for lock pools the frozen `H_lock` and allocated `sum A_i` |
+| `Root` (per pool and version) | Merkle root; version; `checkpoint_time`; `total`; `posted_at`; `final_after = posted_at + challenge window`; status (Pending, Vetoed, Final); for lock pools, `forfeited` on the complete root |
 | `ClaimRecord` (per pool and wallet) | `claimed_cum` |
 
 Leaf encoding is domain-separated: `hash(program_id, ledger_id, pool_id, wallet, cumulative_amount)`, so a leaf cannot be replayed across programs, ledgers, pools or wallets.
@@ -411,7 +501,7 @@ Invariants enforced on-chain:
 7. **Replay-protected cumulative claims:** claims are verified only against the pool's latest Final root. Payment is `max(0, cumulative_amount - claimed_cum)`; then `claimed_cum = max(claimed_cum, cumulative_amount)`, `V -= payment`, `L -= payment`, `paid_cum += payment`, atomically. A duplicate or concurrent claim pays 0. A leaf lower than `claimed_cum` pays 0 and affects no other wallet. Hard guard: `paid_cum <= final_total`.
 8. **Reserve until reconciliation:** unallocated pool capacity stays in U until the pool is Closed. Closing requires `now >= t_end`, no Pending root, and a Final root marked complete by the poster and not vetoed; then `U -= (E - final_total)`, `Z += (E - final_total)`. Unresolved shared-pool capacity is never released by elapsed time alone; terminal resolution follows section 10.
 9. **Outflows:** lamports leave a Fruit vault only by a claim (against L) or an authorized reserve withdrawal (against Z only). No instruction moves Fruit lamports into a base vault or converts them into seeds.
-10. **Lock pools:** conditional progress sits in U. Vesting moves U→L through finalized roots. Forfeited units return to Z only at pool close. `H_lock` is written once, at registration finalization, and is immutable.
+10. **Lock pools:** conditional progress sits in U. Vesting moves U→L through finalized roots. Forfeited units return to Z only at pool close; the close then releases `floor(0.80 forfeited)` from Z to the Protocol Treasury and keeps the rest in Z (section 8, founder-approved amendment). A lock root marked complete carries `forfeited`, bounded by `sum A_i - final_total`. `H_lock` is written once, at registration finalization, and is immutable.
 11. **Versioning:** accounts carry a state version. Migrations preserve lamports, `L`, `U`, `claimed_cum` and pool/root history, and are one-shot and fail-closed. Pausing may stop new roots or registrations; it never reduces L. Claims are paused only if the claim path itself is unsafe.
 
 Program upgrade authority, poster key, veto set, threshold and challenge-window length are required governance inputs (section 2), disclosed publicly, and not selected here.
@@ -474,10 +564,12 @@ Fable's single-wallet 2,500-seed examples are invalid under the final hard cap a
 | Lock election/cutoff | One immutable election per wallet/Season; finalize strictly before Season start |
 | Lock award | B_lock ell/max(sum ell,12.5) (equivalently B_lock 5ell/max(5 sum ell,62.5)); fixed denominator |
 | Lock vesting | Cliff; conditional progress reserved; safety release vests earned-to-date progress |
+| Lock early exit | No additional fee, no decay; forfeits only unvested conditional bonus of lost units |
+| Lock forfeit release | 80% Protocol Treasury / 20% retained in Z for the next Season; unallocated and safety-cancelled capacity 100% to Z |
 | Bonus per-wallet ceilings | B_loy/5 and B_lock/5 for respective funded pools |
 | Referral level | One direct level |
-| Referral payment | min(floor(c f_e), max(0, f_e - ceil(m v_e))); c unresolved; c=0 until reservation program changes ship |
-| Referral margin bound | (1-c)φ>=m |
+| Referral payment | min(floor(c f_e), max(0, f_e - ceil(m v_e))) with c = 20%, m = 8%; 80% of the eligible fee to the Protocol Treasury; c=0 until reservation program changes ship; never retroactive |
+| Referral margin bound | (1-c)φ>=m; 0.8 × 10% = 8% at production fees |
 | Existing base referral weight | Preserve 105/100 funded base redistribution; no added Fruit weight |
 | External normal exit | Documented normal-path <=432,000 seconds; no catastrophe guarantee |
 | Borrowed/encumbered equity | X = max(0, unencumbered admitted value - registry debt), wallet-level; off-registry/off-chain borrowing undetectable and disclosed |
@@ -490,6 +582,15 @@ Fable's single-wallet 2,500-seed examples are invalid under the final hard cap a
 | Solvency | V>=L+U+Z per ledger and aggregate, separate Fruit vaults, including reserved unsettled obligations |
 | No participants | No accrual; no infinite APR; unused capacity remains reserve |
 | Claim expiry | None for valid accrued liabilities |
+| Purchase fee | 10% (1,000 bps) on top of principal; ceiling 1,000 bps, not raisable |
+| Compound fee | Separate setting, 10% in production; compound_fee <= purchase_fee always |
+| Fee changes | 72-hour on-chain timelock (schedule → visible → apply after 259,200 s); initialize excepted |
+| Early-claim fee | 30% / 20% / 10% / 0% at <24h / 24–48h / 48–72h / >=72h since last fresh purchase; disclosed before purchase |
+| Early-claim fee destination | 60% Protocol Treasury (REWARD → FEE) / 40% redistributed to other planters |
+| Top-up warning | Mandatory before a purchase when pending rewards > 0 (anchor reset, section 7a item 6) |
+| Protocol Treasury | `fee_recipient` = Protocol Treasury multisig; net revenue = gross fees − referral liabilities − reserved obligations |
+| Reward funding | Never automatic from fees; separate explicit funded transfer only |
+| CAPITAL | Locked, non-withdrawable, never revenue |
 | Compound at cap | No new seed, no fee (engine revert accepted); earned SOL remains claimable |
 | Fruit / bonus SOL | Claimable only; never compounds into seeds |
 | Fruit settlement | On-chain ledger (section 10a): capacity-bounded roots, E/5 leaf cap, challenge window with independent veto, cumulative replay-protected claims |
@@ -511,7 +612,8 @@ Apply this as a section-anchored replacement plan to the verified 562-line basel
 | §4 historical lessons | Retain as non-normative background; no extra economic promises or unfunded incentives. |
 | §5 mathematical model | Replace with section 1 plus section 5's X definition, event attribution and emergency prospective reference rule. Include missing-history common-denominator reserve treatment from section 10. |
 | New §5a loyalty | Insert section 6, including integral accrual, separate committed funding, floor-aware boost ratio and explicit absence of a monetary chat multiplier. |
-| New §5b referrals | Insert section 7; separate existing 1.05 base weight from c on actual fees. Leave c and m unresolved. |
+| New §5b referrals | Insert section 7; separate existing 1.05 base weight from c on actual fees. c = 20% and m = 8% (section 7a). |
+| New §5d protocol fees | Insert section 7a in full: fee values and ceiling, compound fee rule, timelock, early-claim fee schedule and 60/40 destination, top-up warning, treasury accounting, reward-funding separation, lock-forfeit 80/20. |
 | New §5c locks | Insert section 8 in full: registration cutoff, one election, fixed cohort denominator, partial shortfall, cliff, safety release and no second election. |
 | §6 target funding matrix | Retain as hypothetical arithmetic; use H for weight-unit targets and actual nominal denominator for aggregate returns. Do not label hypothetical table entries funded. |
 | §7 multipliers | Keep all Fruit asset multipliers at 1.00. Explain loyalty/locks as separate funds. Remove leveraged-JLP carry as an enabled-product implication. |
@@ -541,7 +643,7 @@ The closeout sections 1, 4, 5, 6, 7, 8, 9, 10 and 10a of this document supersede
 | 1 | External capital admission | **Closed by founder decision:** registry debt netting plus disclosure (section 5). Remaining input: registry contents (configuration, gate 14.2-D) |
 | 2 | Hard-cap protocol integration | **Rule closed by founder decision** (section 4, including legacy grandfather-freeze). **Evidence closed** (gate 14.2-A): program account not found on mainnet → initial-deployment case; cap and `.skr` binding ship in the initial deployment; no migration and no legacy `S>250` wallet can exist under this deployment |
 | 3 | Actual budget and base ledger | Configuration/evidence (gate 14.2-C); does not block code |
-| 4 | Referral economics | Rule closed (section 7 clamp and reservation); `c=0` until m, φ and program changes exist |
+| 4 | Referral economics | **Closed by founder decision:** c = 20%, m = 8%, φ = 10% (section 7a); `c=0` until the reservation program changes ship |
 | 5 | Ownership settlement design | **Closed by founder decision:** on-chain Fruit ledger (section 10a) and time convention (section 3). Governance values are configuration (gate 14.2-D) |
 | 6 | Adapter and risk verification | Rule closed (section 5 pricing, pinning, encumbrance; section 9 EXTREME/hysteresis). Per-adapter verification is configuration; no adapter goes live unverified |
 | 7 | Bonus configuration | Rule closed. `B_loy=0` until `w_tenure_min` is set; `B_lock` as committed |
@@ -556,7 +658,7 @@ B. **Release branch pin.** The exact implementation branch/commit and its test s
 
 C. **Budget.** Live balances, base schedule, F, J, B_lock and base runway through `T0+12 days`, reconciled into L/U/Z.
 
-D. **Configuration inputs (block activation of the feature, not code):** debt-protocol registry; per-adapter program pins, reference sources and calibrated thresholds; EXTREME dwell period; `w_tenure_min`; m and φ (then c); Fruit ledger poster key, veto set, threshold, challenge window and upgrade authority.
+D. **Configuration inputs (block activation of the feature, not code):** debt-protocol registry; per-adapter program pins, reference sources and calibrated thresholds; EXTREME dwell period; `w_tenure_min`; deploy-time check that initialized `purchase_fee_bps` and `compound_fee_bps` equal 1,000 (m, φ and c are fixed by section 7a); Fruit ledger poster key, veto set, threshold, challenge window and upgrade authority.
 
 ### 14.3 Test gate
 
@@ -568,7 +670,7 @@ Every test asserts, after every transition: `V_k >= L_k + U_k + Z_k` per ledger 
 3. Compound at `S=250` creates no seed and charges no fee: revert or no-op, pending rewards and penalty anchor unchanged.
 4. Legacy fixture `S=400`: purchase reverts; compound mints nothing and charges no fee; base claim works; base shares and `Miner.rigs` unchanged through the migration; Fruit `K=2.5`.
 5. Referred wallet (weight 105) at the cap: `total_shares` includes exactly `250*105`.
-6. After `set_pricing(price*2)`, Fruit `K` still uses `P_ref`. After `set_pricing` lowers the fee, the commission is clamped to preserve the margin.
+6. After `set_pricing(price*2)`, Fruit `K` still uses `P_ref`. After a (timelocked) fee reduction, the commission is clamped to preserve the margin.
 7. Config migration: lamport and byte identity on failure; one-shot; every instruction fails cleanly during the inert window; existing liabilities preserved.
 8. Pre-ops detects `genesis_cap_rigs != 250` on the deployed fixture.
 9. The activation purchase counts against both check 1 and check 2.
@@ -657,7 +759,23 @@ Every test asserts, after every transition: `V_k >= L_k + U_k + Z_k` per ledger 
 75. Reserve withdrawal touching L or U: rejected.
 76. Funding exhaustion mid-sequence: already committed tranches finish.
 
-Tests 1–77 are the implementation gate. Isolated accounting and tests may proceed now against explicit fixtures. Gate 14.2-A is closed (initial-deployment case), so base-program changes may proceed. Feature activation additionally requires 14.2-C and the relevant 14.2-D inputs. No launch date is selected.
+**Protocol fees (founder-approved amendment, section 7a)** — the 5-day-only lock requirement is test 77 above.
+78. Production configuration: `purchase_fee_bps = 1,000`; a purchase of `n` seeds charges exactly `floor(n * P * 1,000 / 10,000)` as fee (10% of principal) into FEE; any configured or scheduled purchase fee above 1,000 bps is rejected.
+79. Independent compound fee: `compound` charges `compound_fee_bps` and `buy_rigs` charges `purchase_fee_bps`; with, for example, 1,000 / 800 the two quotes differ exactly by rate and the TypeScript mirror agrees.
+80. `compound_fee_bps > purchase_fee_bps` is rejected at `initialize` and in `schedule_fee_change`, including a purchase-fee decrease below the current compound fee without a matching compound decrease.
+81. Capped or no-op compound (`S = 250`, or rewards below one whole seed): no seed, no compound fee, no lamport movement in any vault; pending rewards and the claim anchor unchanged and claimable.
+82. Fee timelock: after `schedule_fee_change`, the pending values and `effective_at = now + 259,200` are readable on-chain and an event is emitted; at `effective_at - 1` purchases and compounds use the old fees and `apply_fee_change` is rejected; at `effective_at` it applies both values atomically. Rescheduling restarts the full delay; cancel works; no instruction bypasses the delay.
+83. Referral 20/80: a referred wallet's fresh purchase and compound at 10% reserve exactly `floor(0.20 f)` for the direct referrer and leave `f - floor(0.20 f)` to the Protocol Treasury; an unreferred wallet leaves 100%; the referrer's own referrer receives nothing (one level).
+84. Retained-margin clamp: `commission = min(floor(0.20 f), max(0, f - ceil(0.08 v)))` for fees of 10%, 9% and 8% or less (commission 0); retained is never below `min(f, ceil(0.08 v))`; no commission from principal, REWARD, reward liabilities, the early-claim fee or any Fruit ledger; no commission on fees received before the commission program shipped.
+85. Early-claim fee boundaries: ages 0 and 86,399 s → 30%; 86,400 and 172,799 s → 20%; 172,800 and 259,199 s → 10%; 259,200 s and later → 0%; compounding never charges it.
+86. Early-claim fee destination: `treasury_x = floor(0.60 x)` moves REWARD → FEE and `x - treasury_x` is redistributed to other planters (dust when none); the parts sum exactly to `x`; the claimant receives `gross - x`; the base fully-funded check holds; `treasury_x` is not referral-eligible.
+87. Top-up resets the anchor as disclosed: a purchase with pending rewards sets `last_planted_at = now` and a claim in the next 24 hours pays 30% on all pending; compound and claim never move the anchor; the product shows the section 7a warning before a top-up when pending > 0 (and not when pending = 0), and discloses the schedule and the 60/40 destination before any purchase.
+88. Early lock exit touches only unvested bonus: at any time before `t_s + 5 days` the loss is exactly the unvested conditional award of the lost units; no percentage fee, no decay; seed principal, accrued core rewards, vested bonuses and L unchanged.
+89. Lock-forfeit 80/20: at lock-pool close, `floor(0.80 forfeited)` leaves Z to the Protocol Treasury and the remainder stays in Z; unallocated and safety-cancelled capacity go 100% to Z; a root claiming `forfeited > sum A_i - final_total` is rejected; L and U are never touched by the release.
+90. CAPITAL cannot become treasury revenue: no instruction debits CAPITAL; `withdraw_fees` and every treasury or reserve path reject CAPITAL as source; treasury revenue counters never include CAPITAL receipts.
+91. Treasury accounting: `withdraw_fees` above `distributable(FEE) - reserved_commissions` is rejected; net treasury revenue equals gross protocol fees minus referral liabilities minus reserved obligations; REWARD balances, reward liabilities, any Fruit V/L/U/Z and protected U are never counted; no instruction moves FEE lamports to REWARD or a Fruit vault automatically.
+
+Tests 1–91 are the implementation gate (tests 78–91 gate the fee implementation pass). Isolated accounting and tests may proceed now against explicit fixtures. Gate 14.2-A is closed (initial-deployment case), so base-program changes may proceed. Feature activation additionally requires 14.2-C and the relevant 14.2-D inputs. No launch date is selected.
 
 ### Source links
 

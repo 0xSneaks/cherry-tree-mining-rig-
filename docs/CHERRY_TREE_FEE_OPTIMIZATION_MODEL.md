@@ -1,8 +1,23 @@
 # THE CHERRY TREE — Protocol Fee Optimization Model
 
-Date: 2026-09-26. Status: **proposal for founder approval. Nothing is implemented.** It is based on the V2 code at `claude/cherry-tree-pass1-cap-skr` (`c7241df`) and the frozen architecture (`3036392`, which includes the single 5-day lock correction).
+Date: 2026-09-26. Status: **APPROVED / FINAL** (founder approval 2026-09-26). Adopted into the frozen architecture as §7a (`docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md`, tests 78–91) and recorded in closeout §12. **Nothing is implemented yet**; the fee implementation is its own pass after the Fruit-ledger foundation. The model was built on the V2 code at `claude/cherry-tree-pass1-cap-skr` (`c7241df`) and the frozen architecture (`3036392`, which includes the single 5-day lock correction).
 
 Objective: the highest protocol revenue that still leaves users a clear reason to participate. The model never touches principal, already-earned rewards or vested rewards, never compromises `V >= L + U + Z`, and adds no hidden fees.
+
+**Founder decisions (final).**
+- Purchase fee 10%; ceiling stays 10%.
+- Compound fee 10%, as its own setting, with `compound_fee <= purchase_fee`.
+- 72-hour fee-change timelock.
+- Referral: 20% referrer / 80% Protocol Treasury, one level, retained margin 8%.
+- Early-claim fee 30 / 20 / 10 / 0, split 60% treasury / 40% grove, disclosed before purchase as an early-claim fee.
+- Mandatory top-up warning; the anchor-reset behaviour itself is kept.
+- Single 5-day lock with no additional exit fee.
+- Released lock forfeits: 80% treasury / 20% next-Season reserve.
+- CAPITAL unchanged.
+- Protocol fees never fund rewards automatically.
+- `.skr` binding rent ≈ 0.00145 SOL.
+
+Where this document says "recommended", read "approved". Where it names a founder gate, the gate is resolved as stated in §7 and §9.
 
 Revenue destination: the **Protocol Treasury / Protocol Sustainability Fund**. On-chain this is `config.fee_recipient`, which must be a treasury multisig (see §12).
 
@@ -172,7 +187,7 @@ The absolute cost is bounded: within 24 hours of a purchase, a wallet has accrue
 
 **Recommendation:** Model B, 60% treasury / 40% grove, on the 30 / 20 / 10 / 0 schedule.
 
-**Founder gate.** Model B turns part of a user's earned-but-unclaimed base rewards into protocol revenue. That is compatible with "never confiscate earned rewards" only if the penalty is classified and disclosed, before purchase, as an early-claim fee.
+**Founder gate — RESOLVED:** Model B approved; the treasury share is classified and disclosed before purchase as an **early-claim fee** (architecture §7a item 5). Original note: Model B turns part of a user's earned-but-unclaimed base rewards into protocol revenue. That is compatible with "never confiscate earned rewards" only if the penalty is classified and disclosed, before purchase, as an early-claim fee.
 
 - It also amends the frozen architecture, where base penalty rules are unchanged.
 - If you do not accept that classification, keep Model A. The stronger schedule alone still improves the staying incentive.
@@ -217,6 +232,7 @@ Never counted: CAPITAL, REWARD balance, L, U (including protected U), Z before r
 
 **Reward funding from the treasury (founder decision).** The ops policy (`docs/backlog/REWARD_RUNWAY_OPS.md` §2) currently forbids funding REWARD from FEE-vault proceeds, including round trips. The reason: new buyers' fees would then pay earlier buyers, which is deposit-funded economics. The brief's "future reward funding where explicitly allocated" conflicts with that rule.
 
+- **Founder decision (final):** the prohibition is kept. Protocol fees never fund rewards automatically; any treasury-to-reward allocation must be a separate, explicit funded transfer and commitment (architecture §7a item 10).
 - Recommendation: keep the prohibition for base rewards.
 - The Sustainability Fund pays operations, security, infrastructure and growth.
 - Rewards stay funded by disclosed external sources.
@@ -271,7 +287,7 @@ Sustainability note: at e = 1, treasury revenue is about 14% of the emission the
 - **Claim penalty:** zero cost to a user who waits 72 hours after their last purchase, or who compounds.
 - **Lock:** zero cost to a user who holds for 5 days; an early exit loses only the unvested bonus.
 
-## 12. Required code changes (after approval)
+## 12. Required code changes (approved; for the dedicated fee implementation pass)
 
 1. **Config:** `purchase_fee_bps = 1000` at `initialize`. Add `compound_fee_bps` (enforced `<= purchase_fee_bps`), used by `compound`, with a matching TypeScript quote. The ceiling stays at 1,000.
 2. **Fee-change timelock:** `set_pricing` queues a change and takes effect only after a delay (for example 72h), with events. This protects the trust gap at a 10% fee.
@@ -293,7 +309,7 @@ Sustainability note: at e = 1, treasury revenue is about 14% of the emission the
 7. **Custody:** `fee_recipient` = the Protocol Treasury multisig. Rename user-facing copy to "Protocol Treasury".
 8. **Buy panel:** disclose the fee, the early-claim fee schedule and destination, and the warning "claim before topping up".
 
-## 13. Required test changes (after approval)
+## 13. Required test changes (approved; codified as architecture tests 78–91)
 
 - Quotes at 1,000 bps; compound at `compound_fee_bps`; `compound_fee_bps > purchase_fee_bps` rejected; zero-seed compound charges nothing (already covered).
 - A timelocked `set_pricing` cannot take effect early; its event is emitted.
@@ -304,9 +320,9 @@ Sustainability note: at e = 1, treasury revenue is about 14% of the emission the
 - Lock: early exit forfeits exactly the unvested award; the Z release never touches L or U; the 80/20 release is exact.
 - Accounting: net revenue excludes reserved commissions, L, U, Z and CAPITAL.
 
-## 14. Final recommended production fee table
+## 14. Final approved production fee table
 
-| Parameter | Current | **Recommended** | Code change |
+| Parameter | Current | **FINAL (approved)** | Code change |
 |---|---|---|---|
 | Purchase fee | 3% (devnet config) | **10%** (1,000 bps, at the ceiling) | Config only |
 | Fee ceiling | 10% | **10%** (keep) | None |
@@ -314,10 +330,10 @@ Sustainability note: at e = 1, treasury revenue is about 14% of the emission the
 | Fee-change delay | none | **72h timelock** | Yes |
 | Referral split | none (`c = 0`) | **20% referrer / 80% treasury** of eligible fees; margin `m = 8%` of volume | Yes (architecture §7) |
 | Early-claim schedule | 25 / 15 / 5 / 0 | **30 / 20 / 10 / 0** | Yes |
-| Early-claim destination | 100% grove | **60% treasury / 40% grove**, needs founder acceptance (§7) | Yes |
+| Early-claim destination | 100% grove | **60% treasury / 40% grove**, approved as a disclosed early-claim fee | Yes |
 | 5-day lock early exit | cliff forfeit of the unvested bonus | **Unchanged cliff**; no extra fee; no decay | None |
 | Lock forfeit destination | Z | **Z, then 80% released to treasury / 20% kept for the next Season** | With the lock build |
 | CAPITAL | locked in this version | **Unchanged; never revenue** | None |
 | Treasury | `fee_recipient` wallet | **Protocol Treasury multisig**; published gross → net accounting | Ops + read-only UI |
 
-These are founder decisions and amend the frozen architecture: the fee values, compound fee rule, referral c/m, penalty schedule and destination, and the lock-forfeit release policy. No other part of the frozen model changes.
+These founder decisions are adopted: the frozen architecture is amended (§7a, with edits to §2, §7, §8, §10a, §12–§14). No other part of the frozen model changes. Nothing is implemented until the fee implementation pass.

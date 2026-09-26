@@ -465,12 +465,27 @@ Let compounding do what compounding does.**
 
 ## Documentation
 
-See:
+**Current product** (what runs today): seed planting, funded SOL rewards, harvest/replant compounding, the 24-hour `.skr` early-access launch gate, the Day-1 fresh-purchase cap, and base referral attribution — as implemented on the release lane (`mainnet/rc-hardening`).
+
+**Planned (not implemented, not live):** the **Fruit** external-weight layer — external-asset-backed reward epochs, loyalty/lock bonuses, fee-backed referral commissions, and Safe Mode. No Fruit code exists on any branch yet, no Fruit funding exists, and nothing on this repository should be read as a launch announcement.
+
+Canonical documents (branch `z-ai/cherry-docs-roadmap`):
+
+- [`docs/CHERRY_TREE_FRUIT_TOKENOMICS.md`](docs/CHERRY_TREE_FRUIT_TOKENOMICS.md) — **canonical tokenomics** (adopted design vs. current implementation vs. unresolved configuration)
+- [`docs/CHERRY_TREE_IMPLEMENTATION_ROADMAP.md`](docs/CHERRY_TREE_IMPLEMENTATION_ROADMAP.md) — **master roadmap** (dependency-ordered tasks, acceptance criteria, operating rules)
+- [`docs/CHERRY_TREE_DECISIONS.md`](docs/CHERRY_TREE_DECISIONS.md) — **decision register** (open decisions D01–D10; closed founder decisions C-01–C-20)
+- [`docs/CHERRY_TREE_STATUS.md`](docs/CHERRY_TREE_STATUS.md) — **current status / handoff** (phase, blockers, the single next actionable task)
+
+Traceable design references (unchanged):
+
+- [`docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md`](docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md) — final reconciled architecture (full derivations and scenario tables)
+- [`docs/FABLE_CHERRY_TREE_TOKENOMICS_SOLVE.md`](docs/FABLE_CHERRY_TREE_TOKENOMICS_SOLVE.md) / [`docs/FABLE_CHERRY_TREE_TOKENOMICS_CHECKLIST.md`](docs/FABLE_CHERRY_TREE_TOKENOMICS_CHECKLIST.md) — quantitative support and review brief (partially superseded; see tokenomics §0.2)
+
+Operations (this branch / release lane):
 
 - [`DEPLOY.md`](DEPLOY.md) — deployment and operations
-- [`LAUNCH.md`](LAUNCH.md) — launch procedures
-- [`YIELD.md`](YIELD.md) — reward economics
-- [`CHERRY.md`](CHERRY.md) — Cherry integration
+- [`LAUNCH.md`](https://github.com/PhantomCapAI/cherry-tree-mining-rig-/blob/mainnet/rc-hardening/LAUNCH.md), [`YIELD.md`](https://github.com/PhantomCapAI/cherry-tree-mining-rig-/blob/mainnet/rc-hardening/YIELD.md), [`CHERRY.md`](https://github.com/PhantomCapAI/cherry-tree-mining-rig-/blob/mainnet/rc-hardening/CHERRY.md) — launch procedures, reward economics, Cherry integration (release lane)
+- [`docs/backlog/MAINNET_RUNBOOK.md`](https://github.com/PhantomCapAI/cherry-tree-mining-rig-/blob/mainnet/rc-hardening/docs/backlog/MAINNET_RUNBOOK.md) — mainnet runbook, prepared not executed (release lane)
 
 ---
 

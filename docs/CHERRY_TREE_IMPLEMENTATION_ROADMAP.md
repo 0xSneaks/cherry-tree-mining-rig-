@@ -353,6 +353,7 @@ Explicitly permitted parallelism after Phase 0: {T10, T11, T12, T13, T30, T40, T
 #### T71 — User-facing documentation & disclosures — READY
 - **Purpose/scope:** Turn the canonical spec into user-facing copy: how Fruit works, what is/isn't custodied, normal-path exit standard (no catastrophe guarantee), borrowed-capital exclusion, lock conditionality, Safe Mode consent, APR labeling rules, phase labels, non-redeemable seeds, no claim expiry. **No claim that Fruit is live until T101 passes.**
 - **Dependencies:** T00.1. **Files:** user docs / app content areas.
+- **Required decisions:** D11 — the website's "stock baskets" teaser (styling branch only) must not be implied to be part of the canonical Fruit model in any user-facing copy until the founder dispositions it.
 - **Role:** Z.ai drafts; founder approves public copy.
 - **Acceptance:** copy cross-checked against canonical spec; zero invented figures; planned/live distinction explicit.
 - **Completion record:** (open). **Rollback:** documentation-level.

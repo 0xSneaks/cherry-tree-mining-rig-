@@ -23,6 +23,7 @@
 - **D07** legacy over-cap positions — expected none; evidence produced inside T30.
 - **D08/D09** asset verification & risk-overlay calibration — gates adapters/overlays.
 - **D10** existing release gates (custody, APP_ID, host, Seeker, audit, Part B qualification; Part A evidence lags lane HEAD by 14 commits) — gates all mainnet readiness.
+- **D11** "stock baskets" teaser disposition (website styling branch only; term is "stock baskets", never "stock mining") — gates T71 copy review only.
 
 No founder-set constant is listed as unresolved (closed decisions C-01…C-20).
 

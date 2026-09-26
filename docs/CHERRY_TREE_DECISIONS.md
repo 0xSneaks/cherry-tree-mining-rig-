@@ -115,6 +115,17 @@ Legend: **OPEN** (missing input), **PARTIAL** (evidence gathered, decision still
 - **Blocks:** T100, T101, and any launch authorization (T110).
 - **Consequence if unresolved:** No mainnet deployment, initialization, funding, or T0 — regardless of Fruit readiness.
 
+### D11 — "Stock baskets" teaser vs. canonical architecture (website copy)
+
+- **Question:** How is the "stock baskets" concept on the website styling lane dispositioned relative to the approved Fruit architecture?
+- **Known facts / evidence:** `claude/tree-styling-website-hd5x4r` → `app/src/components/Game.tsx` (§8 "What comes next") advertises a planned Phase 2: "rewards paid in tokenized stocks on Solana instead of SOL … a funded pool of stock tokens. Stock baskets are planned, not live." The copy is correctly hedged (no dates, no terms) and exists **only on that unmerged styling branch** — not on `main`, `mainnet/rc-hardening`, `gh-pages`, or any other lane (verified 2026-09-26). The canonical Fruit architecture pays SOL from funded vaults and admits external assets only as non-custodied reward weight; it contains no tokenized-stock reward pool.
+- **Terminology rule (founder instruction, 2026-09-26):** the concept is named **"stock baskets"**; the phrase "stock mining" must not be used anywhere. No occurrence of "stock mining" exists in this repository as of 2026-09-26 (verified across all branches).
+- **Governing constraint:** canonical spec C-19 (no invented features or funding claims). A stock-token reward pool would be a new, separately funded architecture needing its own decision set; nothing may present it as part of the approved model.
+- **Missing input:** founder disposition — (a) remove the teaser, (b) keep it as clearly non-binding marketing, or (c) scope it as a future feature with its own decision entries and roadmap phase.
+- **Who resolves:** founder.
+- **Blocks:** T71 user-facing copy review only (canonical/user docs must not imply stock-basket rewards); no Fruit implementation phase is blocked.
+- **Consequence if unresolved:** public copy could promise a reward mechanism outside the approved architecture — harmless while confined to the unmerged styling branch.
+
 ---
 
 ## 2. Closed decisions (founder-set; do not re-open)

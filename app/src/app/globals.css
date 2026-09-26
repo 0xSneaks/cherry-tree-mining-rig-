@@ -180,13 +180,17 @@ body {
   letter-spacing: 0.14em;
   color: var(--text-dim);
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
+/* A label or value wider than a phone (a long dilution label, a full
+   base58 address) wraps inside the row rather than widening the page. The
+   row's flex-wrap still breaks by natural width, so short pairs stay on one
+   line. */
 .readout-value {
   font-variant-numeric: tabular-nums;
   font-size: 15px;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .readout-value--hero {

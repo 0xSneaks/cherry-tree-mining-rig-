@@ -48,8 +48,9 @@ agents/processes operating on the release, canonical program ID
 
 1. Proposal (config multisig as authority signer) for
    `initialize(price, fee_bps, reward_funder, fee_recipient, founder, genesis_cap_rigs)` with:
-   founder `FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp`, the recorded cap, funder vault, fee
-   destination.
+   founder `FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp`, the recorded cap, reward funder
+   `Eu866FnHkUHmB6HYiPNz7vNVWbegPmFvmtQRdD9GNBsz`, fee recipient
+   `4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF`.
 2. **Two-person readback** of every argument (the cap has no setter).
 3. Read back Config: all fields, version 2, `launch_t0 == 0`, `total_* == 0`, three vault PDAs
    owned by the program, `genesis_cap_rigs` exact.

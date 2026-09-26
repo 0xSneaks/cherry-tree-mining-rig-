@@ -18,8 +18,18 @@ initialize does not. Funding is always a separate, deliberate command.
 
 ## Roles
 
-Three independent identities. None is hardcoded anywhere, and they do **not**
-have to be the same key.
+Three independent identities. They do **not** have to be the same key, and
+the authority is never hardcoded.
+
+Canonical public addresses (public keys only; no key material is kept here):
+
+| Role | Address |
+|---|---|
+| Reward / funding wallet (`reward_funder`) | `Eu866FnHkUHmB6HYiPNz7vNVWbegPmFvmtQRdD9GNBsz` |
+| Fee / treasury wallet (`fee_recipient`) | `4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF` |
+
+The fee / treasury address is pinned in `.env.example`, the launch preflight
+(`app/src/lib/launch/expected.ts`), the devnet workflow and the program tests.
 
 | Role | Supplied as | Used by |
 |---|---|---|

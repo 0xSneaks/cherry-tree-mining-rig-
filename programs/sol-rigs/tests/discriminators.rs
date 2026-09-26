@@ -126,7 +126,7 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         reward_funder: Pubkey::new_from_array([3u8; 32]),
         // The real production fee recipient, so the TypeScript decoder test
         // asserts the exact address rather than a placeholder.
-        fee_recipient: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
+        fee_recipient: Pubkey::from_str("4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF").unwrap(),
         paused: true,
         rig_price_lamports: 10_000_000,
         purchase_fee_bps: 300,

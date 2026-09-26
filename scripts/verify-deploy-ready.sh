@@ -303,7 +303,7 @@ grep -q "STATIC_EXPORT && cherryChatEnabled()" app/next.config.ts \
 # ------------------------------------------------------- fee recipient
 echo
 echo "--> protocol fee recipient"
-FEE_RECIPIENT="FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp"
+FEE_RECIPIENT="4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF"
 
 grep -q "CHERRY_TREE_FEE_RECIPIENT" .env.example \
   && pass ".env.example documents CHERRY_TREE_FEE_RECIPIENT" \

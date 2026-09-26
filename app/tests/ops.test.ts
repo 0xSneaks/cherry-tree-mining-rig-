@@ -47,7 +47,8 @@ const PDAS: ProgramAddresses = {
 const AUTHORITY = address('7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU');
 const FUNDER = address('So11111111111111111111111111111111111111112');
 /** THE CHERRY TREE protocol fee recipient. Public configuration; never signs. */
-const FEE_RECIPIENT = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
+const FEE_RECIPIENT = address('4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF');
+const FOUNDER = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
 const PROGRAM_DATA = address('11111111111111111111111111111116');
 
 // ------------------------------------------------------------- cluster guard
@@ -240,7 +241,7 @@ describe('initialize instruction', () => {
     purchaseFeeBps: 300,
     rewardFunder: FUNDER,
     feeRecipient: FEE_RECIPIENT,
-    founder: FEE_RECIPIENT,
+    founder: FOUNDER,
     genesisCapRigs: 2_500n,
     compoundFeeBps: 250,
   });

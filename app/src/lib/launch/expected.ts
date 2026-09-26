@@ -9,7 +9,7 @@
 import { address } from '@solana/kit';
 
 export const EXPECTED_FOUNDER = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
-export const EXPECTED_FEE_RECIPIENT = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
+export const EXPECTED_FEE_RECIPIENT = address('4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF');
 
 /** Genesis hashes identify the cluster independently of the RPC URL. */
 export const GENESIS_HASH = {

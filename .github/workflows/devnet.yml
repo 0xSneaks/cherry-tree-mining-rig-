@@ -61,7 +61,7 @@ env:
   # Public configuration. The program pins this as the only account
   # `withdraw_fees` may pay; it never signs, so there is no secret here and
   # no corresponding keypair anywhere in this workflow.
-  FEE_RECIPIENT: FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp
+  FEE_RECIPIENT: 4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF
   ANCHOR_VERSION: 0.31.2
   # Pinned: scripts/lib/sbf.sh refuses cargo-build-sbf older than 4.1.0.
   SOLANA_VERSION: v4.1.0

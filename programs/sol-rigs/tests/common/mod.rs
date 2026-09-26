@@ -31,12 +31,12 @@ pub const GENESIS_CAP: u64 = rigs_engine::GENESIS_CAP_RIGS;
 /// Permanent per-wallet seed cap.
 pub const WALLET_CAP: u64 = rigs_engine::MAX_WALLET_RIGS;
 
-/// THE CHERRY TREE protocol fee recipient — the Seeker fee-receiving wallet.
+/// THE CHERRY TREE protocol fee recipient — the canonical fee / treasury wallet.
 ///
 /// A public address and nothing more: it never signs, holds no role in the
 /// program beyond being the one account `withdraw_fees` may pay, and no
 /// private key for it exists anywhere in this repository or its CI.
-pub const FEE_RECIPIENT: &str = "FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp";
+pub const FEE_RECIPIENT: &str = "4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF";
 
 pub fn fee_recipient() -> Pubkey {
     Pubkey::from_str(FEE_RECIPIENT).expect("FEE_RECIPIENT is not a valid base58 pubkey")

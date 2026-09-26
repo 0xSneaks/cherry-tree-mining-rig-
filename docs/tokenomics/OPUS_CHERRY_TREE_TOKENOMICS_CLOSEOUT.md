@@ -164,7 +164,7 @@ The governance values (poster, veto set, threshold, window length, upgrade autho
 
 ## 9. FINAL TEST GATE
 
-Architecture §14.3 lists 76 tests. It contains all 57 Review tests, some updated for the founder decisions (tests 3, 4, 36/47), plus 19 new ones:
+Architecture §14.3 lists 76 tests (77 after the post-freeze lock correction, 91 after the founder-approved fee amendment; see §11 and §12 below). It contains all 57 Review tests, some updated for the founder decisions (tests 3, 4, 36/47), plus 19 new ones:
 
 | New tests | Covers |
 |---|---|
@@ -198,7 +198,7 @@ The single remaining blocker (CB-3 evidence part, Architecture §14.2-A) is clos
 
 **What can proceed now**
 
-- All code work in §14.3 scope: base-program cap/binding/referral-reservation changes, Fruit ledger, adapters and tests 1–76.
+- All code work in §14.3 scope: base-program cap/binding/referral-reservation changes, Fruit ledger, adapters and tests 1–91 (tests 78–91: the founder-approved fee amendment, §12 below; implemented in the dedicated fee pass).
 
 **Activation-only inputs**
 
@@ -207,5 +207,35 @@ These gate feature activation, not code (Architecture §14.2-C/D):
 - debt registry and adapter pins/thresholds;
 - EXTREME dwell;
 - `w_tenure_min`;
-- m and φ, then c;
+- deploy-time check that `purchase_fee_bps` and `compound_fee_bps` are initialized at 1,000 (m = 8%, φ = 10%, c = 20% are fixed by §12 below);
 - ledger governance keys and window.
+
+## 11. Post-freeze founder parameter correction (2026-09-26)
+
+Lock duration: the 1/2/3/5-day ladder is removed. The only lock is 5 days (minimum lock = 5 days). Architecture §2, §8 and §12 updated: `u_i = 5 ell_i`, award `B_lock ell_i/max(sum ell,12.5)`, maturity at `t_s+5 days`. Test 50 updated, test 77 added (non-5-day registrations rejected). Unchanged: one election per Season finalized before t_s, separate funded B_lock pool, fixed denominator, cliff vesting, early exit forfeits only unvested conditional progress, vested/core rewards never confiscated, safety release, no second election. Verdict unchanged: PASS FOR IMPLEMENTATION.
+
+## 12. Founder-approved fee amendment (2026-09-26)
+
+The founder approved `docs/CHERRY_TREE_FEE_OPTIMIZATION_MODEL.md` as final. The approved decisions are now Architecture §7a, with matching edits in §2 (constants; φ, m and c moved from unresolved to set), §7 (c = 20%, m = 8%; retained fees never fund rewards automatically), §8 (lock-forfeit destination), §10a (lock root carries `forfeited`; close releases 80% to the Protocol Treasury), §12 (table rows), §13 (new baseline §5d), §14.1 (blocker 4 closed), §14.2-D and §14.3 (tests 78–91).
+
+| Item | Final decision |
+|---|---|
+| Fresh purchase fee | 10% (1,000 bps); ceiling stays 1,000 bps and is not raised |
+| Compound fee | Separate setting, 10% in production; `compound_fee <= purchase_fee` always; capped / no-op compound mints nothing, charges nothing and moves no SOL |
+| Fee changes | 72-hour on-chain timelock (schedule, visible pending values and `effective_at`, apply after 259,200 s); `initialize` excepted |
+| Referral | One level; 20% of the eligible fee to the direct referrer, 80% to the Protocol Treasury; retained margin 8% of fee-bearing volume (clamp of §7); only from actual finalized eligible fees; never from principal, reward liabilities, the early-claim fee or Fruit/loyalty/lock funds; never retroactive |
+| Early-claim fee | 30% / 20% / 10% / 0% (<24h / 24–48h / 48–72h / >=72h since last fresh purchase); 60% Protocol Treasury (REWARD → FEE), 40% redistributed to other planters; disclosed before purchase as an early-claim fee |
+| Claim-anchor reset | Protocol behaviour kept; mandatory pre-top-up warning when pending rewards exist (wording in §7a item 6) |
+| 5-day lock | Single duration; early exit: no additional fee, no decay; forfeits only the unvested conditional bonus |
+| Lock forfeit release | 80% Protocol Treasury / Sustainability Fund, 20% retained in Z for the next Season; reported as released unused bonus allocation, never as confiscated user rewards or fee revenue |
+| CAPITAL | Unchanged: locked, non-withdrawable, never revenue |
+| Reward funding | Protocol fees never fund rewards automatically; any treasury-to-reward allocation is a separate explicit funded transfer and commitment |
+| Terminology | Protocol Treasury / Protocol Sustainability Fund; net treasury revenue = gross protocol fees − referral liabilities − other reserved fee obligations |
+
+The two founder gates raised by the fee model are resolved:
+- the 60% treasury share of the penalty is accepted, classified and disclosed as an **early-claim fee**;
+- the prohibition on fee-funded rewards is kept.
+
+**Correction to the Pass #1 report:** Day-1 `.skr` binding rent is about **0.00145 SOL**, not ~0.0012 SOL. The ~0.0012 figure appeared only in the Pass #1 chat report; no committed document carried it. Architecture §7a item 12 records the corrected value.
+
+Nothing in this amendment is implemented. The current code (Pass #1 at `d6f0957`, Pass #2 at `8d0ccb6`) still has one `purchase_fee_bps` for both buy and compound, a 25/15/5/0 penalty redistributed 100% to the grove, no timelock and no referral commission. Those changes belong to the dedicated fee implementation pass, gated by tests 78–91. Verdict unchanged: **PASS FOR IMPLEMENTATION**, with the gate now tests 1–91.

@@ -1,14 +1,19 @@
 # Frozen tokenomics architecture (reference)
 
-Source of truth for implementation. Copied verbatim from the frozen docs
-revision `b6e91df` on `claude/cherry-tree-tokenomics-review-12fa4b`
-(verdict: PASS FOR IMPLEMENTATION). Do not edit here; changes to the
-architecture happen on the docs branch and are re-imported.
+Source of truth for implementation. Copied verbatim from docs revision
+`46433cc` on `claude/cherry-tree-tokenomics-review-12fa4b` (frozen
+architecture `b6e91df` + founder single 5-day lock correction `3036392` +
+founder-approved fee amendment §7a, tests 78–91). Do not edit here; changes
+to the architecture happen on the docs branch and are re-imported.
 
 - `CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md` — the frozen specification.
-- `OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md` — closeout and verdict.
+- `OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md` — closeout, verdict, §12 fee addendum.
+- `CHERRY_TREE_FEE_OPTIMIZATION_MODEL.md` — APPROVED / FINAL fee model (§7a source).
 
-Implementation pass #1 (this branch): permanent 250-seed wallet cap
-(§4 check 2), capped compound, Genesis cap pinned to 250, Day-1 `.skr`
-one-domain → one-wallet binding (§4); tests 1, 2, 3, 4 (engine part), 5, 8
-(preflight), 9, 10, 11, 12, 13, 14, 15 of §14.3.
+Implementation pass #1: permanent 250-seed wallet cap (§4 check 2), capped
+compound, Genesis cap pinned to 250, Day-1 `.skr` one-domain → one-wallet
+binding (§4); tests 1, 2, 3, 4 (engine part), 5, 8 (preflight), 9–15 of §14.3.
+
+Implementation pass #2: on-chain Fruit ledger foundation (§10 / §10a) —
+CORE / LOYALTY / LOCK ledgers and vaults, `V >= L + U + Z`, roots with
+challenge window, Merkle claims, close, pause, versioning; tests 55–67, 73–76.

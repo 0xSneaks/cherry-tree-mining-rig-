@@ -534,12 +534,12 @@ export function Game({ host }: { host: Host }) {
           {/* 8 · What comes next. Planned only: no dates or terms on screen. */}
           <section className="roadmap" data-testid="roadmap">
             <p className="trust-kicker">Roadmap · Phase 2</p>
-            <h2 className="section-title">Coming next: stock mining</h2>
+            <h2 className="section-title">Coming next: stock baskets</h2>
             <p>
-              The second phase brings stock mining: the same grove you plant and
+              The second phase brings stock baskets: the same grove you plant and
               grow, with rewards paid in tokenized stocks on Solana instead of
               SOL. Plant seeds, grow your tree and harvest a share of a funded
-              pool of stock tokens. Stock mining is planned, not live. Which
+              pool of stock tokens. Stock baskets are planned, not live. Which
               stocks, when it opens and how its rewards are funded will be
               announced before launch.
             </p>

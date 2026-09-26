@@ -120,7 +120,7 @@ Explicitly permitted parallelism after Phase 0: {T10, T11, T12, T13, T30, T40, T
 - **Role:** Z.ai (author), founder (ratification by non-objection in review). **Decisions consumed:** C-01…C-20.
 - **Acceptance:** document exists; every constant cross-checks against the final architecture §12; every CURRENT claim cites verified source; baseline absence recorded honestly.
 - **Evidence:** commit introducing this file; link/constant cross-check output in the commit message trail; §5 of the doc (implementation map) matches `git grep` evidence gathered 2026-09-26.
-- **Completion record:** VERIFIED 2026-09-26 — see commit history of `z-ai/cherry-docs-roadmap` ("docs: canonical documentation set").
+- **Completion record:** VERIFIED 2026-09-26 — commit `fb50239` on `z-ai/cherry-docs-roadmap`.
 - **Rollback:** git revert (documentation only).
 - **Next permitted:** T00.2, and every Phase 1/3/4/7 READY task.
 

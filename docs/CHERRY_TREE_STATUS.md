@@ -6,10 +6,10 @@
 
 | Field | Value |
 |---|---|
-| Docs branch | `z-ai/cherry-docs-roadmap` (this file's introducing commit; base `e807b55` = `claude/cherry-tree-tokenomics-cfoilj`) |
+| Docs branch | `z-ai/cherry-docs-roadmap` (documentation baseline commit `fb50239`; base `e807b55` = `claude/cherry-tree-tokenomics-cfoilj`) |
 | Source verification basis | Release lane `mainnet/rc-hardening` @ `f0d5e96` and `main` @ `85ee955`, verified 2026-09-26; engine blobs match the architecture's citations |
 | Current phase | Phase 0 — documentation baseline: **COMPLETE**. No production code changed anywhere. |
-| Last VERIFIED task(s) | T00.1 canonical tokenomics · T00.2 roadmap/decisions/status · T00.3 README entry point (evidence: the commit adding these files) |
+| Last VERIFIED task(s) | T00.1 canonical tokenomics · T00.2 roadmap/decisions/status · T00.3 README entry point (evidence: commit `fb50239` on this branch; link/constant/dependency checks recorded in its message) |
 | Active task | None in progress |
 
 ## Blockers (see [decision register](CHERRY_TREE_DECISIONS.md))

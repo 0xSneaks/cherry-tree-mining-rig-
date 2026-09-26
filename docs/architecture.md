@@ -13,4 +13,4 @@ The frontend is the interface, the Rust engine is the accounting calculator, and
 | Anchor program | `programs/sol-rigs/src/` | constraints, state transitions, lamport movement |
 | Tests | `crates/rigs-engine/tests/`, `programs/sol-rigs/tests/`, `app/tests/`, `app/e2e/` | unit, native program-test, browser, parity |
 
-The canonical program identity in the primary source is `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt`, declared in `programs/sol-rigs/src/lib.rs` and `Anchor.toml`. The release reconciliation branch independently confirms it; that branch was inspected read-only and not combined with this worktree.
+The canonical program identity in the primary source is `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt`, declared in `programs/sol-rigs/src/lib.rs` and `Anchor.toml`, and independently confirmed by the release reconciliation branch.

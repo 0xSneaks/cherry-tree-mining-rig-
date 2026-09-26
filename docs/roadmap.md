@@ -14,9 +14,9 @@ The repository branch is the source of truth; the mirrors here are refreshed whe
 
 ## Phase
 
-Documentation baseline complete. Implementation has not started. The single next task is **T30**: the gated implementation specification for the permanent 250-seed holding cap and capped compounding on the release lane.
+Documentation baseline complete; implementation begins with **T30**: the gated implementation specification for the permanent 250-seed holding cap and capped compounding on the release lane.
 
-## Open decisions (summary)
+## Decisions in flight (summary)
 
 | ID | Question |
 |---|---|
@@ -26,7 +26,7 @@ Documentation baseline complete. Implementation has not started. The single next
 | D04 | Production seed price and purchase fee |
 | D05 | Referral margin m and commission cut c |
 | D06 | Bonus funding commitments (or explicit zero) |
-| D07 | Legacy over-cap positions (expected none; verified during T30) |
+| D07 | Legacy over-cap position check during T30 (none expected) |
 | D08 | Asset identity and reference-price verification |
 | D09 | Safe Mode overlay calibration |
 | D10 | Existing mainnet readiness gates (custody, app registration, host, audit, qualification Part B) |

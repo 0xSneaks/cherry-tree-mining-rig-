@@ -476,6 +476,8 @@ Canonical documents (branch `z-ai/cherry-docs-roadmap`):
 - [`docs/CHERRY_TREE_DECISIONS.md`](docs/CHERRY_TREE_DECISIONS.md) — **decision register** (open decisions D01–D10; closed founder decisions C-01–C-20)
 - [`docs/CHERRY_TREE_STATUS.md`](docs/CHERRY_TREE_STATUS.md) — **current status / handoff** (phase, blockers, the single next actionable task)
 
+Published user-facing docs: [the-cherry-tree.gitbook.io/the-cherry-tree-docs](https://the-cherry-tree.gitbook.io/the-cherry-tree-docs) — the GitBook space covers the **current base product** (pricing, reward funding, APR phases, claim penalties, base referral weighting). Verified 2026-09-26: it contains no Fruit-layer content; the canonical documents below are the source of truth until the Fruit set is added there.
+
 Traceable design references (unchanged):
 
 - [`docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md`](docs/CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md) — final reconciled architecture (full derivations and scenario tables)

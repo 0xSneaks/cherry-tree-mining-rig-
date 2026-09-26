@@ -29,7 +29,7 @@ import type { RigsSigner } from '../lib/signer';
 import { BuyPanel } from './BuyPanel';
 import { ClaimConfirm } from './ClaimConfirm';
 import { GroveRecord } from './GroveRecord';
-import { RigVisual } from './RigVisual';
+import { GroveJourney, RigVisual } from './RigVisual';
 import { RoomLeaderboard } from './RoomLeaderboard';
 import { ProgressShareCard, ShareCard, type SharePayload } from './ShareCard';
 import { TransparencyPanel } from './TransparencyPanel';
@@ -388,6 +388,8 @@ export function Game({ host }: { host: Host }) {
           {host.room.title} · {formatCount(host.room.memberCount)} members
         </p>
       ) : null}
+
+      <GroveJourney />
 
       <p className="lede">
         Plant seeds with SOL. They share a funded SOL reward pool at a variable

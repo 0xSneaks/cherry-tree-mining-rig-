@@ -378,6 +378,30 @@ details.panel {
 }
 
 /* One sentence under the status line: what this is. */
+/* The painted journey banner: bleeds to the phone's edges and fades into
+   the page at every side so the painting has no hard frame. */
+.grove-journey {
+  margin: 14px -16px 0;
+  aspect-ratio: 1536 / 660;
+  overflow: hidden;
+  -webkit-mask-image:
+    linear-gradient(to bottom, transparent 0, var(--bg) 14%, var(--bg) 72%, transparent 100%),
+    linear-gradient(to right, transparent 0, var(--bg) 6%, var(--bg) 94%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to bottom, transparent 0, var(--bg) 14%, var(--bg) 72%, transparent 100%),
+    linear-gradient(to right, transparent 0, var(--bg) 6%, var(--bg) 94%, transparent 100%);
+  mask-composite: intersect;
+}
+
+.grove-journey img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+
 .lede {
   margin: 12px 0 0;
   font-size: 15px;

@@ -201,3 +201,25 @@ export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boo
     </figure>
   );
 }
+
+/**
+ * The painted journey: all five stages on one moonlit lake. A banner only —
+ * it shows where a grove can go, not where this wallet's grove is.
+ */
+export function GroveJourney() {
+  return (
+    <div className="grove-journey" aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element -- pre-sized WebP pair; static export serves images unoptimised */}
+      <img
+        src={src('journey')}
+        srcSet={`${src('journey-768')} 768w, ${src('journey')} 1536w`}
+        sizes="(max-width: 452px) 100vw, 452px"
+        width={1536}
+        height={660}
+        alt=""
+        draggable={false}
+        fetchPriority="high"
+      />
+    </div>
+  );
+}

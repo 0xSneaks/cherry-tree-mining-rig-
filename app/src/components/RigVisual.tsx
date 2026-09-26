@@ -8,9 +8,15 @@
  * change it. The stage *name* and next-stage progress come from the growth
  * layer (`groveTier`), the same names the share card and milestones use.
  *
+ * The painting stands in a small night scene: a blossom glow behind it,
+ * soft out-of-focus petals in the air, and its own reflection on the water
+ * below (a mirrored, masked copy of the same image — nothing extra to load).
+ *
  * Petals fall and the crown sways only while the funded schedule is paying;
- * both stop under prefers-reduced-motion.
+ * those and the drifting bokeh stop under prefers-reduced-motion.
  */
+import type { CSSProperties } from 'react';
+
 import { formatCount } from '../lib/format';
 import { groveTier, nextGroveTier } from '../lib/growth/milestones';
 
@@ -59,14 +65,21 @@ function artWidth(seeds: bigint, index: number): number {
   return [0.46, 0, 0.6, 0.78, 0.92][index] ?? 0.92;
 }
 
-/** Falling petals: horizontal start (% of frame), start height (%), delay (s). */
-const PETALS: readonly [number, number, number][] = [
-  [30, 30, 0],
-  [62, 22, 1.4],
-  [44, 40, 2.9],
-  [72, 38, 4.1],
-  [24, 48, 5.3],
-  [55, 18, 6.2],
+/** Share of the frame's height given to the reflection under the island. */
+const WATER = 0.1;
+
+/** Falling petals: horizontal start (%), start height (%), delay (s), size (px). */
+const PETALS: readonly [number, number, number, number][] = [
+  [30, 30, 0, 7],
+  [62, 22, 1.4, 6],
+  [44, 40, 2.9, 5],
+  [72, 38, 4.1, 8],
+  [24, 48, 5.3, 6],
+  [55, 18, 6.2, 7],
+  [16, 26, 7.6, 5],
+  [82, 30, 3.4, 6],
+  [38, 12, 8.8, 8],
+  [66, 50, 2.2, 5],
 ];
 
 export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boolean }) {
@@ -87,9 +100,13 @@ export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boo
       <div
         className="grove-art"
         data-stage={art.id}
-        // The frame fits the painting at its stage width, plus a little headroom.
-        style={{ aspectRatio: `1 / ${((width * art.h) / art.w + 0.04).toFixed(3)}` }}
+        // The frame fits the painting at its stage width, plus a little
+        // headroom above and the reflection strip below.
+        style={{ aspectRatio: `1 / ${(((width * art.h) / art.w + 0.05) / (1 - WATER)).toFixed(3)}` }}
       >
+        <span className="grove-moon" aria-hidden="true" />
+        <span className="grove-bokeh" aria-hidden="true" />
+        <span className="grove-halo" aria-hidden="true" style={{ width: `${Math.min(width * 1.3, 1) * 100}%` }} />
         {/* eslint-disable-next-line @next/next/no-img-element -- pre-sized transparent WebP; static export serves images unoptimised */}
         <img
           className={[
@@ -107,18 +124,43 @@ export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boo
           draggable={false}
           style={{ width: `${width * 100}%` }}
         />
+        <div className="grove-water" aria-hidden="true">
+          {/* eslint-disable-next-line @next/next/no-img-element -- the same painting, mirrored into the water */}
+          <img
+            className="grove-mirror"
+            src={src(art.id)}
+            width={art.w}
+            height={art.h}
+            alt=""
+            draggable={false}
+            style={{ width: `${width * 100}%` }}
+          />
+        </div>
+        <span className="grove-horizon" aria-hidden="true" />
         {growing
-          ? PETALS.map(([left, top, delay], i) => (
+          ? PETALS.map(([left, top, delay, size], i) => (
               <span
                 key={i}
                 className="grove-petal"
                 aria-hidden="true"
-                style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${delay}s` }}
+                style={{
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${size}px`,
+                  height: `${Math.round(size * 0.72)}px`,
+                  animationDelay: `${delay}s`,
+                  animationDuration: `${7 + (i % 4) * 1.3}s`,
+                }}
               />
             ))
           : null}
       </div>
-      <ol className="grove-track" aria-hidden="true">
+      <ol
+        className="grove-track"
+        aria-hidden="true"
+        // The timeline under the cards lights up to the current stage's dot.
+        style={{ '--grove-lit': `${index * 25}%` } as CSSProperties}
+      >
         {ART.map((a, k) => (
           <li
             key={a.id}

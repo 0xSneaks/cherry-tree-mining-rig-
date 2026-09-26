@@ -25,9 +25,11 @@ use sol_rigs::constants::*;
 pub const SOL: u64 = LAMPORTS_PER_SOL;
 pub const RIG_PRICE: u64 = SOL / 100; // 0.01 SOL — test fixture only
 pub const FEE_BPS: u16 = 300; // 3.00%
-/// Genesis fresh-purchase cap — an explicit safe test value, NOT the
-/// production number (that will come from founder simulations).
-pub const GENESIS_CAP: u64 = 10_000;
+/// Genesis fresh-purchase cap: the only value `initialize` accepts (250),
+/// equal to the permanent wallet cap.
+pub const GENESIS_CAP: u64 = rigs_engine::GENESIS_CAP_RIGS;
+/// Permanent per-wallet seed cap.
+pub const WALLET_CAP: u64 = rigs_engine::MAX_WALLET_RIGS;
 
 /// THE CHERRY TREE protocol fee recipient — the Seeker fee-receiving wallet.
 ///
@@ -189,6 +191,9 @@ pub struct Env {
     pub frank: Keypair,
     /// wallet → identity accounts passed with its purchases.
     pub identities: std::collections::HashMap<Pubkey, Vec<Pubkey>>,
+    /// wallet → its `.skr` name account, for wallets planted with a `.skr`.
+    /// `buy_ix` appends that domain's binding PDA, as the client does.
+    pub skr_names: std::collections::HashMap<Pubkey, Pubkey>,
     /// Where fees are configured to land. Not a signer — see [`FEE_RECIPIENT`].
     pub fee_recipient: Pubkey,
     pub funder: Keypair,
@@ -210,6 +215,10 @@ pub fn reward_vault_pda() -> Pubkey {
 }
 pub fn fee_vault_pda() -> Pubkey {
     Pubkey::find_program_address(&[FEE_VAULT_SEED], &sol_rigs::ID).0
+}
+/// Day-1 `.skr` binding PDA for a domain's ANS name account.
+pub fn skr_binding_pda(name: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[SKR_BIND_SEED, name.as_ref()], &sol_rigs::ID).0
 }
 
 /// The loader-derived ProgramData address of the program: what a real
@@ -293,6 +302,7 @@ impl Env {
         let frank = funded(&mut pt, 10_000 * SOL);
 
         let mut identities = std::collections::HashMap::new();
+        let mut skr_names = std::collections::HashMap::new();
         for (who, kind) in [
             (&alice, Domain::SkrDirect),
             (&bob, Domain::SkrWrapped),
@@ -300,7 +310,11 @@ impl Env {
             (&dave, Domain::SnsTokenized),
             (&frank, Domain::SnsDirect),
         ] {
-            identities.insert(who.pubkey(), plant_domain(&mut pt, &who.pubkey(), kind));
+            let accounts = plant_domain(&mut pt, &who.pubkey(), kind);
+            if matches!(kind, Domain::SkrDirect | Domain::SkrWrapped) {
+                skr_names.insert(who.pubkey(), accounts[0]);
+            }
+            identities.insert(who.pubkey(), accounts);
         }
         extra(&mut pt);
 
@@ -328,6 +342,7 @@ impl Env {
             erin,
             frank,
             identities,
+            skr_names,
         }
     }
 
@@ -476,14 +491,31 @@ impl Env {
     }
 
     /// `buy_rigs` with the buyer's planted identity (none for erin) and no
-    /// referrer.
+    /// referrer. A `.skr` identity carries its binding PDA, as the client
+    /// sends it; the program only consults it during Day 1.
     pub fn buy_ix(&self, owner: &Pubkey, count: u64) -> Instruction {
         let identity = self.identities.get(owner).cloned().unwrap_or_default();
         self.buy_ix_with(owner, count, identity, None)
     }
 
-    /// `buy_rigs` with explicit remaining accounts: identity accounts, then
-    /// `(referrer, referrer_miner)` if given.
+    /// `buy_rigs` with explicit identity accounts followed by a writable
+    /// binding account, and no referrer.
+    pub fn buy_ix_bound(
+        &self,
+        owner: &Pubkey,
+        count: u64,
+        identity: Vec<Pubkey>,
+        binding: Pubkey,
+    ) -> Instruction {
+        let mut ix = self.buy_ix_unbound(owner, count, identity, None);
+        ix.accounts
+            .push(solana_sdk::instruction::AccountMeta::new(binding, false));
+        ix
+    }
+
+    /// `buy_rigs` with explicit remaining accounts: identity accounts, the
+    /// `.skr` binding PDA when the identity is a planted `.skr` domain (as the
+    /// client sends it), then `(referrer, referrer_miner)` if given.
     pub fn buy_ix_with(
         &self,
         owner: &Pubkey,
@@ -491,14 +523,35 @@ impl Env {
         identity: Vec<Pubkey>,
         referrer: Option<(Pubkey, Pubkey)>,
     ) -> Instruction {
-        let mut ix = self.buy_ix_raw(owner, count, referrer.map(|r| r.0));
+        let binding = identity
+            .first()
+            .filter(|name| self.skr_names.values().any(|n| n == *name))
+            .map(skr_binding_pda);
+        let mut ix = self.buy_ix_unbound(owner, count, identity, referrer.map(|r| r.0));
         use solana_sdk::instruction::AccountMeta;
-        for key in identity {
-            ix.accounts.push(AccountMeta::new_readonly(key, false));
+        if let Some(b) = binding {
+            ix.accounts.push(AccountMeta::new(b, false));
         }
         if let Some((_, referrer_miner)) = referrer {
             ix.accounts
                 .push(AccountMeta::new_readonly(referrer_miner, false));
+        }
+        ix
+    }
+
+    /// `buy_rigs` with exactly the identity accounts given — no binding
+    /// appended, no referrer account (the referrer arg is still encoded).
+    pub fn buy_ix_unbound(
+        &self,
+        owner: &Pubkey,
+        count: u64,
+        identity: Vec<Pubkey>,
+        referrer: Option<Pubkey>,
+    ) -> Instruction {
+        let mut ix = self.buy_ix_raw(owner, count, referrer);
+        use solana_sdk::instruction::AccountMeta;
+        for key in identity {
+            ix.accounts.push(AccountMeta::new_readonly(key, false));
         }
         ix
     }

@@ -43,6 +43,10 @@ export const ANCHOR_ERROR_NAMES = [
   'GenesisCapExceeded',
   'MigrationRejected',
   'UnauthorizedInitializer',
+  'WalletCapExceeded',
+  'SkrDomainBound',
+  'SkrBindingRequired',
+  'SkrBindingInvalid',
 ] as const;
 
 export type AnchorErrorName = (typeof ANCHOR_ERROR_NAMES)[number];
@@ -58,6 +62,8 @@ const PRODUCT_COPY: Partial<Record<AnchorErrorName, string>> = {
   AccessDenied: 'This wallet is not eligible during the current access phase.',
   ActivationUnfunded: 'The grove cannot be activated yet — the reward schedule needs funding first.',
   GenesisCapExceeded: 'This purchase exceeds your remaining Genesis fresh-buy allowance.',
+  WalletCapExceeded: 'A wallet can hold at most 250 seeds.',
+  SkrDomainBound: 'This .skr domain has already opened Day-1 access for another wallet.',
 };
 
 export type ExplainedError = {

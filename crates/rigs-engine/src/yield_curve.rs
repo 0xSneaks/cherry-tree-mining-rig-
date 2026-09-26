@@ -331,7 +331,9 @@ pub fn project_compounding(
                         .checked_add(out.total_lamports)
                         .ok_or(EngineError::MathOverflow)?
                 }
-                Err(EngineError::NothingToCompound) => {}
+                // Nothing affordable yet, or the wallet is at the 250 cap: no
+                // seed this step; rewards keep accruing as claimable.
+                Err(EngineError::NothingToCompound | EngineError::WalletCapExceeded) => {}
                 Err(e) => return Err(e),
             }
         }

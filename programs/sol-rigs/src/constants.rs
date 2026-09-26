@@ -10,6 +10,10 @@ pub const CAPITAL_VAULT_SEED: &[u8] = b"capital_vault";
 pub const REWARD_VAULT_SEED: &[u8] = b"reward_vault";
 /// Seed for the FEE VAULT PDA.
 pub const FEE_VAULT_SEED: &[u8] = b"fee_vault";
+/// Seed prefix for a Day-1 `.skr` BINDING PDA: `["skr_bind", name_account]`,
+/// keyed by the domain's ANS name account (not its NFT wrapper), so wrapping,
+/// unwrapping or transferring the domain cannot mint a second binding.
+pub const SKR_BIND_SEED: &[u8] = b"skr_bind";
 
 /// On-chain state layout version. V2 appends `Config.genesis_cap_rigs`
 /// (321 -> 329 bytes); Miner and Vault layouts are unchanged.

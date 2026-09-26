@@ -11,7 +11,7 @@ use proptest::prelude::*;
 
 use rigs_engine::{
     genesis_cap_check, validate_genesis_cap, AccessPhase, EngineError, ACCESS_WINDOW_SECONDS,
-    MAX_TOTAL_RIGS, NOT_ACTIVATED,
+    GENESIS_CAP_RIGS, MAX_TOTAL_RIGS, MAX_WALLET_RIGS, NOT_ACTIVATED,
 };
 
 const T0: i64 = 1_790_000_000;
@@ -121,18 +121,26 @@ fn overflow_is_an_error_never_a_wrap() {
 // --------------------------------------------------------- cap validation
 
 #[test]
-fn cap_bounds_are_one_to_max_total_rigs() {
-    assert_eq!(validate_genesis_cap(1), Ok(()));
-    assert_eq!(validate_genesis_cap(MAX_TOTAL_RIGS), Ok(()));
-    assert_eq!(validate_genesis_cap(0), Err(EngineError::InvalidConfig));
-    assert_eq!(
-        validate_genesis_cap(MAX_TOTAL_RIGS + 1),
-        Err(EngineError::InvalidConfig)
-    );
-    assert_eq!(
-        validate_genesis_cap(u64::MAX),
-        Err(EngineError::InvalidConfig)
-    );
+fn only_the_production_cap_of_250_is_accepted() {
+    assert_eq!(GENESIS_CAP_RIGS, 250);
+    assert_eq!(GENESIS_CAP_RIGS, MAX_WALLET_RIGS);
+    assert_eq!(validate_genesis_cap(250), Ok(()));
+    for bad in [
+        0,
+        1,
+        249,
+        251,
+        10_000,
+        MAX_TOTAL_RIGS,
+        MAX_TOTAL_RIGS + 1,
+        u64::MAX,
+    ] {
+        assert_eq!(
+            validate_genesis_cap(bad),
+            Err(EngineError::InvalidConfig),
+            "cap {bad} must be refused"
+        );
+    }
 }
 
 // -------------------------------------------------------------- properties

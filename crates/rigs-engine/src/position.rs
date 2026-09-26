@@ -3,7 +3,7 @@
 use crate::accumulator::{RewardGlobals, RewardLedger, PRECISION, WEIGHT_BASE};
 use crate::error::{EngineError, EngineResult};
 use crate::penalty::{claim_penalty_bps, penalty_amount};
-use crate::pricing::{quote_purchase, rigs_affordable, PurchaseQuote};
+use crate::pricing::{quote_purchase, rigs_affordable, wallet_headroom, PurchaseQuote};
 
 /// Per-user position. Lives inside the MINER POSITION PDA on-chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -115,6 +115,10 @@ impl MinerPosition {
 /// Returns the exact quote; the caller moves `capital_lamports` to the capital
 /// vault and `fee_lamports` to the fee vault out of the *user's* wallet. No
 /// purchase lamport ever touches the reward vault.
+///
+/// Enforces the permanent holding cap: `rigs + count > MAX_WALLET_RIGS` is
+/// [`EngineError::WalletCapExceeded`], decided before anything is mutated —
+/// no partial fill, no settlement, no state change.
 pub fn buy_rigs(
     globals: &mut RewardGlobals,
     position: &mut MinerPosition,
@@ -123,9 +127,12 @@ pub fn buy_rigs(
     rig_price_lamports: u64,
     purchase_fee_bps: u16,
 ) -> EngineResult<PurchaseQuote> {
-    position.settle(globals, now)?;
-
     let quote = quote_purchase(count, rig_price_lamports, purchase_fee_bps)?;
+    if count > wallet_headroom(position.rigs) {
+        return Err(EngineError::WalletCapExceeded);
+    }
+
+    position.settle(globals, now)?;
 
     globals.add_rigs(count, position.effective_weight())?;
     position.rigs = position
@@ -197,6 +204,12 @@ pub fn claim(
 /// Spends as much of the ore bin as buys whole rigs, preserves the exact
 /// remainder, and tells the caller precisely how many lamports must move out
 /// of the reward vault and into the capital and fee vaults.
+///
+/// Capped: mints `min(affordable, MAX_WALLET_RIGS - rigs)` and debits only
+/// the exact quote for that count; everything else stays claimable. With zero
+/// headroom (at or above the cap) it is [`EngineError::WalletCapExceeded`]:
+/// the transaction reverts, so no seed is created, no fee is charged, no
+/// lamport moves and no anchor changes.
 pub fn compound(
     globals: &mut RewardGlobals,
     position: &mut MinerPosition,
@@ -205,13 +218,19 @@ pub fn compound(
     rig_price_lamports: u64,
     purchase_fee_bps: u16,
 ) -> EngineResult<CompoundOutcome> {
+    let headroom = wallet_headroom(position.rigs);
+    if headroom == 0 {
+        return Err(EngineError::WalletCapExceeded);
+    }
+
     position.settle(globals, now)?;
 
-    let count = rigs_affordable(
+    let affordable = rigs_affordable(
         position.pending_rewards,
         rig_price_lamports,
         purchase_fee_bps,
     )?;
+    let count = affordable.min(headroom);
     if count == 0 {
         return Err(EngineError::NothingToCompound);
     }

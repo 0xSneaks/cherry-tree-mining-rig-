@@ -72,6 +72,15 @@ pub enum RigsError {
     // --- Security hardening (appended: existing codes are unchanged) ---
     #[msg("Initialize must be signed by the program's upgrade authority")]
     UnauthorizedInitializer,
+    // --- Hard cap + Day-1 .skr binding (appended: existing codes are unchanged) ---
+    #[msg("Permanent per-wallet seed cap (250) reached")]
+    WalletCapExceeded,
+    #[msg("This .skr domain is bound to another wallet for Day-1 access")]
+    SkrDomainBound,
+    #[msg("Day-1 .skr purchase requires the domain's binding account")]
+    SkrBindingRequired,
+    #[msg("Account is not the .skr binding PDA for this domain")]
+    SkrBindingInvalid,
 }
 
 impl From<EngineError> for RigsError {
@@ -94,6 +103,8 @@ impl From<EngineError> for RigsError {
             EngineError::AccessDenied => RigsError::AccessDenied,
             EngineError::ActivationUnfunded => RigsError::ActivationUnfunded,
             EngineError::GenesisCapExceeded => RigsError::GenesisCapExceeded,
+            EngineError::WalletCapExceeded => RigsError::WalletCapExceeded,
+            EngineError::SkrDomainBound => RigsError::SkrDomainBound,
         }
     }
 }

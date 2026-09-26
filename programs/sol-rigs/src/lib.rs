@@ -40,6 +40,7 @@ pub mod error;
 pub mod events;
 pub mod identity;
 pub mod instructions;
+pub mod skr_binding;
 pub mod state;
 pub mod vault;
 
@@ -88,10 +89,13 @@ pub mod sol_rigs {
 
     /// Buy `count` whole rigs. 1 rig = 1 hashpower.
     ///
-    /// Remaining accounts: `[identity…, referrer_miner?]`. Identity is the
-    /// buyer's `.skr` / `.sns` proof — `[name]` for a direct domain,
-    /// `[name, nft_record, token_account]` for a wrapped / tokenized one — or
-    /// nothing at all. `referrer_miner` comes last, iff `referrer` is `Some`.
+    /// Remaining accounts: `[identity…, skr_binding?, referrer_miner?]`.
+    /// Identity is the buyer's `.skr` / `.sns` proof — `[name]` for a direct
+    /// domain, `[name, nft_record, token_account]` for a wrapped / tokenized
+    /// one — or nothing at all. `skr_binding` is the writable
+    /// `["skr_bind", name]` PDA, required for a `.skr` purchase during Day 1
+    /// and ignored otherwise. `referrer_miner` comes last, iff `referrer` is
+    /// `Some`.
     pub fn buy_rigs<'info>(
         ctx: Context<'_, '_, 'info, 'info, BuyRigs<'info>>,
         count: u64,

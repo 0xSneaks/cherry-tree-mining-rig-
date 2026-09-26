@@ -178,6 +178,23 @@ impl Miner {
     }
 }
 
+/// Day-1 `.skr` BINDING PDA — seeds `["skr_bind", name_account]`.
+///
+/// Created by the first Day-1 purchase that proves the domain; records the
+/// one wallet that domain opens Day-1 access for. No instruction writes,
+/// reassigns or closes it after creation. It gates nothing from T0 + 24h.
+#[account]
+#[derive(InitSpace, Debug)]
+pub struct SkrBinding {
+    /// The `.skr` ANS name account this binding is keyed by.
+    pub name_account: Pubkey,
+    /// The only wallet this domain opens Day-1 access for.
+    pub wallet: Pubkey,
+    /// Chain time of the binding purchase.
+    pub bound_at: i64,
+    pub bump: u8,
+}
+
 /// A program-owned SOL vault. Carries no balance field — the authoritative
 /// balance is the account's own lamports.
 #[account]

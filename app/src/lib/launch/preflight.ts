@@ -9,7 +9,12 @@
 import type { Address, Instruction } from '@solana/kit';
 
 import type { Config } from '../program/accounts';
-import { IX_DISCRIMINATOR, PROGRAM_ID, SYSTEM_PROGRAM_ID } from '../program/constants';
+import {
+  GENESIS_CAP_RIGS,
+  IX_DISCRIMINATOR,
+  PROGRAM_ID,
+  SYSTEM_PROGRAM_ID,
+} from '../program/constants';
 import type { ProgramAddresses } from '../program/pdas';
 import { quotePurchase, type PurchaseQuote } from '../program/pricing';
 import { aprBps, yieldInputs } from '../program/yield';
@@ -107,8 +112,8 @@ export function evaluatePreflight(i: PreflightInput, founderMiner: Address): Pre
     add('never activated', c.launchT0 === 0n, `launch_t0 = ${c.launchT0}`);
     add('V2 config', c.version === 2, `config.version = ${c.version}`);
     add(
-      'Genesis cap configured',
-      c.genesisCapRigs !== null && c.genesisCapRigs > 0n,
+      'Genesis cap = 250',
+      c.genesisCapRigs === GENESIS_CAP_RIGS,
       c.genesisCapRigs === null
         ? 'genesis_cap_rigs absent (V1 Config)'
         : `genesis_cap_rigs = ${c.genesisCapRigs}`,

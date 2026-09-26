@@ -11,7 +11,7 @@
  */
 import type { Config, Miner } from './accounts';
 import { WEIGHT_BASE, effectiveWeight } from './accrual';
-import { BPS_DENOMINATOR, PRECISION } from './constants';
+import { BPS_DENOMINATOR, MAX_WALLET_RIGS, PRECISION } from './constants';
 import { quotePurchase, rigsAffordable } from './pricing';
 
 /** Matches `yield_curve::SECONDS_PER_YEAR` (365 days). */
@@ -206,8 +206,12 @@ export function projectCompounding(
   let compounded = 0n;
   if (intervalSeconds > 0n) {
     for (let t = now + intervalSeconds; t <= end; t += intervalSeconds) {
+      // At the 250-seed wallet cap the engine refuses before settling.
+      const headroom = MAX_WALLET_RIGS > p.rigs ? MAX_WALLET_RIGS - p.rigs : 0n;
+      if (headroom === 0n) continue;
       settle(g, p, t);
-      const count = rigsAffordable(p.pendingRewards, price, fee);
+      const affordable = rigsAffordable(p.pendingRewards, price, fee);
+      const count = affordable < headroom ? affordable : headroom;
       if (count === 0n) continue;
       const q = quotePurchase(count, price, fee);
       p.pendingRewards -= q.totalLamports;

@@ -35,8 +35,9 @@ pub use accumulator::{
 pub use error::{EngineError, EngineResult};
 pub use launch::{
     access_phase, gate_purchase, genesis_cap_check, purchase_allowed, seconds_to_next_phase,
-    t0_after_success, validate_genesis_cap, AccessPhase, ProvenIdentity, PurchaseContext,
-    PurchaseGate, ACCESS_WINDOW_SECONDS, NOT_ACTIVATED,
+    skr_day1_binding, t0_after_success, validate_genesis_cap, AccessPhase, ProvenIdentity,
+    PurchaseContext, PurchaseGate, SkrBindAction, ACCESS_WINDOW_SECONDS, GENESIS_CAP_RIGS,
+    NOT_ACTIVATED,
 };
 pub use penalty::{claim_penalty_bps, penalty_amount, PENALTY_WINDOW_SECONDS};
 pub use position::{
@@ -44,8 +45,8 @@ pub use position::{
     MinerPosition,
 };
 pub use pricing::{
-    quote_purchase, rigs_affordable, validate_pricing, PurchaseQuote, BPS_DENOMINATOR,
-    MAX_PURCHASE_FEE_BPS, MAX_RIGS_PER_PURCHASE, MAX_TOTAL_RIGS,
+    quote_purchase, rigs_affordable, validate_pricing, wallet_headroom, PurchaseQuote,
+    BPS_DENOMINATOR, MAX_PURCHASE_FEE_BPS, MAX_RIGS_PER_PURCHASE, MAX_TOTAL_RIGS, MAX_WALLET_RIGS,
 };
 pub use referral::{referral_weight, ReferrerCheck};
 

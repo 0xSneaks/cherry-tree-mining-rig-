@@ -50,6 +50,24 @@ impl World {
         }
     }
 
+    /// Wallets needed to hold `total` rigs under the 250-seed wallet cap.
+    pub fn wallets_for(total: u64) -> usize {
+        total.div_ceil(MAX_WALLET_RIGS) as usize
+    }
+
+    /// Plant `total` rigs across miners `from..`, at most `MAX_WALLET_RIGS`
+    /// each (the wallet cap). Returns the first miner index left unused.
+    pub fn plant_across(&mut self, from: usize, total: u64) -> usize {
+        let (mut who, mut left) = (from, total);
+        while left > 0 {
+            let n = left.min(MAX_WALLET_RIGS);
+            self.buy(who, n).unwrap();
+            left -= n;
+            who += 1;
+        }
+        who
+    }
+
     pub fn warp(&mut self, secs: i64) {
         self.now += secs;
     }
@@ -176,5 +194,15 @@ impl World {
                 <= self.ledger.total_reward_funded,
             "earned + claimed + compounded exceeded funded"
         );
+
+        // Architecture §4 check 2 / test 10: no position ever holds more than
+        // the permanent wallet cap, whatever sequence of actions got it here.
+        for (i, m) in self.miners.iter().enumerate() {
+            assert!(
+                m.rigs <= MAX_WALLET_RIGS,
+                "miner {i} holds {} rigs, above the {MAX_WALLET_RIGS} wallet cap",
+                m.rigs
+            );
+        }
     }
 }

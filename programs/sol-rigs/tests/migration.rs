@@ -30,7 +30,7 @@ use solana_sdk::{
     signature::{Keypair, Signer},
 };
 
-const CAP: u64 = 2_500; // explicit safe test value — never the production cap
+const CAP: u64 = GENESIS_CAP; // the only cap migrate_v2 accepts (250)
 
 /// The exact V1 Config payload, field for field. Test-only mirror of what
 /// the V1 binary wrote; the program carries its own frozen copy for the

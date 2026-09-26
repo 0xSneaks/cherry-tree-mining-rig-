@@ -22,6 +22,10 @@ export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export const BPS_DENOMINATOR = 10_000n;
 /** Matches `rigs_engine::pricing::MAX_RIGS_PER_PURCHASE`. */
 export const MAX_RIGS_PER_PURCHASE = 1_000_000n;
+/** Matches `rigs_engine::pricing::MAX_WALLET_RIGS`: permanent per-wallet seed cap. */
+export const MAX_WALLET_RIGS = 250n;
+/** Matches `rigs_engine::launch::GENESIS_CAP_RIGS`: the only cap `initialize` accepts. */
+export const GENESIS_CAP_RIGS = MAX_WALLET_RIGS;
 /** Matches `rigs_engine::pricing::MAX_TOTAL_RIGS`. */
 export const MAX_TOTAL_RIGS = 1_000_000_000_000n;
 /** Matches `rigs_engine::accumulator::PRECISION`. */
@@ -33,6 +37,8 @@ export const SEEDS = {
   capitalVault: new TextEncoder().encode('capital_vault'),
   rewardVault: new TextEncoder().encode('reward_vault'),
   feeVault: new TextEncoder().encode('fee_vault'),
+  /** Day-1 `.skr` binding: `["skr_bind", name_account]`. */
+  skrBind: new TextEncoder().encode('skr_bind'),
 } as const;
 
 function fromHex(hex: string): Uint8Array {

@@ -80,7 +80,9 @@ async fn e2e_buy_accrue_claim_moves_real_lamports() {
 async fn e2e_compound_moves_reward_vault_into_capital_and_fee() {
     let mut env = Env::new().await;
     env.initialize().await.unwrap();
-    env.fund_rewards(500 * SOL, 1_000).await.unwrap();
+    // Sized so the ore bin buys tens of rigs, well inside the 250 wallet cap:
+    // this test pins uncapped compound mechanics (capped: `wallet_cap.rs`).
+    env.fund_rewards(SOL, 1_000).await.unwrap();
 
     let alice = env.alice.insecure_clone();
     env.buy(&alice, 5).await.unwrap();

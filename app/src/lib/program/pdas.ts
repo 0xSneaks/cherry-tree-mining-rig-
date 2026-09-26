@@ -23,6 +23,18 @@ export async function minerPda(owner: Address): Promise<Address> {
   return pda;
 }
 
+/**
+ * Day-1 `.skr` binding PDA for a domain's ANS name account:
+ * `["skr_bind", name_account]`. One domain opens Day-1 access for one wallet.
+ */
+export async function skrBindingPda(nameAccount: Address): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PROGRAM_ID,
+    seeds: [SEEDS.skrBind, getAddressEncoder().encode(nameAccount)],
+  });
+  return pda;
+}
+
 export async function capitalVaultPda(): Promise<Address> {
   const [pda] = await getProgramDerivedAddress({
     programAddress: PROGRAM_ID,

@@ -60,7 +60,7 @@ function config(over: Partial<Config> = {}): Config {
     launchT0: 0n,
     totalShares: 0n,
     totalClaimPenalties: 0n,
-    genesisCapRigs: 2_500n,
+    genesisCapRigs: 250n,
     ...over,
   };
 }
@@ -113,7 +113,9 @@ describe('first-buy preflight', () => {
     ['schedule ended', { config: config({ rewardPeriodFinish: NOW }) }],
     ['insolvent', { rewardVaultDistributable: 1n }],
     ['amount not supplied', { rigCount: null }],
-    ['activation above cap', { rigCount: 2_501n, instruction: buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, 2_501n) }],
+    ['activation above cap', { rigCount: 251n, instruction: buyRigsInstruction(EXPECTED_FOUNDER, MINER, PDAS, 251n) }],
+    ['Genesis cap not 250', { config: config({ genesisCapRigs: 2_500n }) }],
+    ['Genesis cap below 250', { config: config({ genesisCapRigs: 249n }) }],
     ['insufficient SOL', { founderLamports: 1_000n }],
     ['no instruction', { instruction: null }],
     [

@@ -83,7 +83,7 @@ fn settle_and_report(w: &mut World, name: &str) {
 #[test]
 fn s01_single_planter() {
     println!("\n[s01] 1 planter · 100 SOL over 180 days");
-    for rigs in [1u64, 100, 10_000] {
+    for rigs in [1u64, 100, 250] {
         let mut w = World::new(1, PRICE, FEE);
         w.fund(100 * SOL, 180 * DAY as u64).unwrap();
         w.buy(0, rigs).unwrap();
@@ -103,12 +103,9 @@ fn s02_planter_counts_10_100_1000() {
         let mut w = World::new(n, PRICE, FEE);
         w.fund(100 * SOL, 180 * DAY as u64).unwrap();
         for i in 0..n {
-            // Low deposits (1 rig) with every 10th planter a whale.
-            let rigs = if i % 10 == 0 {
-                5_000
-            } else {
-                1 + (i as u64 % 7)
-            };
+            // Low deposits (1 rig) with every 10th planter a whale at the
+            // 250-seed wallet cap.
+            let rigs = if i % 10 == 0 { 250 } else { 1 + (i as u64 % 7) };
             w.buy(i, rigs).unwrap();
             if i + 1 == 1 || i + 1 == n / 10 || i + 1 == n {
                 checkpoint(&w, &format!("after planter {}", i + 1));
@@ -353,20 +350,20 @@ fn s10_user_examples() {
     );
     let a = w.buy(0, 10).unwrap().total_lamports;
     println!(
-        "  B plants 1,000 rigs an hour later — entry APR {}",
-        entry(&w, 1_000)
+        "  B plants 250 rigs (wallet cap) an hour later — entry APR {}",
+        entry(&w, 250)
     );
     w.warp(3_600);
-    let b = w.buy(1, 1_000).unwrap().total_lamports;
+    let b = w.buy(1, 250).unwrap().total_lamports;
     checkpoint(&w, "after A+B");
     w.warp(5 * DAY);
     println!("  C plants 10 rigs on day 5 — entry APR {}", entry(&w, 10));
     let c = w.buy(2, 10).unwrap().total_lamports;
     println!(
-        "  D plants 5,000 rigs on day 5 — entry APR {}",
-        entry(&w, 5_000)
+        "  D plants 250 rigs (wallet cap) on day 5 — entry APR {}",
+        entry(&w, 250)
     );
-    let d = w.buy(3, 5_000).unwrap().total_lamports;
+    let d = w.buy(3, 250).unwrap().total_lamports;
     checkpoint(&w, "after C+D");
     // B compounds daily; everyone else holds.
     for _ in 0..25 {
@@ -375,8 +372,8 @@ fn s10_user_examples() {
     }
     checkpoint(&w, "day 30 (window closes)");
     report(&w, 0, "A · 10 rigs, genesis, held", a);
-    report(&w, 1, "B · 1,000 rigs, hour 1, compounded daily", b);
+    report(&w, 1, "B · 250 rigs, hour 1, compounded daily", b);
     report(&w, 2, "C · 10 rigs, day 5, held", c);
-    report(&w, 3, "D · 5,000 rigs, day 5, held", d);
+    report(&w, 3, "D · 250 rigs, day 5, held", d);
     settle_and_report(&mut w, "s10");
 }

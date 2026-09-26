@@ -164,8 +164,8 @@ fn replant_is_free_and_does_not_reset_the_clock() {
 fn repeated_claims_cannot_recover_the_penalty() {
     let mut w = World::new(2, PRICE, FEE);
     w.fund(10 * SOL, 10 * DAY as u64).unwrap();
-    w.buy(0, 900).unwrap();
-    w.buy(1, 100).unwrap();
+    w.buy(0, 225).unwrap();
+    w.buy(1, 25).unwrap();
     w.warp(H);
     let first = w.claim_outcome(0).unwrap();
     assert!(first.penalty > 0);

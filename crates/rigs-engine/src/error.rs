@@ -49,6 +49,13 @@ pub enum EngineError {
     /// would exceed the configured Genesis cap. Appended for Production V2;
     /// existing codes are unchanged.
     GenesisCapExceeded,
+    /// The purchase would take the wallet above the permanent holding cap
+    /// (`MAX_WALLET_RIGS`), or a compound was attempted with zero headroom.
+    /// Appended for the hard-cap build; existing codes are unchanged.
+    WalletCapExceeded,
+    /// Day-1 access: this `.skr` domain is already bound to another wallet.
+    /// Appended for the hard-cap build; existing codes are unchanged.
+    SkrDomainBound,
 }
 
 impl fmt::Display for EngineError {
@@ -73,6 +80,8 @@ impl fmt::Display for EngineError {
             EngineError::InsufficientRewardBacking => "insufficient reward backing",
             EngineError::ClockWentBackwards => "clock went backwards",
             EngineError::GenesisCapExceeded => "genesis cumulative fresh-purchase cap exceeded",
+            EngineError::WalletCapExceeded => "permanent per-wallet seed cap reached",
+            EngineError::SkrDomainBound => "this .skr domain is bound to another wallet for Day 1",
         };
         f.write_str(s)
     }

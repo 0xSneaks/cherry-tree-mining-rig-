@@ -27,7 +27,7 @@ import { address, type Address } from '@solana/kit';
 
 import { programAddresses, programDataPda } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
-import { MAX_TOTAL_RIGS } from '../../src/lib/program/constants';
+import { GENESIS_CAP_RIGS } from '../../src/lib/program/constants';
 import { EXPECTED_FOUNDER } from '../../src/lib/launch/expected';
 import { initializeInstruction } from './admin-instructions';
 
@@ -97,8 +97,8 @@ async function main(): Promise<void> {
   if (!Number.isInteger(purchaseFeeBps) || purchaseFeeBps < 0 || purchaseFeeBps > 1000) {
     fail('CHERRY_TREE_PURCHASE_FEE_BPS must be an integer in 0..=1000 (the program caps it at 1000).');
   }
-  if (genesisCapRigs <= 0n || genesisCapRigs > MAX_TOTAL_RIGS) {
-    fail(`CHERRY_TREE_GENESIS_CAP_RIGS must be in 1..=${MAX_TOTAL_RIGS}.`);
+  if (genesisCapRigs !== GENESIS_CAP_RIGS) {
+    fail(`CHERRY_TREE_GENESIS_CAP_RIGS must be exactly ${GENESIS_CAP_RIGS} (the program refuses any other cap).`);
   }
 
   // Only the public key is ever printed.

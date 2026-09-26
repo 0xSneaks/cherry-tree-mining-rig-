@@ -19,7 +19,7 @@ import {
   claimInstruction,
   compoundInstruction,
 } from '../src/lib/program/instructions';
-import type { ProgramAddresses } from '../src/lib/program/pdas';
+import { skrBindingPda, type ProgramAddresses } from '../src/lib/program/pdas';
 
 const OWNER = address('7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU');
 const MINER = address('So11111111111111111111111111111111111111112');
@@ -64,6 +64,30 @@ describe('buy_rigs', () => {
     expect(r.data![16]).toBe(1);
     expect(r.accounts!.slice(7).map((a) => a.address)).toEqual([...ID, REF_MINER]);
     expect(r.accounts!.slice(7).every((a) => a.role === AccountRole.READONLY)).toBe(true);
+  });
+
+  it('puts a writable .skr binding between identity and referrer', () => {
+    const REF = address('9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM');
+    const REF_MINER = address('11111111111111111111111111111116');
+    const NAME = address('11111111111111111111111111111117');
+    const BIND = address('3X5vjVDFZJNy9Yc9jMrbWNpXN3U6crbTwSzfyHeihrVH');
+    const r = buyRigsInstruction(OWNER, MINER, PDAS, 1n, {
+      identity: [NAME],
+      skrBinding: BIND,
+      referrer: { wallet: REF, miner: REF_MINER },
+    });
+    expect(r.accounts!.slice(7).map((a) => a.address)).toEqual([NAME, BIND, REF_MINER]);
+    expect(r.accounts!.slice(7).map((a) => a.role)).toEqual([
+      AccountRole.READONLY,
+      AccountRole.WRITABLE,
+      AccountRole.READONLY,
+    ]);
+  });
+
+  it('derives the binding PDA exactly as the program does', async () => {
+    // Pinned in programs/sol-rigs/tests/skr_binding.rs for name [7u8; 32].
+    const name = address('US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx');
+    expect(await skrBindingPda(name)).toBe('3X5vjVDFZJNy9Yc9jMrbWNpXN3U6crbTwSzfyHeihrVH');
   });
 
   it('orders accounts exactly as the Accounts struct declares them', () => {

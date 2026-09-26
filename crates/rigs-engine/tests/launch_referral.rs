@@ -216,11 +216,11 @@ fn referred_weight_redistributes_the_same_emission() {
     let mut w = World::new(2, PRICE, FEE);
     w.fund(10 * SOL, 10 * DAY as u64).unwrap();
     w.miners[1].weight = WEIGHT_REFERRED;
-    w.buy(0, 1_000).unwrap();
-    w.buy(1, 1_000).unwrap();
+    w.buy(0, 250).unwrap();
+    w.buy(1, 250).unwrap();
     w.warp(5 * DAY);
     let (base, referred) = (w.earned(0) as u128, w.earned(1) as u128);
-    // 1000 : 1050 of 5 SOL.
+    // 250×100 : 250×105 of 5 SOL.
     assert!(referred * 100 / base == 105 || referred * 100 / base == 104);
     let emitted = w.globals.reward_rate as u128 * 5 * DAY as u128;
     assert!(base + referred <= emitted);
@@ -232,10 +232,12 @@ fn referred_weight_redistributes_the_same_emission() {
 
 #[test]
 fn displayed_referred_apr_is_what_the_referred_rig_accrues() {
-    let mut w = World::new(2, PRICE, FEE);
+    // 499 base rigs across two capped wallets, plus the referred rig.
+    let mut w = World::new(3, PRICE, FEE);
     w.fund(30 * SOL, 30 * DAY as u64).unwrap();
     w.miners[1].weight = WEIGHT_REFERRED;
-    w.buy(0, 499).unwrap();
+    w.buy(0, 250).unwrap();
+    w.buy(2, 249).unwrap();
     w.buy(1, 1).unwrap();
     let i = YieldInputs::from_globals(&w.globals, PRICE, FEE, w.now);
     let base = apr_bps_weighted(&i, 0, WEIGHT_BASE).unwrap();

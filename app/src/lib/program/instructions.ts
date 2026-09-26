@@ -32,11 +32,13 @@ function ix(
  * `buy_rigs(count, referrer)` — see `instructions/buy_rigs.rs`.
  *
  * Args: `u64 count` then Borsh `Option<Pubkey>` (`0` | `1 ‖ 32 bytes`).
- * Remaining accounts: `[identity…, referrer_miner?]` — the buyer's `.skr` /
- * `.sns` proof (`[name]` direct, `[name, nft_record, token_account]` wrapped
- * or tokenized, or nothing), then the referrer's miner PDA iff a referrer is
- * named. The program verifies all of it; the client choosing them grants
- * nothing.
+ * Remaining accounts: `[identity…, skr_binding?, referrer_miner?]` — the
+ * buyer's `.skr` / `.sns` proof (`[name]` direct, `[name, nft_record,
+ * token_account]` wrapped or tokenized, or nothing), then — for a `.skr`
+ * proof — the writable Day-1 binding PDA `["skr_bind", name]` (required
+ * during Day 1, ignored otherwise), then the referrer's miner PDA iff a
+ * referrer is named. The program verifies all of it; the client choosing
+ * them grants nothing.
  */
 export function buyRigsInstruction(
   owner: Address,
@@ -45,6 +47,7 @@ export function buyRigsInstruction(
   count: bigint,
   opts: {
     identity?: readonly Address[];
+    skrBinding?: Address | null;
     referrer?: { wallet: Address; miner: Address } | null;
   } = {},
 ): Instruction {
@@ -67,6 +70,8 @@ export function buyRigsInstruction(
       { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
       // remaining accounts
       ...(opts.identity ?? []).map((address) => ({ address, role: AccountRole.READONLY })),
+      // Writable: the first Day-1 use of a domain creates its binding.
+      ...(opts.skrBinding ? [{ address: opts.skrBinding, role: AccountRole.WRITABLE }] : []),
       ...(referrer ? [{ address: referrer.miner, role: AccountRole.READONLY }] : []),
     ],
     args,

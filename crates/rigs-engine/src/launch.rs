@@ -21,7 +21,12 @@
 //! `sns_early_phase_is_unreachable_under_v2` pins down.
 
 use crate::error::{EngineError, EngineResult};
-use crate::pricing::MAX_TOTAL_RIGS;
+use crate::pricing::MAX_WALLET_RIGS;
+
+/// The only Genesis cap `initialize` / `migrate_v2` accept. Equal to the
+/// permanent holding cap: while both are 250 the holding cap dominates, and
+/// this Day-1 cumulative check stays as a misconfiguration guard.
+pub const GENESIS_CAP_RIGS: u64 = MAX_WALLET_RIGS;
 
 /// Length of the `.skr`-only Genesis window. Public begins the second it ends.
 pub const ACCESS_WINDOW_SECONDS: i64 = 24 * 60 * 60;
@@ -152,13 +157,48 @@ pub fn t0_after_success(gate: PurchaseGate, launch_t0: i64, now: i64) -> i64 {
     }
 }
 
-/// Validate a configured Genesis cap. It must be reachable by a real wallet
-/// (≥ 1 rig) and can never exceed the global rig supply bound.
+/// Validate a configured Genesis cap: exactly [`GENESIS_CAP_RIGS`] (250).
+/// Any other value — including one below the holding cap — is refused, so a
+/// deployment cannot be initialised (or migrated) with a drifted cap.
 pub fn validate_genesis_cap(cap: u64) -> EngineResult<()> {
-    if cap == 0 || cap > MAX_TOTAL_RIGS {
+    if cap != GENESIS_CAP_RIGS {
         return Err(EngineError::InvalidConfig);
     }
     Ok(())
+}
+
+/// What a Day-1 `.skr` purchase does with the domain's binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkrBindAction {
+    /// First Day-1 use of the domain: bind it to this wallet.
+    Create,
+    /// The domain is already bound to this wallet: entitlement retained,
+    /// whether or not the wallet still holds the domain.
+    Reuse,
+}
+
+/// Day-1 rule: one `.skr` domain opens Day-1 access for one wallet.
+///
+/// * `bound_to` — the wallet the domain's binding records, if one exists.
+/// * `owns_now` — the wallet proved current on-chain ownership of the domain.
+///
+/// A binding is permanent for Day 1: once `domain → A`, any other wallet is
+/// [`EngineError::SkrDomainBound`] even if it now owns the domain (transfer or
+/// wrapper move). `A` keeps its Day-1 entitlement (still subject to the
+/// Genesis and holding caps). Without a binding, only a current owner may
+/// create one; otherwise [`EngineError::AccessDenied`]. Outside
+/// [`AccessPhase::SkrGenesis`] the program never consults this.
+pub fn skr_day1_binding(
+    bound_to: Option<[u8; 32]>,
+    wallet: [u8; 32],
+    owns_now: bool,
+) -> EngineResult<SkrBindAction> {
+    match bound_to {
+        Some(w) if w == wallet => Ok(SkrBindAction::Reuse),
+        Some(_) => Err(EngineError::SkrDomainBound),
+        None if owns_now => Ok(SkrBindAction::Create),
+        None => Err(EngineError::AccessDenied),
+    }
 }
 
 /// The cumulative per-wallet Genesis fresh-purchase cap.

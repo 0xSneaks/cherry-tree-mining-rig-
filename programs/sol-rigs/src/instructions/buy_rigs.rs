@@ -1,13 +1,15 @@
 use anchor_lang::prelude::*;
 use rigs_engine::{
-    assert_fully_funded, gate_purchase, genesis_cap_check, referral_weight, t0_after_success,
-    PurchaseContext, PurchaseGate, ReferrerCheck,
+    access_phase, assert_fully_funded, gate_purchase, genesis_cap_check, referral_weight,
+    skr_day1_binding, t0_after_success, AccessPhase, ProvenIdentity, PurchaseContext, PurchaseGate,
+    ReferrerCheck, SkrBindAction,
 };
 
 use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
-use crate::events::{LaunchActivated, ReferralBound, RigsPurchased};
+use crate::events::{LaunchActivated, ReferralBound, RigsPurchased, SkrDomainBound};
 use crate::identity;
+use crate::skr_binding;
 use crate::state::{Config, Miner, Vault};
 use crate::vault::{deposit_from_wallet, distributable};
 
@@ -74,6 +76,12 @@ pub struct BuyRigs<'info> {
 ///   instruction, so a failed purchase can never leave T0 behind.
 /// * afterwards: the access phase (from T0 and the clock only) decides which
 ///   proven identity may buy.
+/// * Day 1 (`[T0, T0 + 24h)`): a `.skr` purchase must carry the domain's
+///   binding PDA. One domain opens Day-1 access for one wallet — see
+///   `rigs_engine::skr_day1_binding`.
+///
+/// Every purchase also obeys the permanent 250-seed holding cap, enforced in
+/// `rigs_engine::buy_rigs`.
 pub fn handle_buy_rigs<'info>(
     ctx: Context<'_, '_, 'info, 'info, BuyRigs<'info>>,
     count: u64,
@@ -82,13 +90,47 @@ pub fn handle_buy_rigs<'info>(
     let now = Clock::get()?.unix_timestamp;
     let owner_key = ctx.accounts.owner.key();
     // Remaining accounts: identity accounts first (1 for a direct domain, 3
-    // for a wrapped / tokenized one), then the referrer's miner iff named.
+    // for a wrapped / tokenized one), then the `.skr` binding PDA if given,
+    // then the referrer's miner iff named.
     let remaining = ctx.remaining_accounts;
     let n_ref = usize::from(referrer.is_some());
     if remaining.len() < n_ref {
         return err!(RigsError::MissingReferrerAccount);
     }
-    let (identity_accounts, referrer_accounts) = remaining.split_at(remaining.len() - n_ref);
+    let (identity_and_binding, referrer_accounts) = remaining.split_at(remaining.len() - n_ref);
+    let (identity_accounts, binding_account) = skr_binding::split(identity_and_binding);
+
+    let mut identity = identity::prove(identity_accounts, &owner_key, now);
+
+    // --- Day-1 .skr binding: one domain, one wallet ---
+    // Only during [T0, T0 + 24h). Decided before the gate so a domain bound
+    // to another wallet can never open access, even for its current owner.
+    let mut create_binding: Option<Pubkey> = None;
+    if access_phase(ctx.accounts.config.launch_t0, now) == AccessPhase::SkrGenesis {
+        match (identity_accounts.first(), binding_account) {
+            (Some(name), Some(binding)) => {
+                let bound_to = skr_binding::read(binding, name.key, ctx.program_id)?;
+                let action = skr_day1_binding(
+                    bound_to.map(|w| w.to_bytes()),
+                    owner_key.to_bytes(),
+                    identity == ProvenIdentity::Skr,
+                )
+                .anchor()?;
+                if action == SkrBindAction::Create {
+                    create_binding = Some(*name.key);
+                }
+                // Bound to this wallet (now, or earlier and retained).
+                identity = ProvenIdentity::Skr;
+            }
+            // A proven `.skr` without its binding cannot open Day 1: an
+            // unbound use would let the domain be reused after a transfer.
+            _ if identity == ProvenIdentity::Skr => {
+                return err!(RigsError::SkrBindingRequired);
+            }
+            // No domain proof at all: the gate below denies it.
+            _ => {}
+        }
+    }
 
     // --- launch gate ---
     let gate = {
@@ -98,7 +140,7 @@ pub fn handle_buy_rigs<'info>(
             now,
             is_founder: owner_key == config.founder,
             schedule_active: config.reward_rate > 0 && now < config.reward_period_finish,
-            identity: identity::prove(identity_accounts, &owner_key, now),
+            identity,
         })
         .anchor()?
     };
@@ -167,6 +209,25 @@ pub fn handle_buy_rigs<'info>(
         config.purchase_fee_bps,
     )
     .anchor()?;
+
+    // First Day-1 use of the domain: bind it to this wallet, paid by the
+    // buyer, in the same atomic transaction as the purchase.
+    if let (Some(name_key), Some(binding)) = (create_binding, binding_account) {
+        skr_binding::create(
+            binding,
+            &ctx.accounts.owner.to_account_info(),
+            &ctx.accounts.system_program.to_account_info(),
+            &name_key,
+            &owner_key,
+            now,
+            ctx.program_id,
+        )?;
+        emit!(SkrDomainBound {
+            name_account: name_key,
+            wallet: owner_key,
+            bound_at: now,
+        });
+    }
 
     // Capital and fee leave the USER's wallet, never the reward vault.
     deposit_from_wallet(

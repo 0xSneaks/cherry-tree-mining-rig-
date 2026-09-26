@@ -13,7 +13,7 @@ import {
   compoundInstruction,
 } from './program/instructions';
 import { discoverIdentity } from './program/identity';
-import { minerPda, programAddresses } from './program/pdas';
+import { minerPda, programAddresses, skrBindingPda } from './program/pdas';
 import type { RigsSigner } from './signer';
 
 async function context(owner: Address) {
@@ -32,12 +32,17 @@ export async function buyRigs(
   opts: { referrer?: Address | null } = {},
 ): Promise<string> {
   const { pdas, miner } = await context(signer.address);
-  const identity = (await discoverIdentity(rpc(), signer.address)).accounts;
+  const proof = await discoverIdentity(rpc(), signer.address);
+  const identity = proof.accounts;
+  // A `.skr` proof always carries its Day-1 binding PDA; the program only
+  // consults it during [T0, T0 + 24h).
+  const name = identity[0];
+  const skrBinding = proof.kind === 'skr' && name ? await skrBindingPda(name) : null;
   const referrer = opts.referrer
     ? { wallet: opts.referrer, miner: await minerPda(opts.referrer) }
     : null;
   const sig = await signer.signAndSend(
-    buyRigsInstruction(signer.address, miner, pdas, count, { identity, referrer }),
+    buyRigsInstruction(signer.address, miner, pdas, count, { identity, skrBinding, referrer }),
   );
   await confirmSignature(sig, rpc());
   return sig;

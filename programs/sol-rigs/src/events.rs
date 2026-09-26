@@ -120,3 +120,12 @@ pub struct ReferralBound {
 pub struct GenesisCapConfigured {
     pub genesis_cap_rigs: u64,
 }
+
+/// A `.skr` domain was bound to its one Day-1 wallet by the first Day-1
+/// purchase that proved it.
+#[event]
+pub struct SkrDomainBound {
+    pub name_account: Pubkey,
+    pub wallet: Pubkey,
+    pub bound_at: i64,
+}

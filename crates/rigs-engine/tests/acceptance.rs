@@ -380,18 +380,18 @@ fn t13_purchase_lamports_never_reach_the_reward_vault() {
     w.fund(10 * SOL, 1_000).unwrap();
     let reward_after_funding = w.reward_vault;
 
-    // A large purchase by user B while user A is accruing.
+    // A large (wallet-cap-sized) purchase by user B while user A is accruing.
     w.buy(0, 5).unwrap();
     w.warp(200);
-    let q = w.buy(1, 5_000).unwrap();
-    assert!(q.total_lamports > 50 * SOL);
+    let q = w.buy(1, 250).unwrap();
+    assert!(q.total_lamports > 2 * SOL);
 
     assert_eq!(
         w.reward_vault, reward_after_funding,
         "a purchase must not add one lamport of reward backing"
     );
-    assert_eq!(w.capital_vault, 5_005 * CENTI);
-    assert_eq!(w.fee_vault, 5_005 * CENTI * 300 / 10_000);
+    assert_eq!(w.capital_vault, 255 * CENTI);
+    assert_eq!(w.fee_vault, 255 * CENTI * 300 / 10_000);
 
     // User A now claims. Everything they receive traces to funded lamports.
     w.warp(800);

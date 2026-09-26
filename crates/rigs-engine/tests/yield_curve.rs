@@ -157,9 +157,10 @@ fn displayed_apr_is_the_rate_the_accumulator_pays() {
         (2, 5),
         (1_000_000_000, 123_456),
     ] {
-        let mut w = World::new(2, PRICE, FEE);
+        // `rigs - 1` others spread across capped wallets, plus the one rig.
+        let mut w = World::new(2 + World::wallets_for(rigs - 1), PRICE, FEE);
         w.fund(rate * 365 * DAY as u64, 365 * DAY as u64).unwrap();
-        w.buy(0, rigs - 1).unwrap();
+        w.plant_across(2, rigs - 1);
         w.buy(1, 1).unwrap();
         let apr = apr_bps(&YieldInputs::from_globals(&w.globals, PRICE, FEE, w.now), 0).unwrap();
 
@@ -191,8 +192,8 @@ fn displayed_apr_is_the_rate_the_accumulator_pays() {
 fn projection_without_compounding_is_simple_share_of_emission() {
     let mut w = World::new(2, PRICE, FEE);
     w.fund(100 * SOL, 180 * DAY as u64).unwrap();
-    w.buy(0, 900).unwrap();
-    w.buy(1, 100).unwrap();
+    w.buy(0, 225).unwrap();
+    w.buy(1, 25).unwrap();
     let p = project_compounding(
         &w.globals,
         &w.miners[1],
@@ -208,7 +209,7 @@ fn projection_without_compounding_is_simple_share_of_emission() {
         180 * DAY as u64,
         "capped at the funded runway"
     );
-    assert_eq!(p.end_rigs, 100);
+    assert_eq!(p.end_rigs, 25);
     // Exactly 10% of what the (floored) schedule emits over the window.
     let emitted = w.globals.reward_rate as u128 * p.horizon_seconds as u128;
     assert_eq!(p.reward_lamports as u128, emitted / 10);
@@ -219,8 +220,8 @@ fn projection_without_compounding_is_simple_share_of_emission() {
 fn compounding_beats_simple_and_stays_inside_the_emission() {
     let mut w = World::new(2, PRICE, FEE);
     w.fund(100 * SOL, 180 * DAY as u64).unwrap();
-    w.buy(0, 900).unwrap();
-    w.buy(1, 100).unwrap();
+    w.buy(0, 225).unwrap();
+    w.buy(1, 25).unwrap();
     let simple = project_compounding(
         &w.globals,
         &w.miners[1],
@@ -577,14 +578,14 @@ proptest! {
     fn projection_never_exceeds_emission(
         fund_sol in 1u64..1_000,
         days in 1u64..365,
-        mine in 1u64..10_000,
-        others in 0u64..100_000,
+        mine in 1u64..=250,
+        others in 0u64..20_000,
         interval_h in 0u64..48,
     ) {
-        let mut w = World::new(2, PRICE, FEE);
+        let mut w = World::new(1 + World::wallets_for(others), PRICE, FEE);
         w.fund(fund_sol * SOL, days * DAY as u64).unwrap();
         w.buy(0, mine).unwrap();
-        if others > 0 { w.buy(1, others).unwrap(); }
+        w.plant_across(1, others);
         let interval = interval_h * 3_600;
         if interval > 0 && (days * DAY as u64) / interval > MAX_PROJECTION_STEPS { return Ok(()); }
         let p = project_compounding(&w.globals, &w.miners[0], w.now, PRICE, FEE, interval, 365 * DAY as u64).unwrap();

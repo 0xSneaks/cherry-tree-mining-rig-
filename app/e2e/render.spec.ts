@@ -316,7 +316,7 @@ test.describe('blink result card', () => {
 
   test('ignores junk params rather than rendering them', async ({ page }) => {
     await page.goto('/result?rigs=<script>alert(1)</script>&compounded=NaN');
-    await expect(page.getByText('THE CHERRY TREE · GROVE REPORT')).toBeVisible();
+    await expect(page.getByText('THE CHERRY TREE 🌸 · GROVE REPORT')).toBeVisible();
     const text = await page.locator('body').innerText();
     expect(text).not.toContain('alert(1)');
     expect(text).not.toContain('NaN');

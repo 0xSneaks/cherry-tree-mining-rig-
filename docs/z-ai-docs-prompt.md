@@ -212,6 +212,89 @@ each card: uppercase tracked title, one line "Receives: …", one line
 
 Then the Overview content (below) and a card grid linking to every other page.
 
+## Energy: zen grove above ground, miner farm below
+
+The site should feel calm at first glance and then *powerful* the longer you
+look: a quiet blossom grove on the surface, a humming machine room under the
+soil. That is the energy the big BNB-chain miners and yield farms had, done
+with our palette and without their broken promises.
+
+### What made those miners pull people in (the good parts to copy)
+
+Reference set: Baked Beans (peaked at ~35,560 BNB locked, Apr 2022), BNB
+Miner, the Drip Faucet and Drip Garden, Animal Farm, PancakeSwap farms and
+Syrup pools. What they did well visually and emotionally:
+
+1. **One giant live number.** Every miner put the contract balance and "your
+   rewards" front and centre in huge type, and it visibly moved. Visiting felt
+   like checking on a machine that was running.
+2. **A tiny, named ritual.** Bake / rebake / eat. Hydrate / claim. Plant /
+   harvest. Three verbs, big buttons, a daily habit ("rebake 6, eat 1").
+3. **A world, not a form.** PancakeSwap called farms "Kitchens"; Animal Farm
+   had the Pig Pen, Dog Pound, Garden and Piggy Bank. Each area was a place.
+4. **Loud tags.** PancakeSwap's `20x` / `10x` multiplier pills made pools
+   scannable and exciting at a glance.
+5. **Social proof everywhere.** Member counts, leaderboards, "team" pages,
+   Telegram and YouTube links on the first screen.
+6. **Cartoon mascot + one strong colour.** Instantly recognisable, screenshot-
+   and thumbnail-friendly.
+
+### Why they died (the parts we must NOT copy)
+
+- Payouts came from new deposits, so the moment inflows slowed the balance
+  drained (Baked Beans' users watched TVL fall daily from its peak).
+- Fixed "8% daily" / "1% daily" promises and "passive income" language.
+- Referral bonuses paid out of other people's deposits.
+- Early entrants structurally beat late ones.
+
+THE CHERRY TREE's answer is structural (separate REWARD vault, funded
+schedule, visible runway), so the site keeps the **energy** and drops the
+**promises**: no fixed-rate claims, no "passive income", no invented numbers,
+no FOMO countdowns.
+
+### Art direction to build
+
+- **Two layers on every hero/banner:** the zen surface (blossom tree, moon,
+  petals, still water) and, below a thin soil line, a cross-section "machine
+  room": galleries cut into dark navy rock with small rig housings whose
+  status lamps pulse `--blossom`, a hoist shaft, and the tree's **roots drawn
+  as glowing circuit traces** (`--blossom-dim` → `--blossom`) running down
+  into the galleries. Pulses travel up the roots into the trunk every few
+  seconds — the grove is being powered from below. Inline SVG + CSS only.
+- **Entering the grove (the "log-in" moment on index.html):** on first load,
+  a 1.2s sequence — lanterns along the path light one by one, a petal burst
+  from the tree, the root traces charge up, then the page content fades in.
+  Skip it on repeat visits (`sessionStorage` flag, wrapped in try/catch) and
+  entirely under `prefers-reduced-motion`.
+- **Machine-room readout strip** under the hero, styled like the app's
+  readouts (mono, tracked labels, big tabular numerals): REWARD VAULT ·
+  SEEDS PLANTED · PLANTERS · FUNDED UNTIL · PHASE. The docs site has no chain
+  access, so each tile shows `— LIVE IN APP` instead of a number and links to
+  the app. **Never show a made-up figure.** One tile may show an animated
+  counter only if it is captioned `ILLUSTRATION · NOT LIVE DATA`.
+- **The ritual, three verbs:** PLANT · TEND · HARVEST (and REPLANT for
+  compound) as big icon buttons on the landing page, each linking to the page
+  that explains it. Same sizes and style as the app's action buttons.
+- **Places, not sections:** name the nav groups as grove places with the
+  plain name underneath — THE NURSERY (Start), THE ORCHARD (How it works),
+  THE TOOLSHED (Build & run). Page titles stay exactly as written.
+- **Loud tags, honest content:** phase pills styled like PancakeSwap
+  multipliers — `GENESIS`, `EARLY GROVE`, `GROWTH`, `MATURE`, `DORMANT` —
+  bold, glowing border, used wherever a phase is mentioned. Referral weight
+  shows as a `WEIGHT 105` pill (never "+5% APR"). Penalty tiers as
+  `25% · <24H`, `15% · 24–48H`, `5% · 48–72H`, `0% · 72H+` pills on a
+  lantern timeline that lights up left to right — the patience path, our
+  version of "rebake 6, eat 1".
+- **Social proof slot:** a "Top planters" leaderboard block and a community
+  row (Cherry community, GitHub) styled like the app's leaderboard, with
+  placeholder rows labelled `LIVE IN APP`.
+- **Mascot:** the round blossom-tree logo is the mascot. Use it as the
+  loading mark, the favicon, and a small "tending" illustration beside
+  callouts.
+- **Hum, not noise:** at most three moving things on screen at once (petals,
+  one root pulse, one status lamp). Everything else is still. That stillness
+  is the zen; the pulse is the miner.
+
 ## Layout for the doc pages
 
 - **Top bar** (all pages): small round hero image (28px) + wordmark at 15px

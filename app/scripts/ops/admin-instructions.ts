@@ -44,10 +44,14 @@ function concat(...parts: Uint8Array[]): Uint8Array {
  *
  * `feeRecipient` is a payout destination pinned into config, not a signer:
  * `withdraw_fees` may pay it and nothing else, and it never has to sign.
+ *
+ * `authority` must be the program's upgrade authority: the program reads it
+ * from `programData` (see `programDataPda`) and refuses any other signer.
  */
 export function initializeInstruction(
   authority: Address,
   pdas: ProgramAddresses,
+  programData: Address,
   args: {
     rigPriceLamports: bigint;
     purchaseFeeBps: number;
@@ -66,6 +70,7 @@ export function initializeInstruction(
       { address: pdas.rewardVault, role: AccountRole.WRITABLE },
       { address: pdas.feeVault, role: AccountRole.WRITABLE },
       { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+      { address: programData, role: AccountRole.READONLY },
     ],
     data: concat(
       IX_DISCRIMINATOR.initialize,

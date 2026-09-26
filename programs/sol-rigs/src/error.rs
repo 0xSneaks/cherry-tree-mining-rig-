@@ -69,6 +69,9 @@ pub enum RigsError {
         "V1 -> V2 migration rejected: not an exact, unmigrated V1 Config signed by its authority"
     )]
     MigrationRejected,
+    // --- Security hardening (appended: existing codes are unchanged) ---
+    #[msg("Initialize must be signed by the program's upgrade authority")]
+    UnauthorizedInitializer,
 }
 
 impl From<EngineError> for RigsError {

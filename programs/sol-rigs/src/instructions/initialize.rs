@@ -48,6 +48,21 @@ pub struct Initialize<'info> {
     pub fee_vault: Account<'info, Vault>,
 
     pub system_program: Program<'info, System>,
+
+    /// SECURITY: initialize is bound to the program's upgrade authority, so no
+    /// other signer can claim `config.authority` or choose founder, reward
+    /// funder or fee recipient before the deployer does. The address is the
+    /// loader-derived ProgramData PDA of this program ID; only the upgradeable
+    /// loader can write it, and `Account<ProgramData>` pins its owner to that
+    /// loader. An immutable program (no upgrade authority) cannot initialize.
+    #[account(
+        seeds = [crate::ID.as_ref()],
+        bump,
+        seeds::program = <ProgramData as anchor_lang::Owner>::owner(),
+        constraint = program_data.upgrade_authority_address == Some(authority.key())
+            @ RigsError::UnauthorizedInitializer,
+    )]
+    pub program_data: Account<'info, ProgramData>,
 }
 
 pub fn handle_initialize(

@@ -25,7 +25,7 @@ import {
 } from './common';
 import { address, type Address } from '@solana/kit';
 
-import { programAddresses } from '../../src/lib/program/pdas';
+import { programAddresses, programDataPda } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
 import { MAX_TOTAL_RIGS } from '../../src/lib/program/constants';
 import { EXPECTED_FOUNDER } from '../../src/lib/launch/expected';
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
   const signature = await submit(
     chain,
     authority,
-    initializeInstruction(authority.address, pdas, {
+    initializeInstruction(authority.address, pdas, await programDataPda(), {
       rigPriceLamports,
       purchaseFeeBps,
       rewardFunder,

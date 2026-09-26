@@ -212,6 +212,36 @@ pub fn fee_vault_pda() -> Pubkey {
     Pubkey::find_program_address(&[FEE_VAULT_SEED], &sol_rigs::ID).0
 }
 
+/// The loader-derived ProgramData address of the program: what a real
+/// `anchor deploy` / `solana program deploy` creates, and the only account
+/// `initialize` accepts as proof of the upgrade authority.
+pub fn program_data_pda() -> Pubkey {
+    Pubkey::find_program_address(
+        &[sol_rigs::ID.as_ref()],
+        &solana_sdk::bpf_loader_upgradeable::ID,
+    )
+    .0
+}
+
+/// Bincode `UpgradeableLoaderState::ProgramData { slot, upgrade_authority }`
+/// header, byte for byte what the upgradeable loader writes (45 bytes), owned
+/// by that loader. Built by hand so the test pins the wire format itself.
+pub fn program_data_account(upgrade_authority: Option<Pubkey>) -> Account {
+    let mut data = vec![0u8; 45];
+    data[..4].copy_from_slice(&3u32.to_le_bytes()); // ProgramData variant
+                                                    // slot (u64) stays 0
+    if let Some(a) = upgrade_authority {
+        data[12] = 1;
+        data[13..45].copy_from_slice(a.as_ref());
+    }
+    Account {
+        lamports: SOL,
+        data,
+        owner: solana_sdk::bpf_loader_upgradeable::ID,
+        ..Account::default()
+    }
+}
+
 /// `solana-program-test` wants a processor whose account-slice lifetime is
 /// free, while Anchor's generated `entry` ties the slice and its contents to
 /// one `'info`. This shim re-borrows the slice for a long-enough lifetime.
@@ -249,6 +279,11 @@ impl Env {
         pt.set_compute_max_units(400_000);
 
         let authority = funded(&mut pt, 1_000 * SOL);
+        // The deployer is the upgrade authority, as `devnet-deploy.sh` leaves it.
+        pt.add_account(
+            program_data_pda(),
+            program_data_account(Some(authority.pubkey())),
+        );
         let fundr = funded(&mut pt, 10_000 * SOL);
         let alice = funded(&mut pt, 10_000 * SOL);
         let bob = funded(&mut pt, 10_000 * SOL);
@@ -374,15 +409,33 @@ impl Env {
         &mut self,
         genesis_cap_rigs: u64,
     ) -> Result<(), TransportError> {
-        let ix = Instruction {
+        let mut ix = self.initialize_ix(&self.authority.pubkey(), program_data_pda());
+        ix.data = sol_rigs::instruction::Initialize {
+            rig_price_lamports: RIG_PRICE,
+            purchase_fee_bps: FEE_BPS,
+            reward_funder: self.funder.pubkey(),
+            fee_recipient: self.fee_recipient,
+            founder: self.founder.pubkey(),
+            genesis_cap_rigs,
+        }
+        .data();
+        let auth = self.authority.insecure_clone();
+        self.send(ix, &[&auth]).await
+    }
+
+    /// Canonical `initialize` with the fixture's config values, signed by
+    /// `signer` and naming `program_data` as the upgrade-authority proof.
+    pub fn initialize_ix(&self, signer: &Pubkey, program_data: Pubkey) -> Instruction {
+        Instruction {
             program_id: sol_rigs::ID,
             accounts: sol_rigs::accounts::Initialize {
-                authority: self.authority.pubkey(),
+                authority: *signer,
                 config: config_pda(),
                 capital_vault: capital_vault_pda(),
                 reward_vault: reward_vault_pda(),
                 fee_vault: fee_vault_pda(),
                 system_program: solana_sdk::system_program::ID,
+                program_data,
             }
             .to_account_metas(None),
             data: sol_rigs::instruction::Initialize {
@@ -391,12 +444,10 @@ impl Env {
                 reward_funder: self.funder.pubkey(),
                 fee_recipient: self.fee_recipient,
                 founder: self.founder.pubkey(),
-                genesis_cap_rigs,
+                genesis_cap_rigs: GENESIS_CAP,
             }
             .data(),
-        };
-        let auth = self.authority.insecure_clone();
-        self.send(ix, &[&auth]).await
+        }
     }
 
     /// Raw on-chain account bytes (or `None`), for layout-level assertions.

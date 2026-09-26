@@ -42,6 +42,7 @@ export const ANCHOR_ERROR_NAMES = [
   'MissingReferrerAccount',
   'GenesisCapExceeded',
   'MigrationRejected',
+  'UnauthorizedInitializer',
 ] as const;
 
 export type AnchorErrorName = (typeof ANCHOR_ERROR_NAMES)[number];

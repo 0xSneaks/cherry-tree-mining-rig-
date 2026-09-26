@@ -47,6 +47,23 @@ export async function feeVaultPda(): Promise<Address> {
   return pda;
 }
 
+/** BPF upgradeable loader. Owns every upgradeable program's ProgramData. */
+export const BPF_LOADER_UPGRADEABLE_ID =
+  'BPFLoaderUpgradeab1e11111111111111111111111' as Address;
+
+/**
+ * The program's ProgramData account: PDA([program id], upgradeable loader).
+ * `initialize` reads the upgrade authority from it and refuses any other
+ * signer.
+ */
+export async function programDataPda(): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: BPF_LOADER_UPGRADEABLE_ID,
+    seeds: [getAddressEncoder().encode(PROGRAM_ID)],
+  });
+  return pda;
+}
+
 export type ProgramAddresses = {
   config: Address;
   capitalVault: Address;

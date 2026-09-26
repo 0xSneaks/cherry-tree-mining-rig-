@@ -21,7 +21,7 @@ import {
   PROGRAM_ID,
   SYSTEM_PROGRAM_ID,
 } from '../src/lib/program/constants';
-import type { ProgramAddresses } from '../src/lib/program/pdas';
+import { programDataPda, type ProgramAddresses } from '../src/lib/program/pdas';
 import {
   fundRewardsInstruction,
   initializeInstruction,
@@ -48,6 +48,7 @@ const AUTHORITY = address('7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU');
 const FUNDER = address('So11111111111111111111111111111111111111112');
 /** THE CHERRY TREE protocol fee recipient. Public configuration; never signs. */
 const FEE_RECIPIENT = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
+const PROGRAM_DATA = address('11111111111111111111111111111116');
 
 // ------------------------------------------------------------- cluster guard
 
@@ -226,8 +227,15 @@ describe('loadSigner', () => {
 
 // ------------------------------------------------------- admin instructions
 
+describe('program data address', () => {
+  it('is the loader PDA the program checks for initialize', async () => {
+    // Same literal is pinned in programs/sol-rigs/tests/initialize_security.rs.
+    expect(await programDataPda()).toBe('3W8FkxmT9RmES9Duj8jjp2BR9htCNqCZtrvnYLFsETVT');
+  });
+});
+
 describe('initialize instruction', () => {
-  const ix = initializeInstruction(AUTHORITY, PDAS, {
+  const ix = initializeInstruction(AUTHORITY, PDAS, PROGRAM_DATA, {
     rigPriceLamports: 10_000_000n,
     purchaseFeeBps: 300,
     rewardFunder: FUNDER,
@@ -248,8 +256,11 @@ describe('initialize instruction', () => {
       PDAS.rewardVault,
       PDAS.feeVault,
       SYSTEM_PROGRAM_ID,
+      PROGRAM_DATA,
     ]);
     expect(ix.accounts![0]!.role).toBe(AccountRole.WRITABLE_SIGNER);
+    // The upgrade-authority binding account is read, never written.
+    expect(ix.accounts![6]!.role).toBe(AccountRole.READONLY);
   });
 
   it('encodes V2 initialize args with the cap appended last', () => {

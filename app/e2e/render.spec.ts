@@ -367,8 +367,58 @@ test.describe('blink snapshot from the Cherry host', () => {
 
     await expect(page.getByText('+19 SEEDS REPLANTED')).toBeVisible();
     const text = await page.locator('body').innerText();
-    expect(text).not.toContain('999999');
-    expect(text).not.toContain('888888');
+    // `formatCount` groups digits, so match the rendered form too.
+    expect(text).not.toMatch(/999,?999|888,?888/);
+  });
+
+  /** Regression of `1e25925`: an omitted signed field must stay blank. */
+  for (const mode of ['inline', 'preview'] as const) {
+    test(`${mode}: the query cannot fill a field the host omitted`, async ({ page }) => {
+      await stubCherryInlineHost(page, {
+        ...(mode === 'preview' ? { messageId: '', roomId: '' } : {}),
+        params: { kind: 'progress', rigs: '77' },
+      });
+      await page.goto(
+        `/result?mode=${mode}&token=stub&compounded=888888&claimed=777777000&milestone=Forged&ref=attacker&rooted=yes`,
+      );
+
+      await expect(page.getByText('77 SEEDS · TENDING')).toBeVisible();
+      await expect(page.getByText('Not available')).toBeVisible();
+      await expect(page.getByText('Not included')).toBeVisible();
+      const text = await page.locator('body').innerText();
+      expect(text).not.toMatch(/888,?888|777/);
+      expect(text).not.toContain('REPLANTED');
+      expect(text).not.toContain('CLAIMED');
+      expect(text).not.toContain('Forged');
+      expect(text).not.toContain('ROOTED');
+    });
+  }
+
+  test('a query-only inline mode outside Cherry renders nothing from the query', async ({
+    page,
+  }) => {
+    await page.goto('/result?mode=inline&token=stub&rigs=999999&compounded=888888');
+
+    await expect(page.getByText('THE CHERRY TREE 🌸 · GROVE REPORT')).toBeVisible();
+    await expect(page.locator('.readout-value').first()).toHaveText(/^—/);
+    const text = await page.locator('body').innerText();
+    // `formatCount` groups digits, so match the rendered form too.
+    expect(text).not.toMatch(/999,?999|888,?888/);
+  });
+
+  test('conflicting launch modes fail closed', async ({ page }) => {
+    await stubCherryInlineHost(page, {
+      params: { kind: 'compound', rigs: '77', compounded: '19' },
+    });
+    await page.goto('/result?mode=standalone&mode=inline&token=stub&rigs=999999&compounded=888888');
+
+    await expect(page.getByText('THE CHERRY TREE 🌸 · GROVE REPORT')).toBeVisible();
+    await expect(page.locator('.readout-value').first()).toHaveText(/^—/);
+    const text = await page.locator('body').innerText();
+    // `formatCount` groups digits, so match the rendered form too.
+    expect(text).not.toMatch(/999,?999|888,?888/);
+    expect(text).not.toContain('+19');
+    expect(text).not.toContain('REPLANTED');
   });
 });
 

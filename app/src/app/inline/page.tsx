@@ -13,14 +13,11 @@
  * same snapshot.
  */
 import { PRODUCT_NAME } from '../../lib/brand';
-import { ResultCard, type ResultParams } from '../../components/ResultCard';
+import { ResultCard } from '../../components/ResultCard';
+import { resolveSignedTokenParams } from '../../lib/resultSnapshot';
 import { verifySession } from '../../lib/server/launchToken';
 
 export const dynamic = 'force-dynamic';
-
-function str(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : undefined;
-}
 
 export default async function InlinePage({
   searchParams,
@@ -41,16 +38,7 @@ export default async function InlinePage({
     return <Expired reason="This card has expired." />;
   }
 
-  const signed = session.params ?? {};
-  const params: ResultParams = {
-    kind: str(signed.kind),
-    rigs: str(signed.rigs),
-    compounded: str(signed.compounded),
-    claimed: str(signed.claimed),
-    rooted: str(signed.rooted),
-    milestone: str(signed.milestone),
-    ref: str(signed.ref),
-  };
+  const params = resolveSignedTokenParams(session.params);
 
   return (
     <div data-cherry-message-id={session.messageId ?? undefined}>

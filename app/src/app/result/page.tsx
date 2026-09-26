@@ -13,8 +13,15 @@
  *     path: `share()` is called with `previewable: true`, which promises the
  *     host that this route renders correctly from `route` + `params` alone,
  *     with no `messageId` and no room. Reading the query string instead would
- *     make that promise false and show an empty card.
- *  2. Query fields — standalone and development only.
+ *     make that promise false and show an empty card. Inside Cherry the
+ *     snapshot is the only source: a field the host did not hand over is left
+ *     blank, never filled from the query — everything after `token` in a
+ *     shared URL is attacker-controlled.
+ *  2. Query fields — only on a page positively classified as standalone.
+ *
+ * Which of the two applies is decided once, by `classifyResultEnvironment`
+ * (`lib/resultSnapshot.ts`); ambiguous or conflicting launch signals get the
+ * neutral card and read neither.
  *
  * The provider is mounted only for an inline/preview launch. Outside one,
  * `CherryMiniApp.init()` waits on a `cherry:init` the host will never send and
@@ -29,82 +36,52 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { CherryMiniAppProvider, useCherryBlink } from '@cherrydotfun/miniapp-sdk/react';
 
-import { ResultCard, type ResultParams } from '../../components/ResultCard';
+import { ResultCard } from '../../components/ResultCard';
+import {
+  readResultEnvironment,
+  resolveSignedSnapshot,
+  resolveStandaloneQuery,
+  type Classification,
+  type TrustedCherryContext,
+} from '../../lib/resultSnapshot';
 
-/**
- * The SDK reads its launch parameters from the query string and then the hash;
- * `mode` is what marks an inline or preview render. Mirrored here because the
- * decision of whether to mount the provider has to be made above it.
- */
-function launchMode(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const fromSearch = new URLSearchParams(window.location.search).get('mode');
-    if (fromSearch !== null) return fromSearch;
-    const hash = window.location.hash.replace(/^#/, '');
-    return new URLSearchParams(hash).get('mode');
-  } catch {
-    return null;
-  }
-}
-
-function str(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : undefined;
-}
-
-function toParams(source: (key: string) => string | undefined): ResultParams {
-  return {
-    kind: source('kind'),
-    rigs: source('rigs'),
-    compounded: source('compounded'),
-    claimed: source('claimed'),
-    rooted: source('rooted'),
-    milestone: source('milestone'),
-    ref: source('ref'),
-  } satisfies ResultParams;
-}
-
-/** Inside Cherry: the host's snapshot, with the query as a last resort. */
-function BlinkResult() {
-  const blink = useCherryBlink();
-  const sp = useSearchParams();
-  const params = blink?.params;
-
-  return (
-    <ResultCard
-      params={toParams((key) => str(params?.[key]) ?? sp.get(key) ?? undefined)}
-    />
-  );
+/** Inside Cherry: the host's snapshot, and nothing else. */
+function BlinkResult({ context }: { context: TrustedCherryContext }) {
+  const params = useCherryBlink()?.params;
+  return <ResultCard params={resolveSignedSnapshot(context, params)} />;
 }
 
 /** Standalone: nothing to read but the query. */
 function QueryResult() {
   const sp = useSearchParams();
-  return <ResultCard params={toParams((key) => sp.get(key) ?? undefined)} />;
+  return <ResultCard params={resolveStandaloneQuery('standalone', sp)} />;
 }
 
 export default function ResultPage() {
-  // `launchMode` needs `window`, so the server render and the first client
+  // Detection needs `window`, so the server render and the first client
   // render have to agree on the neutral card below.
-  const [mode, setMode] = useState<string | null | undefined>(undefined);
-  useEffect(() => setMode(launchMode()), []);
+  const [env, setEnv] = useState<Classification | undefined>(undefined);
+  useEffect(() => setEnv(readResultEnvironment()), []);
 
-  if (mode === undefined) return <ResultCard params={{}} />;
+  if (env === undefined) return <ResultCard params={{}} />;
 
-  // `useSearchParams` needs a Suspense boundary to prerender.
-  if (mode === 'inline' || mode === 'preview') {
+  if (env.context !== null) {
     return (
       <CherryMiniAppProvider>
-        <Suspense fallback={<ResultCard params={{}} />}>
-          <BlinkResult />
-        </Suspense>
+        <BlinkResult context={env.context} />
       </CherryMiniAppProvider>
     );
   }
 
-  return (
-    <Suspense fallback={<ResultCard params={{}} />}>
-      <QueryResult />
-    </Suspense>
-  );
+  if (env.env === 'standalone') {
+    // `useSearchParams` needs a Suspense boundary to prerender.
+    return (
+      <Suspense fallback={<ResultCard params={{}} />}>
+        <QueryResult />
+      </Suspense>
+    );
+  }
+
+  // Ambiguous or spoofed launch signals: neither the snapshot nor the query.
+  return <ResultCard params={{}} />;
 }

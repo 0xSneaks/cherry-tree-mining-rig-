@@ -409,6 +409,19 @@ details.panel {
   color: var(--text-dim);
 }
 
+.lede-more {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.roadmap p:not(.trust-kicker) {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
 /* PLANT SEEDS — the primary action card. */
 .plant {
   background: var(--bg-panel);

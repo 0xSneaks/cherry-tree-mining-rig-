@@ -392,9 +392,11 @@ export function Game({ host }: { host: Host }) {
       <GroveJourney />
 
       <p className="lede">
-        Plant seeds with SOL. They share a funded SOL reward pool at a variable
-        rate.
+        Plant seeds with SOL to grow your own cherry tree. Your seeds earn a
+        share of a funded SOL reward pool at a variable rate. Harvest your SOL
+        or replant it to grow a bigger tree.
       </p>
+      <p className="lede-more">Scroll down for the full details.</p>
 
       {/* State-wide conditions that change what every button below does.
           "Disconnected" only when there is a wallet to reconnect — a
@@ -526,6 +528,22 @@ export function Game({ host }: { host: Host }) {
             feeVaultAddress={snap.feeVaultAddress ?? null}
             chainTime={chainTime}
           />
+
+          <hr className="rule" />
+
+          {/* 8 · What comes next. Planned only: no dates or terms on screen. */}
+          <section className="roadmap" data-testid="roadmap">
+            <p className="trust-kicker">Roadmap · Phase 2</p>
+            <h2 className="section-title">Coming next: stock mining</h2>
+            <p>
+              The second phase brings stock mining: the same grove you plant and
+              grow, with rewards paid in tokenized stocks on Solana instead of
+              SOL. Plant seeds, grow your tree and harvest a share of a funded
+              pool of stock tokens. Stock mining is planned, not live. Which
+              stocks, when it opens and how its rewards are funded will be
+              announced before launch.
+            </p>
+          </section>
 
           <p className="disclosure">
             {PRODUCT_NAME_SHORT} is a planting <em>simulation</em>. SOL is not proof-of-work

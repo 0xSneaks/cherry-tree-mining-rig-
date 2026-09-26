@@ -1,8 +1,8 @@
 # THE CHERRY TREE — Final Tokenomics Architecture
 
-Date: 2026-09-26. Status: reconciled economic specification; implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
+Date: 2026-09-26. Status: reconciled economic specification, **closeout revision** (founder final decisions and adversarial-review corrections applied; see `docs/OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md`). Implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
 
-Authority: founder overrides in this request, then Fable's quantitative solve, then the existing Fruit baseline. This document defines one model. Unresolved inputs remain configuration variables; no illustrative budget is asserted to exist.
+Authority: founder final decisions of the closeout (external debt netting, on-chain Fruit ledger, permanent 250 max wallet with legacy grandfathering, no Fruit/bonus compounding, one .skr domain = one Day-1 wallet), then founder overrides in the original request, then Fable's quantitative solve, then the existing Fruit baseline. This document defines one model. Unresolved inputs remain configuration variables; no illustrative budget is asserted to exist.
 
 Evidence reviewed:
 
@@ -11,7 +11,7 @@ Evidence reviewed:
 - V2 `mainnet/rc-hardening`: `state.rs` blob `f60b1f2a174ab4187f6237e28af6c0d3acdb45a2`, `buy_rigs.rs` blob `76c22acbd63674cee581ae935492f82d9a22f9b2`, `compound.rs` blob `91ade0dd81c0771d3f25a8ac2c144dba38a69849`.
 - Current official Hylo address and equations pages, plus Jito and Solana Mobile documentation. Asset admission still requires chain/configuration and adapter verification; reading documentation is not production certification.
 
-Pre-ops result: source confirms that V2's current cap applies only to cumulative fresh purchases during the first 24 hours; compounds are excluded, and the cap expires at public opening. Source also confirms separate capital, fee and reward vault flows, immutable referral binding, and base referral weights of 100/105. A permanent hard holding cap is therefore a required protocol change, not a claim about current behavior. Live deployed configuration, balances and account migration state were not audited here.
+Pre-ops result: source confirms that V2's current cap applies only to cumulative fresh purchases during the first 24 hours; compounds are excluded, and the cap expires at public opening. Source also confirms separate capital, fee and reward vault flows, immutable referral binding, and base referral weights of 100/105. A permanent hard holding cap is therefore a required protocol change, not a claim about current behavior. Live deployed configuration, balances and account migration state were not audited here. Closeout re-check: the `mainnet/rc-hardening` mainnet runbook is marked "PREPARED, NOT EXECUTED" and `Anchor.toml` has only localnet/devnet program entries, but repository documents are not chain evidence; mainnet and devnet RPC were unreachable from the review environment (proxy 403), so deployed state remains unverified (gate 14.2-A).
 
 ## 1. Final equations
 
@@ -37,6 +37,8 @@ dR_i/dt = r_p w_i(t)/H(t)             [inside funded epoch only]
 R_i,p = integral_epoch r_p w_i(t)/H(t) dt
 ```
 
+`P` in every Fruit, loyalty and lock formula is the frozen constant `P_ref = 10,000,000` lamports. It is never read from `Config.rig_price_lamports`, which V2 `set_pricing` can change; a production price change therefore cannot raise `Kmax` above 2.5 SOL-equivalent or break the `E/5` per-wallet bound. `S_i` is the wallet's `Miner.rigs`; `K_i` uses `min(S_i,250)` including for grandfathered legacy wallets (section 4).
+
 `X` is defined by attributed position ownership and admissibility, not by a user-entered balance. With `K>0`, coverage is `g=min(1,X/K)`. Seeds qualify at 150; positive Fruit accrual additionally requires positive eligible external equity. A dust position receives only dust-proportional weight.
 
 ```text
@@ -49,7 +51,7 @@ APR_i_Cherry(t) = 36,500 r_p w_i(t)/(H(t) P S_i(t))
 APR_i_combined(t) = 36,500 r_p w_i(t)/(H(t)(P S_i(t)+X_i,total(t)))
 ```
 
-`X_i,total` is the full external position included in that user's stated capital denominator, not merely the clipped recognized amount. Disclose reference value versus acquisition cost. Seed nominal value is not redeemable principal; compounded seed nominal value is not additional cash invested. Report gross SOL, actual period return, fees and market P&L separately. External yield and leverage are never added to Cherry APR. With zero participants, show N/A and zero accrual.
+`Cn` sums over wallets with `S_i>=T` and a registered Fruit selection for that epoch; APR_pool is N/A when `Cn=0`. `X_i,total` is the full external position included in that user's stated capital denominator, not merely the clipped recognized amount. Disclose reference value versus acquisition cost. Seed nominal value is not redeemable principal; compounded seed nominal value is not additional cash invested. Report gross SOL, actual period return, fees and market P&L separately. External yield and leverage are never added to Cherry APR. With zero participants, show N/A and zero accrual.
 
 Static projection: `R_remaining = r_p * remaining_days * w_i/H`, clipped at epoch end. For an entrant already included in the denominator, `Cw_new=Cw-w_old+w_new+delta_other`; otherwise `Cw_new=Cw+w_new+delta_other`. Never project beyond funded commitments.
 
@@ -80,7 +82,7 @@ Unresolved configuration:
 | Variable | Constraint / governing equation |
 |---|---|
 | Actual T0 | Successful founder activation chain timestamp; no calendar launch date set |
-| Production price | Must equal adopted P before this schedule is used; a mismatch requires reconciliation, not silent substitution |
+| Production price | Must equal adopted P before this schedule is used; a mismatch requires reconciliation, not silent substitution. Fruit math always uses frozen `P_ref` (section 1) |
 | Base schedule and B_base | Additional funding needed after dedicated base balances, liabilities and remaining commitments are reconciled |
 | Net core Fruit budget F | Actual cleared funds assigned exclusively to core Fruit; after base and operational obligations are protected |
 | Separately funded bonus capital J | Actual cleared bonus donation/allocation; not counted in F or other commitments |
@@ -88,17 +90,21 @@ Unresolved configuration:
 | Fee fraction φ | Actual configured purchase_fee_bps/10,000; rehearsal 3% is not adopted as production fact |
 | Required retained margin m | Fraction of fee-bearing principal volume, incorporating operations and any approved replenishment obligations |
 | Referral cut c | Unset until m and φ are known; 0 <= c <= 1-m/φ, if φ>0 and 0<=m<=φ |
-| Asset adapters / prices | Verified identifiers, owner/position decoding, reference feed, finality and staleness rules |
-| Borrow/encumbrance proof | Enforceable admission evidence; unknown financing provenance cannot be certified by balance alone |
-| Risk overlays | Calibrated feed-confidence, quote/slippage and freshness bounds; no guessed thresholds |
-| Base hard-cap migration | Version/account migration and treatment of any existing S>250 must preserve earned claims |
-| Allocation authority | Named trust model, independent replay, correction/finality rules and on-chain budget enforcement |
+| Asset adapters / prices | Verified identifiers, owner/position decoding, pinned program versions, manipulation-resistant reference feed, finality and staleness rules (section 5) |
+| Debt-protocol registry | Fixed whitelist of supported on-chain lending/perp/margin programs and their debt-account decoders used for debt netting (section 5). Each entry pinned to a verified program version. No adapter goes live until the registry exists; its contents are not selected here |
+| Risk overlays | Calibrated feed-confidence, quote/slippage and freshness bounds, and the EXTREME minimum-dwell/hysteresis period; no guessed thresholds |
+| Loyalty tenure threshold `w_tenure_min` | Founder-set non-dust minimum recognized weight for a tenure day (section 6). Unset; `B_loy=0` until set |
+| Fruit ledger governance | Challenge-window length, veto signer set and threshold, root-poster key, program upgrade authority (section 10a). Required values, not selected here |
+| Base hard-cap migration | Rule fixed in section 4 (grandfather-freeze). Remaining input is deployed-state evidence only |
+| Allocation authority | On-chain Fruit ledger of section 10a; off-chain replay computes roots, the program enforces budgets |
 
 Demand and eligible-wallet counts are scenario inputs, never constants used to guarantee APR. No LP depth threshold can be derived from seed count: capital-vault SOL is not an AMM LP position. Any future market-liquidity gate needs a specified market, executable-size requirement and measured depth.
 
 ## 3. Launch timeline
 
 All intervals are half-open. `FRUIT_T0 = T0 + 86,400 seconds`. Public access opens then; no intervening .sns-only window.
+
+Time and ordering convention (normative for on-chain and off-chain code alike): event order is `(slot, transaction index, instruction index, inner-instruction index)`; event time is that slot's `Clock.unix_timestamp`, the same clock the base program uses for T0; only `finalized` commitment data is used; intervals are built from ordered events, never per-second samples; a boundary equality `t = boundary` belongs to the later interval. Several slots can share one timestamp; ownership within a shared timestamp is resolved by event order, so two owners never overlap.
 
 | Stage | Start from T0 | End from T0 | Fruit budget |
 |---|---:|---:|---|
@@ -119,7 +125,7 @@ Z_future = F-R-E_storm
 
 Commit all announced core tranches before their schedule begins. Bonus allocations do not enlarge or consume these commitments. If `F=R`, Storm emits zero and the continuation retains its published offsets. If `0<F<R`, the sole deterministic fallback is one 48-hour Harvest beginning at FRUIT_T0 with budget F; there is no full four-stage sequence or lock Season. If `F=0`, Fruit remains inactive. These are funding boundary states, not alternative product menus.
 
-Before activation, verify funding, cap enforcement and required admission infrastructure. Public opening is time-based; it does not waive funding/verification requirements. If an operational failure prevents accrual, do not spend or retroactively catch up unearned capacity. Resolve uncertain already-running intervals under section 10.
+Before activation, verify funding, cap enforcement and required admission infrastructure. Public opening is time-based; it does not waive funding/verification requirements. If an operational failure prevents accrual, do not spend or retroactively catch up unearned capacity. Resolve uncertain already-running intervals under section 10. The split is: if the on-chain registration/selection program or the asset's committed reference was unavailable, the interval is **not earned** and its capacity is released to Z; if on-chain state existed but only indexer/data observation failed, the interval **is earned** and settles on replay, with the common-pool reserve held meanwhile.
 
 At `F=10 SOL`, `E_storm=8.373287670 SOL`, `Z_future=0`. At fixed H, the exact Storm APR numerator is `305624.999955`, so `APR=305624.999955/H`. The usual `305625/H` is rounded. At H=12.5 this is approximately 24,450%, corresponding to 66.98630136% for that one day on matched seed reference capital. At equal matched external capital, the combined-capital period return is 33.49315068%, before fees/losses. No 10 SOL funding is asserted to exist.
 
@@ -135,6 +141,10 @@ Three independent checks apply:
 2. At all times, every purchase, compound, mint, migration or supported seed receipt must preserve `S_i<=250`.
 3. Fruit recognition uses `P min(S_i,250)` defensively, even if an invalid legacy position is encountered.
 
+Check 2 is enforced inside the base engine's pure `buy_rigs` and `compound` functions (not only in instruction handlers or the frontend), so every seed-creation path, and the existing engine fuzz/acceptance suites, inherit it. `M_hold=250` is a program constant or a no-setter Config field. Because seeds are non-transferable and non-redeemable, check 2 dominates check 1 while both equal 250; check 1 is kept as a misconfiguration guard, and pre-ops must confirm `genesis_cap_rigs == 250`. The activation purchase counts against both checks.
+
+**Day-1 .skr binding.** Day-1 access is one qualifying .skr domain = one wallet. On the first successful Day-1 purchase that relies on a domain, the base program creates a binding PDA keyed by the domain's name account (seeds `["skr_bind", name_account]`) recording the Miner/wallet. Any later Day-1 purchase proving the same domain from a different wallet is rejected, including after the domain or its wrapper is transferred. The binding cannot be closed or reassigned during `[T0,T0+24h)` and has no effect after public opening. A wallet proving a domain it already bound is unaffected. This is a base-program change delivered in the same upgrade as check 2; V2 `identity::prove` checks current ownership only and records no binding.
+
 The Day-1 250-seed allowance costs 2.5 SOL of seed principal; purchase fees, rent and transaction costs are additional. Qualification remains 150 current seeds, or 1.5 SOL nominal value. It is consistent with the cap: `150<=250`, and the qualifying ratio is exactly 60%, not strictly greater than 60%.
 
 For compounding:
@@ -145,44 +155,63 @@ n_affordable = whole seeds purchasable from actually available earned SOL,
 n_minted = min(n_affordable, max(0, 250-S_i))
 ```
 
-Debit only the exact price and fee for `n_minted`. Remaining earned SOL stays an accrued claimable liability. At the cap, compound is a no-op with no fee; it must not discard rewards, reroute them automatically or create overflow seeds. Fresh purchases exceeding headroom fail atomically. Existing base reward/penalty rules are not changed by this model except for the required seed-cap integration; Fruit claims do not inherit base claim penalties.
+Debit only the exact price and fee for `n_minted`. Remaining earned SOL stays an accrued claimable liability. At the cap, compound creates no seed and charges no fee; it must not discard rewards, reroute them automatically or create overflow seeds. The V2 engine returns `NothingToCompound` when the count is zero, reverting the transaction; that revert is an accepted implementation of the at-cap no-op because it leaves every account, fee and penalty anchor unchanged. Fresh purchases exceeding headroom fail atomically. Existing base reward/penalty rules are not changed by this model except for the required seed-cap integration; Fruit claims do not inherit base claim penalties.
 
-Existing S>250 positions cannot simply be clipped or confiscated during migration. Resolving them is a deployment-version prerequisite if any exist. No such position was verified here.
+**Only base rewards compound.** Fruit core SOL, loyalty SOL, lock SOL and referral commissions are claimable only. No instruction converts them into seeds, and no Fruit-ledger lamport can be transferred into the base capital, fee or reward vaults. The only seed-creating reward path is the existing base-reward compound, subject to check 2.
+
+**Legacy wallets above the cap (final rule).** If any wallet already holds `S_i>250` when the cap ships:
+
+- its seeds are not confiscated, clipped or reduced; no migration writes `Miner.rigs`;
+- its balance is frozen: every purchase and compound mints zero (headroom `max(0,250-S_i)=0`) and a purchase reverts;
+- base emissions and base claims on its existing seeds continue unchanged, and all already-earned base liabilities are preserved across the migration;
+- Fruit, loyalty and lock math recognize at most 250 seeds (`K_i=2.5`).
+
+The Config layout change is a versioned migration that preserves every existing account's lamports and bytes except the added fields, is one-shot, and fails closed. Whether any such wallet exists, and whether T0 has already been set on mainnet, is deployed-state evidence required before implementation (section 14).
 
 External holdings have no wallet cap. A wallet may hold 100 SOL-equivalent of an admitted Fruit, but at most 2.5 SOL-equivalent can affect Cherry weight. External assets remain outside Cherry custody.
 
 ## 5. Fruit eligibility model
 
-One selected asset/adapter per wallet per epoch. A selected asset can have multiple verified accounts, but each underlying claim can be counted only once. Switching is effective next epoch; exiting is always permitted and ends eligibility for the exited units. A later join accrues only from its finalized registration and verified ownership time.
+One selected asset per wallet per epoch, where an asset is defined by its underlying mint (for SKR, one selection covers wallet token accounts and the verified stake beneficiary account; pending-unstake units are excluded). A selected asset can have multiple verified accounts, but each underlying claim can be counted only once. Switching is effective next epoch; exiting is always permitted and ends eligibility for the exited units. A later join accrues only from its finalized registration and verified ownership time.
 
 For position j attributed to wallet i:
 
 ```text
-G_ij(t) = attributed gross position value at fixed epoch reference prices
-D_ij(t) = verified borrowed principal attributable to that position,
-          valued in the same numeraire
-A_ij(t) = 1 only if asset, ownership, exit, financing and encumbrance
+G_ij(t) = attributed gross position value of unencumbered units,
+          at the unit's valuation price (below)
+A_ij(t) = 1 only if asset, ownership, exit and encumbrance
           admission checks all pass
-X_i(t) = sum_selected_positions A_ij(t) max(0, G_ij(t)-D_ij(t))
+D_i(t)  = wallet i's total outstanding debt across the fixed
+          debt-protocol registry, from finalized chain state,
+          valued in SOL at the same reference prices
+X_i(t)  = max(0, sum_selected_positions A_ij(t) G_ij(t) - D_i(t))
 ```
 
-Unknown borrowing/encumbrance evidence makes the affected position ineligible pending resolution. Unsupported pledged collateral, collateral/debt wrappers, pending unstake balances, vesting-locked units and duplicated underlying receipts are excluded. V1 does not admit lending/debt wrappers. An owned xSOL token's intrinsic leveraged exposure is not wallet borrowed principal; value the holder's owned token equity, not the underlying leveraged notional. Borrowing to purchase it is a separate financing obligation and is excluded from X.
+**Debt admission rule (final).** Cherry is not a lender and takes on no user debt; debt detection exists only to stop obvious borrowed capital being counted as owned equity. Debt is netted at wallet level against the registry, because lending protocols record debt per obligation, not per token lot. Debt-changing events in registry programs join the same finalized event timeline as ownership; an increase reduces X from its event. If a registry program's state for a registered wallet cannot be read, that wallet's position is pending (section 10 reserve), not zero and not admitted. Off-chain borrowing, exchange credit, loans from other wallets and borrowing in programs outside the registry **cannot be detected**; this limitation is disclosed in the product and in this document. It does not make positions ineligible, and no proof that an asset was never bought with borrowed money is required.
 
-Use fixed timestamped epoch prices and verified share conversion. Rebase/share-rate changes follow the adapter's specified accounting. CR/NAV failure can trigger the prospective emergency reset in section 9. Never reprice past liabilities. Live market values remain separately visible.
+Encumbrance exclusions (unit-level, `A_ij=0` or reduced units): collateral pledged in any protocol, collateral/debt wrappers, pending unstake balances, vesting-locked units, duplicated underlying receipts, the `delegated_amount` of any token account with an active SPL delegate (count `amount - delegated_amount`), frozen token accounts, and Token-2022 mints carrying a permanent delegate, transfer hook or confidential-transfer extension unless the adapter explicitly clears that extension. `Approve`, `Revoke`, `SetAuthority`, `FreezeAccount` and `ThawAccount` are ownership-timeline events. Flash-loan or intra-transaction balances have zero holding duration.
+
+**Protocol-native xAssets.** xSOL is not rejected because it provides leveraged exposure. The holder's owned xSOL is valued as owned token equity at verified NAV/price, not at the underlying leveraged notional, and it remains a candidate subject to identity, pricing/NAV, ownership attribution, risk-state data, exit route and adapter validation. Borrowing to buy it is wallet debt and is netted if it sits in a registry program. Still excluded: borrowed capital counted as owned equity, leveraged/queued/Multiply/vault JLP, and recursive lending structures. xBTC and xHYPE stay disabled until independently verified and approved.
+
+**Valuation price.** Each admitted asset's epoch reference price is committed on-chain before the epoch starts, from a manipulation-resistant source (oracle with confidence bound, or time-weighted average over a window; a single spot sample is prohibited; confidence/window thresholds calibrated per adapter, not set here). An asset with no committed reference at epoch start is **inactive** for that epoch: weight 0, known before the epoch begins, and not treated as UNKNOWN, so it cannot freeze other assets' settlement. Units present at the reference timestamp use the reference price. Units added or registered after it are valued at `min(reference price, verified price at the addition event)`, so buying after a mid-epoch drop cannot purchase weight at the pre-drop price.
+
+**Adapter version pinning.** Each adapter pins the deployed version (programdata hash or last-deploy slot) of every external program it decodes, including registry lending programs. An upgrade of any pinned program sets that asset or registry entry to UNKNOWN from the upgrade slot (pause new recognition; reserve under section 10) until the adapter is re-verified.
+
+Use verified share conversion. Rebase/share-rate changes follow the adapter's specified accounting. CR/NAV failure, depeg, exploit, pause or pinned-program upgrade of any admitted asset can trigger the prospective emergency reset in section 9. Never reprice past liabilities. Live market values remain separately visible.
 
 **Required attribution mechanism:** replay complete finalized ownership-changing history, including transfers, authority changes, mint/burn, stake/unstake, wrapper conversion and relevant Token-2022 changes. Construct a global event timeline and integrate ownership over disjoint intervals. One underlying unit/claim may support only its actual owner at a given instant. A→B→A earns A only its actual ownership time and B only B's; a same-transaction round trip has no additional positive holding duration. Seed ownership/eligibility changes are included in the same settlement timeline.
 
-Endpoint balances, endpoint minima, wallet signatures and Merkle membership alone do not prove this. Pool denominators must be reconstructed on the same timeline. Missing events can change every participant's share, not merely the wallet with missing data. Cumulative roots require unique epoch/version identifiers, replay protection, conserved sums, per-wallet limits and independent replay. The indexer's truthfulness remains an explicit trust assumption unless independently enforceable proofs are implemented.
+Endpoint balances, endpoint minima, wallet signatures and Merkle membership alone do not prove this. Pool denominators must be reconstructed on the same timeline. Missing events can change every participant's share, not merely the wallet with missing data. Cumulative roots are posted to and bounded by the on-chain Fruit ledger (section 10a). The indexer's truthfulness is an explicit trust assumption, mitigated by independent replay and the section 10a challenge window, not eliminated.
 
-Transfer attribution does **not** prove absence of loans from another wallet, exchange or off-chain lender. A strict universal borrowed-funds exclusion cannot currently be certified. This is an unresolved admission blocker; it must not be silently replaced by an attestation-only claim or Fable's acceptance of borrowed tokens.
+Transfer attribution does **not** prove absence of loans from another wallet, exchange or off-chain lender. The admission rule is the registry debt netting above plus disclosure; it must not be described as a universal borrowed-funds exclusion.
 
 | Asset/form | Design disposition | Required activation evidence |
 |---|---|---|
-| Wallet SKR | Candidate | Mint/account identity, unlocked ownership, approved SKR/SOL pricing, normal executable exit and financing checks |
-| Staked SKR | Conditional candidate | All preceding checks plus live IDL, beneficiary ownership, cooldown/epoch rules, withdraw path and pending-unstake exclusion |
-| xSOL | Candidate with Safe Mode | Mint/pool version mapping, equity/NAV, CR/feed data, operational routes and financing checks |
-| JitoSOL | Candidate | Mint/pool identity, share accounting, documented normal exit within five days and financing checks |
-| Spot JLP | Candidate | Unencumbered direct token ownership, pool valuation and SOL conversion, normal exit evidence and financing checks |
+| Wallet SKR | Candidate | Mint/account identity, unlocked ownership, manipulation-resistant SKR/SOL reference, normal executable exit, encumbrance checks and registry debt netting |
+| Staked SKR | Conditional candidate (same asset as wallet SKR) | All preceding checks plus live IDL, beneficiary ownership, cooldown/epoch rules, withdraw path and pending-unstake exclusion |
+| xSOL | Candidate with Safe Mode | Mint/pool version mapping, owned-token equity/NAV, CR/feed data, operational routes, encumbrance checks and registry debt netting |
+| JitoSOL | Candidate | Mint/pool identity, share accounting, documented normal exit within five days, encumbrance checks and registry debt netting |
+| Spot JLP | Candidate | Unencumbered direct token ownership, pool valuation and manipulation-resistant SOL conversion, normal exit evidence, encumbrance checks and registry debt netting |
 | Leveraged/Multiply/queued/vault JLP | Excluded | No admission in this model |
 | xBTC, xHYPE | Disabled | Independent official mint/program reconciliation and complete adapter validation before a later approval |
 
@@ -201,7 +230,16 @@ sum_committed B_loy,p + sum_committed B_lock,s <= available bonus funds
 
 Earmarking decreases the otherwise usable future reserve. The same SOL cannot fund renewals, loyalty and locks simultaneously. At F=10 and J=0, opening bonus budgets are zero; F=10 with separately supplied J can fund bonuses. Fable's claimed universal funding threshold above 10.188356 SOL is therefore not a rule.
 
-Let d_i be consecutive verified qualifying days. During Day 1 this means S>=150 plus registered, fully verified positive eligible external equity, although Fruit emits zero. Thereafter it means w_i>0. A voluntary loss of eligibility or a penalized base claim resets the tenure clock; an ordinary unpenalized claim does not. A system-data outage freezes its settlement pending replay; an involuntary Safe Mode interruption freezes tenure without erasing its recorded past. Permanent activity history and leaderboard are not reset.
+Let d_i be consecutive verified qualifying days. A tenure day qualifies only while the wallet's recognized weight is at least `w_tenure_min` throughout (during Day 1: S>=150 and registered, fully verified eligible external equity at or above that threshold, although Fruit emits zero; thereafter `w_i >= w_tenure_min`). `w_tenure_min` is a founder-set non-dust threshold, currently unset; until it is set, `B_loy=0` and loyalty does not activate. Without it, a dust position keeps `beta=1` and loyalty rewards seed tenure rather than sustained capital. A voluntary loss of eligibility or a penalized base claim resets the tenure clock; an ordinary unpenalized claim does not. Penalized-claim detection reads base instruction/account data, not logs alone. A system-data outage freezes its settlement pending replay; an involuntary Safe Mode interruption freezes tenure without erasing its recorded past. Permanent activity history and leaderboard are not reset.
+
+| Cause of eligibility loss | Classification |
+|---|---|
+| User-signed exit, transfer, selection switch or deregistration (in any Safe Mode state) | Voluntary: reset |
+| Penalized base claim | Voluntary: reset |
+| Movement by an SPL delegate or authority the user granted | Voluntary: reset |
+| Registry debt increase that drops recognized weight below threshold | Voluntary: reset |
+| Asset inactive for missing committed reference, adapter UNKNOWN, pinned-program upgrade, EXTREME reset, route halt | Involuntary: freeze |
+| Indexer/data observation gap | Settlement pending replay; no reset |
 
 ```text
 d_cap = 11 days                     [length of the core Fruit sequence]
@@ -231,10 +269,13 @@ Eligible fee events are actual finalized fees received in the fee vault from the
 
 ```text
 f_e = actual received eligible fee for unique finalized event e
-commission_e = floor_lamport(c f_e)
-retained_e = f_e - commission_e
-retained_e >= required_margin_e
+v_e = fee-bearing principal volume of event e
+required_margin_e = ceil_lamport(m v_e)
+commission_e = min(floor_lamport(c f_e), max(0, f_e - required_margin_e))
+retained_e = f_e - commission_e >= min(f_e, required_margin_e)
 ```
+
+The clamp is computed in the same instruction that receives the fee. It keeps the per-event margin even if `purchase_fee_bps` is later lowered by `set_pricing` below the value used to choose c; in that case commissions shrink or reach zero rather than cutting into margin.
 
 For constant fee fraction φ and required retained margin m on fee-bearing principal volume v:
 
@@ -246,7 +287,7 @@ f = φ v
 
 The bound does not uniquely determine c. Leave c unset until m and the actual production fee are known and a value within the bound is selected. If m>φ, no referral cut is feasible, even at zero. If φ=0, no commission exists. Exact integer settlement must also preserve the per-event retained margin after fee rounding.
 
-Reserve commissions atomically before any fee withdrawal; fee recipient withdrawals can use only the remaining unencumbered fee balance. Once a compound's fee has actually reached FEE, its eligible commission is funded there; do not deduct a second commission from the user's accrued rewards. No retroactive promise of commissions on fees already withdrawn.
+Reserve commissions atomically before any fee withdrawal; fee recipient withdrawals can use only the remaining unencumbered fee balance. V2 cannot do this: `withdraw_fees` checks only the distributable fee-vault balance. Required base-program changes: in `buy_rigs` and `compound`, in the instruction that moves the fee, increment a Config `reserved_commissions` counter and a per-referrer ledger PDA (separate from `Miner`, so no Miner realloc); `withdraw_fees` requires `distributable - reserved_commissions >= amount`; a referrer `claim_commission` instruction pays from the fee vault and decrements both. `c=0` until these changes ship and m and φ are set. Once a compound's fee has actually reached FEE, its eligible commission is funded there; do not deduct a second commission from the user's accrued rewards. No retroactive promise of commissions on fees already withdrawn.
 
 Each fee event is consumed once. Immutable first-purchase binding to a pre-existing planter prevents ordinary referral cycles, but linked-wallet fee rebates remain possible. Never claim complete person-level abuse prevention. Referral revenues can be concentrated without violating reward-vault solvency. Retained fees fund future rewards only after a separate actual transfer and commitment.
 
@@ -258,7 +299,7 @@ For the five-day Season beginning at `t_s=FRUIT_T0+6 days`:
 
 - Registration window is `[FRUIT_T0,t_s)`. The finalized chain ordering determines inclusion; registrations at or after t_s are excluded.
 - One immutable lock election per wallet per Season; cancellation or early exit cannot reopen registration for that Season.
-- Register duration `d_i in {1,2,3,5}` days, selected Season Fruit and requested eligible weight. At t_s, set `ell_i=min(requested_weight,w_i(t_s))`; reject zero/invalid registrations. The registered position must satisfy the Season price/ownership checks.
+- Register duration `d_i in {1,2,3,5}` days, selected Season Fruit and requested eligible weight. Registration stores intent only; no price/ownership validation happens before t_s because the Season reference does not exist yet. At t_s, set `ell_i=min(requested_weight,w_i(t_s))` using the Season reference and ownership at t_s; reject zero/invalid registrations.
 - All locks start at t_s and mature at `t_s+d_i`. A one-day election does not get five consecutive one-day claims.
 - Commit B_lock before the cutoff becomes effective. Do not fund awards from future epochs.
 
@@ -279,9 +320,9 @@ conditional_progress_i(t) = A_i * ell_surv_i(t)/ell_i
 
 This is explicitly conditional vesting progress in U, not claimable accrued L. At ordinary maturity, vest `A_i * ell_surv_i/ell_i` from U to L. Cancelled unvested awards return to Z only after ownership is resolved; no other wallet receives them retroactively. Core Fruit accrual and vested bonuses remain untouched.
 
-On a verified EXTREME event or actual route/protocol unavailability, offer immediate safety release without forfeiture of the earned-to-date conditional progress: vest that progress into L and cancel only the future unearned part. Compute relief using the last valid surviving weight immediately before the safety event, not a post-event NAV-zero weight. End the election permanently; no second election. HOT alone does not force exit or vesting.
+On a verified EXTREME event or route unavailability as defined in section 9, offer immediate safety release without forfeiture of the earned-to-date conditional progress: vest that progress into L and cancel only the future unearned part. Compute relief using the last valid surviving weight immediately before the safety event, not a post-event NAV-zero weight. End the election permanently; no second election. HOT alone does not force exit or vesting.
 
-Unknown history is held pending, not treated as voluntary exit. Everyone choosing five days reduces the allocation to `B_lock ell_i/max(sum ell,12.5)` at maturity. Nobody choosing a lock returns all B_lock to Z. Locks cannot overrun the five-day Season.
+Unknown history is held pending, not treated as voluntary exit; an indexer gap at t_s keeps all of B_lock reserved until H_lock is final. Everyone choosing five days reduces the allocation to `B_lock ell_i/max(sum ell,12.5)` at maturity. Nobody choosing a lock returns all B_lock to Z. Locks cannot overrun the five-day Season.
 
 ## 9. Safe Mode
 
@@ -297,6 +338,10 @@ Map xSOL risk to its verified pool collateral state. CR is a ratio, and `leverag
 The two steps are a specific risk screen and an explicit wallet signature bound to wallet, asset, action/amount, chain, epoch, risk/config version, nonce and expiry. It is risk consent, not literal two-factor authentication and not permission to transfer funds. Reconfirmation is required when action scope or risk version materially changes.
 
 Risk severity and technical availability are separate. A label alone does not block HOT entry; an unavailable operation cannot be bypassed with a signature. Valid ordinary eligibility, pricing and ownership checks still apply. A blocked mint route is not proof that every swap/exit route is blocked; check the actual requested route and required normal exit path.
+
+**Every admitted asset has an EXTREME path**, not only xSOL. For non-xSOL adapters the trigger is a verified depeg, exploit, protocol pause, or pinned-program upgrade (section 5). A reset is effective from the first finalized slot at which the trigger is observable on-chain, for all still-unsettled intervals, not from the later human/operator checkpoint.
+
+**Route unavailability** means the asset's documented protocol mint/redeem/unstake/withdraw path is halted according to that protocol's on-chain state. DEX quote failure or thin pool depth alone is not route unavailability. **Hysteresis:** leaving EXTREME, and re-entering it, requires the condition to persist for a minimum dwell period; that period is a calibrated parameter, currently unset, and EXTREME-triggered lock safety release cannot be enabled until it is set.
 
 Use official zone boundaries after verifying the deployed version. Current docs label the zone fee table as examples: do not hardcode those example fees. Extra volatility/drawdown/slippage triggers remain unset until calibrated. Stale or missing data is UNKNOWN, not proof of zero NAV: pause new recognition where data cannot be verified and reserve existing unsettled capacity.
 
@@ -318,6 +363,8 @@ Z = uncommitted available reserve
 
 For uncertain past intervals, U holds settlement reserves even though some economic accrual may already have occurred; it is not available for reuse. This extends the shorthand “unaccrued commitments” without dropping unresolved obligations. Base and Fruit balances cannot back each other twice. Fee commissions have their own corresponding funded ledger/reserve constraint.
 
+**Vault separation (normative).** Fruit core, loyalty and lock SOL are held in program-owned vaults separate from the base REWARD, CAPITAL and FEE vaults. No Fruit-ledger lamport ever enters a base vault; otherwise the base `assert_fully_funded` check (base vault lamports versus base outstanding) would count Fruit SOL and stop detecting a base shortfall. Referral commissions stay in the base FEE vault under the section 7 reservation counter.
+
 | Transition | Accounting |
 |---|---|
 | Actual cleared funding a | V+=a; Z+=a |
@@ -326,10 +373,10 @@ For uncertain past intervals, U holds settlement reserves even though some econo
 | Vest conditional bonus δ | U-=δ; L+=δ |
 | Pay established claim c | V-=c; L-=c atomically |
 | Release verified unused capacity z | U-=z; Z+=z |
-| Compound earned SOL c | V-=c; L-=c, atomically matching actual capital+fee transfers; retain remainder |
+| Compound earned SOL c (base ledger only) | V-=c; L-=c, atomically matching actual capital+fee transfers; retain remainder. Not available on Fruit/loyalty/lock ledgers |
 | Authorized reserve withdrawal z | V-=z; Z-=z; never reduce L or protected U |
 
-In an ownership/indexer gap affecting a shared denominator, retain the **entire unsettled scheduled capacity for the affected common pool interval**, minus only liabilities already conclusively established. Do not use `r Δt w_max/H_observed` with an unverified denominator. For a known fixed lock contract, reserve its unsettled remaining award. Never release disputed funds merely because the epoch ended. Release only after complete reconciliation; no expiry can erase valid accrued rewards.
+In an ownership/indexer gap affecting a shared denominator, retain the **entire unsettled scheduled capacity for the affected common pool interval**, minus only liabilities already conclusively established. Do not use `r Δt w_max/H_observed` with an unverified denominator. For a known fixed lock contract, reserve its unsettled remaining award. Never release disputed funds merely because the epoch ended. Release only after complete reconciliation; no expiry can erase valid accrued rewards. **Terminal resolution:** if the missing history cannot be recovered after archive searches of at least two independent providers, the section 10a veto signer set may sign a final settlement computed from the best available finalized data. It can only add liabilities or release excess reserve to Z; it never reduces established L.
 
 Proof for core Fruit: `sum dR/dt=r Cw/H<=r`, and `dR_i/dt<=r*2.5/12.5=r/5`. The same proof applies to loyalty because `0<=beta<=1`. The lock proof uses its fixed denominator and maximum 12.5 weight-days per wallet. Therefore every pool has a finite prefunded liability ceiling. The per-wallet 20% bound applies separately to each funded pool; with bonuses, total receipts are not bounded by E/5 alone.
 
@@ -337,9 +384,41 @@ Use rational/fixed-point cumulative entitlement and carried remainders; never ro
 
 External asset value, future fees, seed principal and unrealized yield do not count in V. Solvency in SOL does not insure external principal or guarantee system availability.
 
+## 10a. On-chain Fruit ledger (minimum state and invariants)
+
+Weights depend on external history, so allocations are computed off-chain by replay and posted as cumulative Merkle roots. The program, not the poster, enforces every budget. A compromised or faulty poster can at most propose a root inside the funded, capped, not-yet-final envelope, which the challenge window exists to veto.
+
+Minimum state:
+
+| Account | Fields (minimum) |
+|---|---|
+| `FruitConfig` (singleton) | state version; admin; root-poster key; veto signer set and threshold (poster is not a member); challenge-window seconds; frozen `P_ref`, `M=250`, `qmax=1/5`; per-ledger pause flags |
+| `Ledger` (one per ledger k ∈ {core, loyalty, lock}) | vault PDA; counters `L_k`, `U_k`, `Z_k`; `paid_cum_k` |
+| `Pool` (per ledger and epoch/Season) | pool id; budget `E`; `t_start`, `t_end`; `wallet_cap = floor(E/5)`; hash of committed per-asset references; `final_total`; `paid_cum`; status (Committed, Active, Ended, Reconciling, Closed); for lock pools the frozen `H_lock` |
+| `Root` (per pool and version) | Merkle root; version; `checkpoint_time`; `total`; `posted_at`; `final_after = posted_at + challenge window`; status (Pending, Vetoed, Final) |
+| `ClaimRecord` (per pool and wallet) | `claimed_cum` |
+
+Leaf encoding is domain-separated: `hash(program_id, ledger_id, pool_id, wallet, cumulative_amount)`, so a leaf cannot be replayed across programs, ledgers, pools or wallets.
+
+Invariants enforced on-chain:
+
+1. **Solvency:** after every instruction, `vault_k lamports - rent_exempt_min >= L_k + U_k + Z_k` for each ledger, and in aggregate.
+2. **Funding:** deposits do `V+=a, Z+=a`. Committing a pool requires `Z_k >= E` and moves `E` from Z to U. A lamport can be committed once; a pool cannot be committed after its `t_start`.
+3. **Scheduled capacity:** a root is accepted only if `checkpoint_time <= now`, `version` is strictly greater than every earlier version for that pool, at most one root per pool is Pending, and `total <= floor(E * (min(checkpoint_time, t_end) - t_start) / (t_end - t_start))`. For lock pools, capacity is the fixed `sum A_i` from `H_lock`, vested by the section 8 schedule.
+4. **Monotone finality:** `total` of a new root is at least the pool's `final_total`. Finalized liabilities cannot be reduced or clawed back.
+5. **Challenge window:** a root becomes Final only when `now >= final_after` and it has not been vetoed. During the window the veto signer set, at its threshold, can mark it Vetoed; a vetoed root never finalizes. On finalization, `U -= (total - final_total)`, `L += (total - final_total)`, `final_total = total`.
+6. **Per-wallet ceiling:** a claim is rejected if the leaf's `cumulative_amount > wallet_cap`.
+7. **Replay-protected cumulative claims:** claims are verified only against the pool's latest Final root. Payment is `max(0, cumulative_amount - claimed_cum)`; then `claimed_cum = max(claimed_cum, cumulative_amount)`, `V -= payment`, `L -= payment`, `paid_cum += payment`, atomically. A duplicate or concurrent claim pays 0. A leaf lower than `claimed_cum` pays 0 and affects no other wallet. Hard guard: `paid_cum <= final_total`.
+8. **Reserve until reconciliation:** unallocated pool capacity stays in U until the pool is Closed. Closing requires `now >= t_end`, no Pending root, and a Final root marked complete by the poster and not vetoed; then `U -= (E - final_total)`, `Z += (E - final_total)`. Unresolved shared-pool capacity is never released by elapsed time alone; terminal resolution follows section 10.
+9. **Outflows:** lamports leave a Fruit vault only by a claim (against L) or an authorized reserve withdrawal (against Z only). No instruction moves Fruit lamports into a base vault or converts them into seeds.
+10. **Lock pools:** conditional progress sits in U. Vesting moves U→L through finalized roots. Forfeited units return to Z only at pool close. `H_lock` is written once, at registration finalization, and is immutable.
+11. **Versioning:** accounts carry a state version. Migrations preserve lamports, `L`, `U`, `claimed_cum` and pool/root history, and are one-shot and fail-closed. Pausing may stop new roots or registrations; it never reduces L. Claims are paused only if the claim path itself is unsafe.
+
+Program upgrade authority, poster key, veto set, threshold and challenge-window length are required governance inputs (section 2), disclosed publicly, and not selected here.
+
 ## 11. Whale and Sybil protections
 
-Hard Cherry holding cap, Fruit recognition cap, common denominator floor, one asset selection, finalized history, one lock election and one referral level constrain wallet behavior. They do not establish one wallet per person. A .skr entitlement/device is not proof of unique beneficial ownership.
+Hard Cherry holding cap, Fruit recognition cap, common denominator floor, one asset selection, finalized history, one lock election and one referral level constrain wallet behavior. They do not establish one wallet per person. A .skr entitlement/device is not proof of unique beneficial ownership; the Day-1 binding (section 4) only stops one domain from opening Day-1 access for more than one wallet.
 
 Every split wallet needs its own qualifying seeds and simultaneously attributed external equity. Reusing a position sequentially earns only sequential ownership time, never overlapping historical rewards. Acquiring truly separate capital across wallets still increases aggregate share. Five fully covered 250-seed wallets controlled by one person can receive the whole core tranche when no one else qualifies; the individual-wallet ceiling still holds.
 
@@ -366,9 +445,11 @@ Fable's single-wallet 2,500-seed examples are invalid under the final hard cap a
 
 | Parameter | Final rule |
 |---|---|
-| Seed price | 10,000,000 lamports; verify production configuration |
+| Seed price | 10,000,000 lamports; verify production configuration. Fruit math uses frozen P_ref=10,000,000 |
 | Day-1 fresh max | 250 seeds / 2.5 SOL principal, fees additional |
-| Permanent Cherry current holding max | 250 seeds; all seed creation/receipt paths enforce it |
+| Day-1 .skr access | One domain = one wallet; binding PDA per name account for [T0,T0+24h) |
+| Permanent Cherry current holding max | 250 seeds; enforced in engine buy_rigs/compound for every seed creation/receipt path |
+| Legacy S>250 | Grandfathered and frozen: no confiscation, no growth, base claims preserved, Fruit recognizes 250 |
 | Permanent Fruit benchmark | 250 seeds |
 | Qualification | 150 current seeds; positive verified X needed for rewards |
 | External holdings cap | None |
@@ -395,20 +476,24 @@ Fable's single-wallet 2,500-seed examples are invalid under the final hard cap a
 | Lock vesting | Cliff; conditional progress reserved; safety release vests earned-to-date progress |
 | Bonus per-wallet ceilings | B_loy/5 and B_lock/5 for respective funded pools |
 | Referral level | One direct level |
-| Referral payment | floor(c × actually received eligible fee); c unresolved |
+| Referral payment | min(floor(c f_e), max(0, f_e - ceil(m v_e))); c unresolved; c=0 until reservation program changes ship |
 | Referral margin bound | (1-c)φ>=m |
 | Existing base referral weight | Preserve 105/100 funded base redistribution; no added Fruit weight |
 | External normal exit | Documented normal-path <=432,000 seconds; no catastrophe guarantee |
-| Borrowed/unsupported encumbered equity | Excluded; unknown provenance unresolved/ineligible |
+| Borrowed/encumbered equity | X = max(0, unencumbered admitted value - registry debt), wallet-level; off-registry/off-chain borrowing undetectable and disclosed |
+| Reference prices | Committed on-chain before epoch; manipulation-resistant; missing = asset inactive; later additions at min(ref, live) |
 | Ownership evidence | Complete finalized event attribution; endpoint-only checks prohibited |
 | xBTC / xHYPE | Disabled |
 | JLP | Direct spot only; no leveraged/queued/vault exposure |
 | HOT | Entry allowed after required two-step consent when protocol/route is available |
 | Safe Mode liabilities | Already-accrued L never erased |
-| Solvency | V>=L+U+Z, including reserved unsettled obligations |
+| Solvency | V>=L+U+Z per ledger and aggregate, separate Fruit vaults, including reserved unsettled obligations |
 | No participants | No accrual; no infinite APR; unused capacity remains reserve |
 | Claim expiry | None for valid accrued liabilities |
-| Compound at cap | No new seed; earned SOL remains claimable |
+| Compound at cap | No new seed, no fee (engine revert accepted); earned SOL remains claimable |
+| Fruit / bonus SOL | Claimable only; never compounds into seeds |
+| Fruit settlement | On-chain ledger (section 10a): capacity-bounded roots, E/5 leaf cap, challenge window with independent veto, cumulative replay-protected claims |
+| Loyalty tenure day | Requires w >= w_tenure_min (unset); B_loy=0 until set |
 | Phase labels | Genesis >=1,200%; Early Grove 600–<1,200%; Growth 250–<600%; Mature >0–<250%; Dormant zero funded active rate |
 | Rate display | Live denominator; distinguish weight, Cherry and combined-capital rates |
 | Funding ends | Finish valid commitments, then zero new emission |
@@ -441,22 +526,135 @@ Apply this as a section-anchored replacement plan to the verified 562-line basel
 | §14 canonical table | Replace entirely with section 12 of this architecture. |
 | §15 handoff | Replace obsolete constants/gates with sections 2 and 14. Source-verified V2 cap expires at public opening and does not enforce the new hard holding cap. Require fresh branch/deployed-state pre-ops before implementation. |
 | §15 calculator | Add headroom, separate core/loyalty/conditional-lock/vested/referral balances, pending verification, all budget sources, risk state/route status and full capital denominators. No bonus ratio when denominator is zero. |
-| §15 tests | Replace superseded “251 earns capped weight” behavior with rejection/headroom tests; retain legacy S>250 as migration failure tests. Add all section 14 settlement gates. |
+| §15 tests | Replace superseded “251 earns capped weight” behavior with rejection/headroom tests; test legacy S>250 as grandfather-frozen (section 4). Add all section 14 settlement gates. |
 
 Explicitly reject Fable edits E2/E18 (C=150), E4 (endpoint minimum), E5 (automatic whitelist activation), and E11's HOT blocking. Correct E9's universal B/E boost maximum, E10's unspecified registration/denominator, E13's 12-remaining-days condition at public opening, and E17's blanket branch-state assertions beyond the inspected source snapshots.
 
-## 14. Remaining blockers before implementation
+The closeout sections 1, 4, 5, 6, 7, 8, 9, 10 and 10a of this document supersede any baseline text on the same subjects, including baseline §3 financing language, §8 compounding, §12 solvency and §15 handoff.
 
-1. **Enforceable external capital admission.** Specify how eligible owned equity is distinguished from borrowed/encumbered capital. Global absence of borrowing is not provable from SPL balances/history. Strict exclusion remains unsatisfied until an enforceable scoped proof/trust model is accepted; do not launch a permissive adapter under a false guarantee.
-2. **Hard-cap protocol integration.** Inspect the exact implementation branch, deployed program/version and all seed-creation/receipt paths. Implement permanent S<=250 and partial compound spending without discarding rewards. Resolve any legacy over-cap positions before activation. This is a protocol behavior change, not a frontend validation.
-3. **Actual budget and base ledger.** Read live balances and exact base schedule, verify production price/fee, reconcile L/U/Z, and establish F and any separately funded J. Confirm base coverage through T0+12 days. No example amount becomes a funding instruction.
-4. **Referral economics.** Supply m, verify φ, then select c within the proved feasible range. Specify fee-receipt attribution and atomically reserved commissions before withdrawal. Until configured/funded, no monetary referral promise is active.
-5. **Ownership settlement design.** Select finalized-history sources, full event coverage, time/finality convention, allocation authority, independent replay and correction policy. Merkle roots alone prove neither ownership nor non-borrowing. Missing shared-denominator data must reserve the common unsettled budget.
-6. **Adapter and risk verification.** Pin asset/program versions, accounts, decimals, extensions, oracle/reference feeds, normal exit evidence and route health. Resolve staked-SKR IDL/cooldown mechanics and spot-JLP price conversion. xBTC/xHYPE remain disabled. Calibrate optional risk overlays before enabling them.
-7. **Bonus configuration.** Commit explicit B_loy and B_lock, or leave them zero. Implement the fixed Season cohort, strict cutoff, one-election registry, surviving-weight tracking and safety release. No headline boost exists before its backing is committed.
-8. **Accounting and adversarial verification.** Verify 149/150 and 249/250 boundaries; rejection/partial compounding at 251; exact public boundary; no Day-1 Fruit spending; ownership carousel and debt exclusion; denominator outage reserves; all lock durations/early exits/re-entry attempts; HOT acknowledgement and unavailable-route rejection; EXTREME accrued-progress preservation; fee commission replay/withdrawals; rounding/checkpoint independence; simultaneous/replayed claims; and funding exhaustion. Assert V>=L+U+Z after every transition, per-wallet/pool ceilings, and preservation of accrued claims.
+## 14. Implementation gates
 
-Next action is a gated implementation specification against the inspected release branch once blockers 1–7 have concrete evidence/configuration. Work on isolated accounting/tests may proceed against explicit fixtures, but unresolved parameters or admission proof must not be represented as solved production behavior. No launch date is selected.
+### 14.1 Status of original blockers
+
+| # | Blocker | Status |
+|---|---|---|
+| 1 | External capital admission | **Closed by founder decision:** registry debt netting plus disclosure (section 5). Remaining input: registry contents (configuration, gate 14.2-D) |
+| 2 | Hard-cap protocol integration | **Rule closed by founder decision** (section 4, including legacy grandfather-freeze). **Open: deployed-state evidence** (gate 14.2-A) |
+| 3 | Actual budget and base ledger | Configuration/evidence (gate 14.2-C); does not block code |
+| 4 | Referral economics | Rule closed (section 7 clamp and reservation); `c=0` until m, φ and program changes exist |
+| 5 | Ownership settlement design | **Closed by founder decision:** on-chain Fruit ledger (section 10a) and time convention (section 3). Governance values are configuration (gate 14.2-D) |
+| 6 | Adapter and risk verification | Rule closed (section 5 pricing, pinning, encumbrance; section 9 EXTREME/hysteresis). Per-adapter verification is configuration; no adapter goes live unverified |
+| 7 | Bonus configuration | Rule closed. `B_loy=0` until `w_tenure_min` is set; `B_lock` as committed |
+
+### 14.2 Evidence and configuration required
+
+A. **Deployed-state inspection (required before base-program implementation).** Read-only, from finalized mainnet state for program `C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt` or the actual production program ID if different: whether the program account and ProgramData exist; programdata hash and last-deploy slot versus the release artifact; upgrade authority; Config account bytes and version; `launch_t0`; `genesis_cap_rigs`; `rig_price_lamports`; `purchase_fee_bps`; vault PDA balances; and the maximum `Miner.rigs` over all Miner accounts. Outcomes: if the program is not initialized, the cap and binding ship in the initial deployment and no legacy wallet can exist; if it is initialized with `launch_t0 == 0`, the cap migration completes before T0; if T0 is set, the section 4 legacy rule applies to every `S>250` found. `genesis_cap_rigs != 250` requires the migration to correct it.
+
+B. **Release branch pin.** The exact implementation branch/commit and its test suite are recorded before code changes.
+
+C. **Budget.** Live balances, base schedule, F, J, B_lock and base runway through `T0+12 days`, reconciled into L/U/Z.
+
+D. **Configuration inputs (block activation of the feature, not code):** debt-protocol registry; per-adapter program pins, reference sources and calibrated thresholds; EXTREME dwell period; `w_tenure_min`; m and φ (then c); Fruit ledger poster key, veto set, threshold, challenge window and upgrade authority.
+
+### 14.3 Test gate
+
+Every test asserts, after every transition: `V_k >= L_k + U_k + Z_k` per ledger and in aggregate; `sum R <= E` and `R_i <= E/5` per pool; `paid_cum <= final_total`; established L never decreases except by payment.
+
+**Cap, legacy and base program**
+1. Fresh purchase with `S=249, count=2` reverts atomically with no lamport movement; `S=248, count=2` succeeds.
+2. Compound with `S=240` and pending rewards that would buy 50 mints exactly 10, debits exactly `quote(10)`, and leaves the remainder claimable.
+3. Compound at `S=250` creates no seed and charges no fee: revert or no-op, pending rewards and penalty anchor unchanged.
+4. Legacy fixture `S=400`: purchase reverts; compound mints nothing and charges no fee; base claim works; base shares and `Miner.rigs` unchanged through the migration; Fruit `K=2.5`.
+5. Referred wallet (weight 105) at the cap: `total_shares` includes exactly `250*105`.
+6. After `set_pricing(price*2)`, Fruit `K` still uses `P_ref`. After `set_pricing` lowers the fee, the commission is clamped to preserve the margin.
+7. Config migration: lamport and byte identity on failure; one-shot; every instruction fails cleanly during the inert window; existing liabilities preserved.
+8. Pre-ops detects `genesis_cap_rigs != 250` on the deployed fixture.
+9. The activation purchase counts against both check 1 and check 2.
+10. The engine-level cap is covered by the existing engine fuzz/acceptance suites: no sequence of buy/compound reaches `S>250` from `S<=250`.
+11. No instruction path converts Fruit core, loyalty, lock or commission SOL into seeds or into a base vault.
+
+**Day-1 .skr binding**
+12. Domain D used by wallet A on Day 1; wallet B proving D on Day 1 is rejected.
+13. D transferred from A to B during Day 1; B's Day-1 purchase with D is still rejected. A can still buy with D up to its cap.
+14. Binding has no effect at `T0+86,400` and later (public access).
+15. A binding cannot be closed or reassigned during Day 1.
+
+**Ownership, encumbrance and debt**
+16. A→B→A across slots: A earns only A's intervals, B only B's.
+17. A→B→C inside one transaction: no one earns extra duration.
+18. Transfers in different slots sharing one `unix_timestamp`: zero overlap.
+19. Token-account `SetAuthority(AccountOwner)` is treated as a transfer.
+20. `Approve` of the full balance: X drops by `delegated_amount`; `Revoke` restores it prospectively only.
+21. Frozen account excluded.
+22. Token-2022 mint with permanent delegate or transfer hook rejected unless cleared by the adapter.
+23. Flash-loan-sized intra-transaction balance: zero weight.
+24. One missing transfer event reserves the whole common-pool interval, not only `r*dt*w_max/H` for one wallet.
+25. Staked SKR with pending unstake excluded; the same units in wallet and stake views counted once.
+26. Debt in a registry program is netted at wallet level; debt exceeding holdings gives `X=0`, never negative.
+27. A debt increase mid-epoch reduces X from its event; unreadable registry state makes the wallet pending, not zero.
+28. Debt in a non-registry program is not detected, and the disclosure is present in the product.
+29. Owned xSOL is valued at owned-token NAV, not underlying notional.
+
+**Pricing and Safe Mode**
+30. Units added after the reference timestamp are valued at `min(ref, live)`.
+31. A reference sample manipulated in one block is rejected by the confidence/TWAP rule.
+32. An asset with no committed reference at epoch start is inactive with weight 0, and other assets settle normally.
+33. A pinned-program upgrade mid-epoch makes the asset UNKNOWN from the upgrade slot and reserves it.
+34. HOT entry: rejected without a consent signature; rejected with an expired, wrong-epoch, wrong-risk-version or replayed nonce; accepted with a valid one.
+35. HOT entry to an unavailable route is rejected even with a signature.
+36. EXTREME at slot s: the reset applies from s to unsettled intervals; settled R and Q unchanged. Covered for xSOL and at least one non-xSOL adapter.
+37. CR oscillating across 1.00: hysteresis prevents repeated resets and safety releases; release cannot be enabled while the dwell period is unset.
+38. CR = 1: no finite leverage displayed.
+39. DEX quote failure alone does not count as route unavailability.
+
+**Epochs and timeline**
+40. Purchase at `T0+86,399`: Day-1 cap, no Fruit. At `T0+86,400`: public access and Storm accrual.
+41. Registration finalized before t_s is included; at t_s it is excluded.
+42. Every boundary at 86,400 / 259,200 / 518,400 / 950,400 from FRUIT_T0 is half-open.
+43. `F=R`: Storm 0. `F=R-1` lamport: one 48-hour Harvest of F, no Season or lock. `F=0`: inactive.
+44. Zero participants for a whole epoch: all capacity goes U→Z at close; APR N/A.
+45. `Cw < 12.5`: the unallocated share goes U→Z, never to other wallets.
+46. Registration-program outage: interval not earned. Indexer-only outage: earned and paid on replay.
+
+**Loyalty and lock**
+47. Dust-weight wallet below `w_tenure_min` accrues no tenure days; loyalty cannot activate with the threshold unset.
+48. Penalized base claim resets tenure (from instruction/account data); unpenalized claim does not.
+49. Each cause-table row produces its classified reset/freeze.
+50. Locks with everyone at 5 days, nobody locking, and a partial shortfall (low-water mark, no resurrection on re-top-up).
+51. Early exit then a second election attempt: rejected.
+52. EXTREME release: vested progress uses the pre-event weight; the future part returns to Z only after ownership resolves.
+53. Indexer gap at t_s: all of B_lock stays reserved until H_lock is final.
+54. Registration stores intent only; validation occurs at t_s.
+
+**On-chain Fruit ledger**
+55. Root with `total` above scheduled capacity: rejected.
+56. Root with `checkpoint_time > now`, non-increasing version, or a second Pending root: rejected.
+57. Root with `total < final_total`: rejected.
+58. Leaf above `wallet_cap`: claim rejected.
+59. Leaf replayed across program, ledger, pool or wallet: rejected.
+60. Claim against a Pending or Vetoed root: rejected. Vetoed root never finalizes. The poster cannot veto.
+61. Corrected root lowering a wallet that already claimed: that wallet's claim pays 0; others unaffected; `paid_cum <= final_total` holds.
+62. Two claims for one wallet in one slot: the second pays 0. N concurrent claimants: V never below L.
+63. Checkpoint-frequency independence: 1 versus 86,400 checkpoints produce totals within the carried-remainder bound.
+64. Final lamport remainder released exactly once at pool close.
+65. Pool close without reconciliation, or with a Pending root, rejected; elapsed time alone releases nothing.
+66. Terminal resolution cannot reduce L.
+67. Migration of ledger accounts preserves lamports, L, U, `claimed_cum` and root history.
+
+**Referral**
+68. `withdraw_fees` above `distributable - reserved_commissions`: rejected.
+69. Commission on a compound fee is reserved in the compound instruction.
+70. Fee event replay: consumed once.
+71. Rounding of `c*f_e` keeps the per-event retained margin; the clamp yields 0 when `m*v_e >= f_e`.
+72. Self-referral rejected; non-planter referrer rejected, on the hard-cap build.
+
+**Funding**
+73. Committing a pool when `Z < E`: rejected. Committing after `t_start`: rejected.
+74. Committing the same lamport to renewal and loyalty: rejected.
+75. Reserve withdrawal touching L or U: rejected.
+76. Funding exhaustion mid-sequence: already committed tranches finish.
+
+Tests 1–76 are the implementation gate. Isolated accounting and tests may proceed now against explicit fixtures. Base-program changes proceed after gate 14.2-A. Feature activation additionally requires 14.2-C and the relevant 14.2-D inputs. No launch date is selected.
 
 ### Source links
 

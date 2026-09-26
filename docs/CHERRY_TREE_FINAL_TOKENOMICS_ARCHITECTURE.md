@@ -1,6 +1,6 @@
 # THE CHERRY TREE — Final Tokenomics Architecture
 
-Date: 2026-09-26. Status: reconciled economic specification, **closeout revision** (founder final decisions and adversarial-review corrections applied; see `docs/OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md`). **Architecture FROZEN for implementation** (gate 14.2-A closed by founder-supplied mainnet evidence: initial-deployment case). Implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
+Date: 2026-09-26. Status: reconciled economic specification, **closeout revision** (founder final decisions and adversarial-review corrections applied; see `docs/OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md`). **Architecture FROZEN for implementation** (gate 14.2-A closed by founder-supplied mainnet evidence: initial-deployment case). **Post-freeze founder parameter correction (2026-09-26):** the lock ladder 1/2/3/5 days is removed; the only lock is 5 days (section 8). No other part of the model changes. Implementation is gated by section 14. No production changes, deployment, funding or launch authorization.
 
 Authority: founder final decisions of the closeout (external debt netting, on-chain Fruit ledger, permanent 250 max wallet with legacy grandfathering, no Fruit/bonus compounding, one .skr domain = one Day-1 wallet), then founder overrides in the original request, then Fable's quantitative solve, then the existing Fruit baseline. This document defines one model. Unresolved inputs remain configuration variables; no illustrative budget is asserted to exist.
 
@@ -65,7 +65,7 @@ This is a funding equation, not a promise about actual participation.
 
 ## 2. Final constants versus unresolved configuration
 
-Fixed policy constants are the seed price reference, three 250-seed caps/benchmarks above, threshold 150, 1:1 coverage, 20% per-wallet budget ceiling, 12.5 denominator floor, one Fruit per wallet per epoch, 24-hour early access, epoch durations 1/2/3/5 days, and lock choices 1/2/3/5 days.
+Fixed policy constants are the seed price reference, three 250-seed caps/benchmarks above, threshold 150, 1:1 coverage, 20% per-wallet budget ceiling, 12.5 denominator floor, one Fruit per wallet per epoch, 24-hour early access, epoch durations 1/2/3/5 days, and a single lock duration of 5 days (`D_lock = 5 days`; no 1-, 2- or 3-day locks).
 
 The inherited continuation targets of 1,000%/500%/250% at the denominator floor and the approximately 25,000% Storm ceiling are retained baseline policy constraints. They are not mathematically optimal rates or newly invented percentages. They determine these exact budgets:
 
@@ -299,30 +299,30 @@ For the five-day Season beginning at `t_s=FRUIT_T0+6 days`:
 
 - Registration window is `[FRUIT_T0,t_s)`. The finalized chain ordering determines inclusion; registrations at or after t_s are excluded.
 - One immutable lock election per wallet per Season; cancellation or early exit cannot reopen registration for that Season.
-- Register duration `d_i in {1,2,3,5}` days, selected Season Fruit and requested eligible weight. Registration stores intent only; no price/ownership validation happens before t_s because the Season reference does not exist yet. At t_s, set `ell_i=min(requested_weight,w_i(t_s))` using the Season reference and ownership at t_s; reject zero/invalid registrations.
-- All locks start at t_s and mature at `t_s+d_i`. A one-day election does not get five consecutive one-day claims.
+- The only lock duration is `D_lock = 5` days (founder parameter correction; minimum lock = 5 days). There is no duration choice: a registration carries no duration, or its duration must equal 5 days, and any other value is rejected. Register selected Season Fruit and requested eligible weight. Registration stores intent only; no price/ownership validation happens before t_s because the Season reference does not exist yet. At t_s, set `ell_i=min(requested_weight,w_i(t_s))` using the Season reference and ownership at t_s; reject zero/invalid registrations.
+- All locks start at t_s and mature at `t_s+5 days`, the end of the Season.
 - Commit B_lock before the cutoff becomes effective. Do not fund awards from future epochs.
 
 ```text
-u_i = ell_i d_i
+u_i = ell_i * 5 days
 H_lock = max(sum_registered u_i, Hfloor * 5 days) = max(sum u_i, 62.5)
-A_i = B_lock u_i/H_lock
+A_i = B_lock u_i/H_lock = B_lock ell_i/max(sum_registered ell_i, 12.5)
 ```
 
-Freeze H_lock for the entire Season. Later exits, one-day maturities or forfeitures never renormalize awards. `sum A_i<=B_lock`, and since `ell_i<=2.5` and `d_i<=5`, `A_i<=B_lock/5`. Reserve the unallocated balance until registration is finalized, then release it to Z.
+Freeze H_lock for the entire Season. Later exits or forfeitures never renormalize awards. `sum A_i<=B_lock`, and since `ell_i<=2.5` and the floor is 12.5, `A_i<=B_lock/5`. Reserve the unallocated balance until registration is finalized, then release it to Z.
 
 Maintain surviving committed weight `ell_surv_i(t)` as a nonincreasing low-water mark of verified eligible weight supporting the original election, bounded by ell_i. Restored/replaced weight does not resurrect forfeited units. A voluntary shortfall cancels the proportional unvested award for the lost units. For surviving units:
 
 ```text
 conditional_progress_i(t) = A_i * ell_surv_i(t)/ell_i
-                            * min((t-t_s)/d_i, 1)
+                            * min((t-t_s)/(5 days), 1)
 ```
 
 This is explicitly conditional vesting progress in U, not claimable accrued L. At ordinary maturity, vest `A_i * ell_surv_i/ell_i` from U to L. Cancelled unvested awards return to Z only after ownership is resolved; no other wallet receives them retroactively. Core Fruit accrual and vested bonuses remain untouched.
 
 On a verified EXTREME event or route unavailability as defined in section 9, offer immediate safety release without forfeiture of the earned-to-date conditional progress: vest that progress into L and cancel only the future unearned part. Compute relief using the last valid surviving weight immediately before the safety event, not a post-event NAV-zero weight. End the election permanently; no second election. HOT alone does not force exit or vesting.
 
-Unknown history is held pending, not treated as voluntary exit; an indexer gap at t_s keeps all of B_lock reserved until H_lock is final. Everyone choosing five days reduces the allocation to `B_lock ell_i/max(sum ell,12.5)` at maturity. Nobody choosing a lock returns all B_lock to Z. Locks cannot overrun the five-day Season.
+Unknown history is held pending, not treated as voluntary exit; an indexer gap at t_s keeps all of B_lock reserved until H_lock is final. Every lock is five days, so the allocation is `B_lock ell_i/max(sum ell,12.5)` at maturity. Nobody choosing a lock returns all B_lock to Z. Locks cannot overrun the five-day Season.
 
 ## 9. Safe Mode
 
@@ -470,9 +470,9 @@ Fable's single-wallet 2,500-seed examples are invalid under the final hard cap a
 | Underfunded sequence | If 0<F<R, one 172,800-second Harvest funded with F |
 | Loyalty tenure saturation | 11 verified qualifying days |
 | Loyalty payout | Separate B_loy; integral of (B_loy/D) w beta/max(sum w beta,12.5) |
-| Lock durations | 1 / 2 / 3 / 5 days |
+| Lock duration | 5 days only (minimum = only lock); no 1 / 2 / 3-day locks |
 | Lock election/cutoff | One immutable election per wallet/Season; finalize strictly before Season start |
-| Lock award | B_lock ell d/max(sum ell d,62.5); fixed denominator |
+| Lock award | B_lock ell/max(sum ell,12.5) (equivalently B_lock 5ell/max(5 sum ell,62.5)); fixed denominator |
 | Lock vesting | Cliff; conditional progress reserved; safety release vests earned-to-date progress |
 | Bonus per-wallet ceilings | B_loy/5 and B_lock/5 for respective funded pools |
 | Referral level | One direct level |
@@ -622,11 +622,12 @@ Every test asserts, after every transition: `V_k >= L_k + U_k + Z_k` per ledger 
 47. Dust-weight wallet below `w_tenure_min` accrues no tenure days; loyalty cannot activate with the threshold unset.
 48. Penalized base claim resets tenure (from instruction/account data); unpenalized claim does not.
 49. Each cause-table row produces its classified reset/freeze.
-50. Locks with everyone at 5 days, nobody locking, and a partial shortfall (low-water mark, no resurrection on re-top-up).
+50. Single 5-day lock: several registrants (award `B_lock ell/max(sum ell,12.5)`), nobody locking, and a partial shortfall (low-water mark, no resurrection on re-top-up).
 51. Early exit then a second election attempt: rejected.
 52. EXTREME release: vested progress uses the pre-event weight; the future part returns to Z only after ownership resolves.
 53. Indexer gap at t_s: all of B_lock stays reserved until H_lock is final.
 54. Registration stores intent only; validation occurs at t_s.
+77. Lock registration with a 1-, 2- or 3-day (or any non-5-day) duration is rejected; every accepted lock matures at exactly `t_s+5 days`; early exit forfeits only unvested conditional progress and never vested or core rewards.
 
 **On-chain Fruit ledger**
 55. Root with `total` above scheduled capacity: rejected.
@@ -656,7 +657,7 @@ Every test asserts, after every transition: `V_k >= L_k + U_k + Z_k` per ledger 
 75. Reserve withdrawal touching L or U: rejected.
 76. Funding exhaustion mid-sequence: already committed tranches finish.
 
-Tests 1–76 are the implementation gate. Isolated accounting and tests may proceed now against explicit fixtures. Gate 14.2-A is closed (initial-deployment case), so base-program changes may proceed. Feature activation additionally requires 14.2-C and the relevant 14.2-D inputs. No launch date is selected.
+Tests 1–77 are the implementation gate. Isolated accounting and tests may proceed now against explicit fixtures. Gate 14.2-A is closed (initial-deployment case), so base-program changes may proceed. Feature activation additionally requires 14.2-C and the relevant 14.2-D inputs. No launch date is selected.
 
 ### Source links
 

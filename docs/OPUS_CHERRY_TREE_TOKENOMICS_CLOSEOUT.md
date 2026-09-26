@@ -164,7 +164,7 @@ The governance values (poster, veto set, threshold, window length, upgrade autho
 
 ## 9. FINAL TEST GATE
 
-Architecture §14.3 lists 76 tests. It contains all 57 Review tests, some updated for the founder decisions (tests 3, 4, 36/47), plus 19 new ones:
+Architecture §14.3 lists 76 tests (77 after the post-freeze lock correction below). It contains all 57 Review tests, some updated for the founder decisions (tests 3, 4, 36/47), plus 19 new ones:
 
 | New tests | Covers |
 |---|---|
@@ -198,7 +198,7 @@ The single remaining blocker (CB-3 evidence part, Architecture §14.2-A) is clos
 
 **What can proceed now**
 
-- All code work in §14.3 scope: base-program cap/binding/referral-reservation changes, Fruit ledger, adapters and tests 1–76.
+- All code work in §14.3 scope: base-program cap/binding/referral-reservation changes, Fruit ledger, adapters and tests 1–77.
 
 **Activation-only inputs**
 
@@ -209,3 +209,7 @@ These gate feature activation, not code (Architecture §14.2-C/D):
 - `w_tenure_min`;
 - m and φ, then c;
 - ledger governance keys and window.
+
+## 11. Post-freeze founder parameter correction (2026-09-26)
+
+Lock duration: the 1/2/3/5-day ladder is removed. The only lock is 5 days (minimum lock = 5 days). Architecture §2, §8 and §12 updated: `u_i = 5 ell_i`, award `B_lock ell_i/max(sum ell,12.5)`, maturity at `t_s+5 days`. Test 50 updated, test 77 added (non-5-day registrations rejected). Unchanged: one election per Season finalized before t_s, separate funded B_lock pool, fixed denominator, cliff vesting, early exit forfeits only unvested conditional progress, vested/core rewards never confiscated, safety release, no second election. Verdict unchanged: PASS FOR IMPLEMENTATION.

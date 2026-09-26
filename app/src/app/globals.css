@@ -915,27 +915,74 @@ details.panel {
   overflow: visible;
 }
 
-.tree-crown {
-  transform-box: view-box;
-  transform-origin: 50% 88%;
+/* The painted tree, standing on a soft ground shadow, sized by stage. */
+.grove-art {
+  position: relative;
 }
-.tree-crown--sway {
+
+.grove-ground {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 0;
+  height: 14%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--bg-raised), transparent);
+}
+
+.grove-tree {
+  position: absolute;
+  bottom: 4%;
+  left: 50%;
+  height: auto;
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.grove-tree--main {
+  filter: drop-shadow(0 0 18px var(--blossom-glow));
+}
+
+/* A full grove: two younger trees behind the main one. */
+.grove-tree--left,
+.grove-tree--right {
+  width: 44%;
+  bottom: 9%;
+  opacity: 0.55;
+  filter: saturate(0.85) brightness(0.8);
+}
+.grove-tree--left {
+  left: 20%;
+}
+.grove-tree--right {
+  left: 80%;
+}
+
+.grove-tree--sway {
   animation: sway 9s ease-in-out infinite;
 }
 
 @keyframes sway {
   0%,
   100% {
-    transform: rotate(-0.6deg);
+    transform: translateX(-50%) rotate(-0.5deg);
   }
   50% {
-    transform: rotate(0.6deg);
+    transform: translateX(-50%) rotate(0.5deg);
   }
 }
 
-.petal {
+.grove-petal {
+  position: absolute;
+  width: 7px;
+  height: 5px;
+  border-radius: 70% 0 70% 0;
+  background: var(--blossom-soft);
   opacity: 0;
-  animation: petal-fall 7s linear infinite;
+  pointer-events: none;
+  animation: petal-fall 7.5s linear infinite;
 }
 
 @keyframes petal-fall {
@@ -951,7 +998,7 @@ details.panel {
   }
   100% {
     opacity: 0;
-    transform: translate(14px, 70px) rotate(160deg);
+    transform: translate(26px, 120px) rotate(200deg);
   }
 }
 
@@ -1099,12 +1146,62 @@ details.panel {
   }
 }
 
+/*
+ * The box you are in: tap or focus a card and a blossom arc runs round its
+ * edge until you move to another. Set by Game (`data-active`), drawn here.
+ */
+@property --ring-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+[data-active='true'] {
+  position: relative;
+  box-shadow: 0 0 22px var(--blossom-wash-strong);
+}
+
+[data-active='true']::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 2.5px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--ring-angle),
+    transparent 0 45%,
+    var(--blossom-dim) 72%,
+    var(--blossom) 88%,
+    var(--blossom-soft) 94%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(black 0 0) content-box,
+    linear-gradient(black 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(black 0 0) content-box exclude,
+    linear-gradient(black 0 0);
+  animation: ring-spin 3.2s linear infinite;
+}
+
+@keyframes ring-spin {
+  to {
+    --ring-angle: 360deg;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .tree-crown--sway,
-  .grove-card-drift {
+  .grove-tree--sway,
+  .grove-card-drift,
+  [data-active='true']::after {
     animation: none;
   }
-  .petal {
+  [data-active='true']::after {
+    background: var(--blossom-dim);
+  }
+  .grove-petal {
     display: none;
   }
 }

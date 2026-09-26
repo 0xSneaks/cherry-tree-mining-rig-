@@ -7,7 +7,11 @@
  * from the growth layer (`groveTier`), the same names the share card and
  * milestones use, so the screen never calls one grove two different things.
  *
- * Petals fall and the canopy sways only while the funded schedule is paying;
+ * Bare soil and the seedling are drawn inline; from a sapling up the tree is
+ * the painted illustration (`public/grove/cherry-tree.webp`, transparent),
+ * sized by stage, and a full grove adds two younger trees behind it.
+ *
+ * Petals fall and the crown sways only while the funded schedule is paying;
  * both stop under prefers-reduced-motion.
  */
 import { formatCount } from '../lib/format';
@@ -15,103 +19,63 @@ import { groveTier, nextGroveTier } from '../lib/growth/milestones';
 
 export type RigTier = {
   key: 'empty' | 'hand' | 'small' | 'industrial' | 'multi' | 'facility';
-  /** Blossom clusters in the main canopy. */
-  clusters: number;
-  /** Trunk height in viewBox units. */
-  trunk: number;
-  /** Canopy scale. */
-  scale: number;
+  /** Width of the painted tree as a share of the frame; 0 = drawn inline. */
+  art: number;
 };
 
 export function rigTier(rigs: bigint): RigTier {
-  if (rigs >= 500n) return { key: 'facility', clusters: 12, trunk: 52, scale: 1.15 };
-  if (rigs >= 100n) return { key: 'multi', clusters: 12, trunk: 54, scale: 1.25 };
-  if (rigs >= 25n) return { key: 'industrial', clusters: 8, trunk: 50, scale: 1.1 };
-  if (rigs >= 5n) return { key: 'small', clusters: 6, trunk: 44, scale: 0.95 };
-  if (rigs >= 1n) return { key: 'hand', clusters: 0, trunk: 20, scale: 0.6 };
-  return { key: 'empty', clusters: 0, trunk: 0, scale: 0 };
+  if (rigs >= 500n) return { key: 'facility', art: 0.9 };
+  if (rigs >= 100n) return { key: 'multi', art: 0.94 };
+  if (rigs >= 25n) return { key: 'industrial', art: 0.74 };
+  if (rigs >= 5n) return { key: 'small', art: 0.52 };
+  if (rigs >= 1n) return { key: 'hand', art: 0 };
+  return { key: 'empty', art: 0 };
 }
 
-const WIDTH = 260;
-const HEIGHT = 150;
-const GROUND = 134;
+/** Height ÷ width of `cherry-tree.webp` (720 × 496). */
+const ART_ASPECT = 496 / 720;
+
+const TREE_SRC = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/grove/cherry-tree.webp`;
+
+/** Falling petals: horizontal start (% of frame), start height (%), delay (s). */
+const PETALS: readonly [number, number, number][] = [
+  [30, 30, 0],
+  [62, 22, 1.4],
+  [44, 40, 2.9],
+  [72, 38, 4.1],
+  [24, 48, 5.3],
+  [55, 18, 6.2],
+];
 
 /**
- * Canopy clusters around the top of the trunk, [dx, dy, r], ordered so the
- * first few already read as a rounded crown and later ones fill it out.
+ * The painted tree. A plain <img>: the asset is already a sized, transparent
+ * WebP, and the static export serves images unoptimised anyway.
  */
-const CANOPY: readonly [number, number, number][] = [
-  [0, -16, 17],
-  [-22, -4, 14],
-  [22, -4, 14],
-  [0, -40, 13],
-  [-18, -30, 13],
-  [18, -30, 13],
-  [-38, 8, 11],
-  [38, 8, 11],
-  [-34, -18, 11],
-  [34, -18, 11],
-  [-10, 4, 10],
-  [12, 6, 10],
-];
+function TreeArt({ className, width }: { className: string; width?: string }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img className={className} src={TREE_SRC} alt="" aria-hidden="true" draggable={false} style={width ? { width } : undefined} />;
+}
 
-/** Petal start points (relative to canopy centre) and animation delays. */
-const PETALS: readonly [number, number, number][] = [
-  [-30, 6, 0],
-  [18, 10, 1.6],
-  [-8, 12, 3.1],
-  [34, 0, 4.4],
-  [-42, -4, 5.7],
-];
-
-function Tree({ x, tier, sway }: { x: number; tier: RigTier; sway: boolean }) {
-  const top = GROUND - tier.trunk;
-  const s = tier.scale;
-
-  if (tier.key === 'hand') {
-    // A seedling: one stem, two leaves, no blossom yet.
-    return (
-      <g>
-        <path d={`M${x} ${GROUND} Q${x - 2} ${top + 6} ${x} ${top}`} stroke="var(--foliage)" strokeWidth="2" fill="none" />
-        <ellipse cx={x - 6} cy={top + 2} rx="6" ry="3" fill="var(--foliage)" transform={`rotate(-25 ${x - 6} ${top + 2})`} />
-        <ellipse cx={x + 6} cy={top} rx="6" ry="3" fill="var(--foliage)" transform={`rotate(25 ${x + 6} ${top})`} />
-      </g>
-    );
-  }
-
-  const clusters = CANOPY.slice(0, tier.clusters);
-  const cy = top - 6 * s;
+/** Bare soil or a seedling: small enough to draw inline. */
+function Sprout({ seedling }: { seedling: boolean }) {
   return (
-    <g>
-      {/* Trunk, tapering, with two main limbs into the crown. */}
-      <path
-        d={`M${x - 6 * s} ${GROUND} Q${x - 3 * s} ${top + 14 * s} ${x - 2} ${top} L${x + 2} ${top} Q${x + 3 * s} ${top + 14 * s} ${x + 6 * s} ${GROUND} Z`}
-        fill="var(--bark)"
-      />
-      <path
-        d={`M${x} ${top + 8 * s} Q${x - 14 * s} ${top} ${x - 24 * s} ${cy - 2}`}
-        stroke="var(--bark)"
-        strokeWidth={3 * s}
-        fill="none"
-        strokeLinecap="round"
-      />
-      <path
-        d={`M${x} ${top + 4 * s} Q${x + 14 * s} ${top - 4} ${x + 22 * s} ${cy - 8 * s}`}
-        stroke="var(--bark)"
-        strokeWidth={3 * s}
-        fill="none"
-        strokeLinecap="round"
-      />
-      <g className={sway ? 'tree-crown tree-crown--sway' : 'tree-crown'}>
-        {clusters.map(([dx, dy, r], i) => (
-          <g key={i}>
-            <circle cx={x + dx * s} cy={cy + dy * s} r={r * s} fill="var(--blossom-dim)" />
-            <circle cx={x + dx * s - 2 * s} cy={cy + dy * s - 2 * s} r={r * s * 0.72} fill="var(--blossom)" opacity="0.85" />
-            <circle cx={x + dx * s - 4 * s} cy={cy + dy * s - 4 * s} r={r * s * 0.22} fill="var(--blossom-soft)" opacity="0.8" />
-          </g>
-        ))}
-      </g>
-    </g>
+    <svg viewBox="0 0 260 80" width="100%" role="img" aria-hidden="true" className="grove-svg">
+      <ellipse cx="130" cy="72" rx="112" ry="10" fill="var(--bg-raised)" />
+      <line x1="12" y1="64" x2="248" y2="64" stroke="var(--rule-strong)" strokeWidth="1" />
+      {seedling ? (
+        <g>
+          <path d="M130 64 Q127 52 130 42" stroke="var(--foliage)" strokeWidth="2.4" fill="none" />
+          <ellipse cx="122" cy="45" rx="8" ry="3.6" fill="var(--foliage)" transform="rotate(-25 122 45)" />
+          <ellipse cx="138" cy="42" rx="8" ry="3.6" fill="var(--foliage)" transform="rotate(25 138 42)" />
+          <circle cx="130" cy="40" r="3" fill="var(--blossom-soft)" />
+        </g>
+      ) : (
+        <g>
+          <ellipse cx="130" cy="63" rx="16" ry="4" fill="var(--bark)" opacity="0.7" />
+          <circle cx="130" cy="52" r="3.5" fill="none" stroke="var(--blossom-dim)" strokeDasharray="2 2" />
+        </g>
+      )}
+    </svg>
   );
 }
 
@@ -120,13 +84,7 @@ export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boo
   const named = groveTier(seeds);
   const next = nextGroveTier(seeds);
   const stageName = named?.label ?? 'Bare soil';
-  const cx = WIDTH / 2;
-  const canopyY = GROUND - tier.trunk - 6 * tier.scale;
-  const blooming = tier.clusters > 0;
   const growing = running && seeds > 0n;
-  // Bare soil and a seedling have nothing above the ground worth a tall
-  // frame: crop the empty sky so the card stays compact.
-  const viewTop = tier.key === 'empty' || tier.key === 'hand' ? 70 : 0;
 
   // Progress from the current named stage to the next, in whole seeds.
   const from = named?.minSeeds ?? 0n;
@@ -135,44 +93,38 @@ export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boo
 
   return (
     <figure className="grove-visual" aria-label={`Your grove: ${stageName.toLowerCase()}, ${seeds.toString()} seeds`}>
-      <svg viewBox={`0 ${viewTop} ${WIDTH} ${HEIGHT - viewTop}`} width="100%" role="img" aria-hidden="true" className="grove-svg">
-        {/* Soft ground and a low hill the tree stands on. */}
-        <ellipse cx={cx} cy={GROUND + 8} rx="112" ry="12" fill="var(--bg-raised)" />
-        <line x1="12" y1={GROUND} x2={WIDTH - 12} y2={GROUND} stroke="var(--rule-strong)" strokeWidth="1" />
-
-        {tier.key === 'empty' ? (
-          // Bare soil: a planting mark waiting for the first seed.
-          <g>
-            <ellipse cx={cx} cy={GROUND - 1} rx="16" ry="4" fill="var(--bark)" opacity="0.7" />
-            <circle cx={cx} cy={GROUND - 12} r="3.5" fill="none" stroke="var(--blossom-dim)" strokeDasharray="2 2" />
-          </g>
-        ) : null}
-
-        {/* A full grove: two younger trees either side of the main one. */}
-        {tier.key === 'facility' ? (
-          <>
-            <Tree x={cx - 82} tier={rigTier(5n)} sway={running} />
-            <Tree x={cx + 82} tier={rigTier(5n)} sway={running} />
-          </>
-        ) : null}
-
-        {tier.key !== 'empty' ? <Tree x={cx} tier={tier} sway={running} /> : null}
-
-        {running && blooming
-          ? PETALS.map(([dx, dy, delay], i) => (
-              <ellipse
-                key={i}
-                className="petal"
-                cx={cx + dx * tier.scale}
-                cy={canopyY + dy * tier.scale}
-                rx="2.6"
-                ry="1.6"
-                fill="var(--blossom-soft)"
-                style={{ animationDelay: `${delay}s` }}
-              />
-            ))
-          : null}
-      </svg>
+      {tier.art === 0 ? (
+        <Sprout seedling={tier.key === 'hand'} />
+      ) : (
+        <div
+          className="grove-art"
+          data-stage={tier.key}
+          // Frame fits the tree: its height is the art's (720×496) plus the ground.
+          style={{ aspectRatio: `1 / ${(tier.art * ART_ASPECT + 0.07).toFixed(3)}` }}
+        >
+          <span className="grove-ground" aria-hidden="true" />
+          {tier.key === 'facility' ? (
+            <>
+              <TreeArt className="grove-tree grove-tree--left" />
+              <TreeArt className="grove-tree grove-tree--right" />
+            </>
+          ) : null}
+          <TreeArt
+            className={growing ? 'grove-tree grove-tree--main grove-tree--sway' : 'grove-tree grove-tree--main'}
+            width={`${tier.art * 100}%`}
+          />
+          {growing
+            ? PETALS.map(([left, top, delay], i) => (
+                <span
+                  key={i}
+                  className="grove-petal"
+                  aria-hidden="true"
+                  style={{ left: `${left}%`, top: `${top}%`, animationDelay: `${delay}s` }}
+                />
+              ))
+            : null}
+        </div>
+      )}
       <figcaption className="grove-caption">
         <div className="grove-caption-row">
           <span className="grove-stage" data-testid="grove-stage">

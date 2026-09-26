@@ -4,7 +4,7 @@
  * The game. Identical in both modes — everything mode-specific arrives through
  * the `host` prop, so there is exactly one implementation of the loop.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Address } from '@solana/kit';
 
 import { buyRigs, claim, compound } from '../lib/actions';
@@ -80,6 +80,48 @@ export type Host = {
   connectSlot?: React.ReactNode;
 };
 
+/**
+ * The boxes a person can "be in". Tapping or focusing inside one marks it
+ * active (a blossom arc runs round its edge, see globals.css) until another
+ * box is chosen or the person taps outside every box. Purely presentational:
+ * nothing reads the mark.
+ */
+const CARD_SELECTOR = [
+  '.grove-visual',
+  '.cockpit',
+  '.plant',
+  '.yield',
+  '.launch',
+  '.panel',
+  '.progress-card',
+  '[data-testid="grove-status"]',
+].join(', ');
+
+function useActiveCard() {
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    let active: Element | null = null;
+    const select = (e: Event) => {
+      const card = e.target instanceof Element ? e.target.closest(CARD_SELECTOR) : null;
+      const next = card && root.contains(card) ? card : null;
+      if (next === active) return;
+      active?.removeAttribute('data-active');
+      next?.setAttribute('data-active', 'true');
+      active = next;
+    };
+    root.addEventListener('pointerdown', select);
+    root.addEventListener('focusin', select);
+    return () => {
+      root.removeEventListener('pointerdown', select);
+      root.removeEventListener('focusin', select);
+      active?.removeAttribute('data-active');
+    };
+  }, []);
+  return ref;
+}
+
 /** A claim worth offering to share, rather than nagging on every dust claim. */
 const LARGE_CLAIM_LAMPORTS = 50_000_000n; // 0.05 SOL
 const CLAIM_ACTION_LABEL = 'Claim SOL';
@@ -90,6 +132,7 @@ export function Game({ host }: { host: Host }) {
     host.lifecycle,
   );
   const { claimable, chainTime } = useLiveAccrual(snapshot, live);
+  const shellRef = useActiveCard();
 
   // The name record this wallet can present. Display and account selection
   // only: the program re-verifies it on every purchase.
@@ -321,7 +364,7 @@ export function Game({ host }: { host: Host }) {
     ) : null;
 
   return (
-    <main className="shell">
+    <main className="shell" ref={shellRef}>
       {/* 1 · What this is, which network, whether it is live. */}
       <header className="masthead">
         <h1 className="wordmark">{PRODUCT_NAME}</h1>

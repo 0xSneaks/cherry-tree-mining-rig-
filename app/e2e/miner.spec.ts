@@ -287,6 +287,27 @@ test.describe('miner cadence surfaces', () => {
     await expect(page.getByTestId('global-grove')).toContainText('Global grove');
   });
 
+  test('the painted tree loads, and the box you tap carries the blossom ring until you move on', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    const tree = page.locator('.grove-tree--main');
+    await expect(tree).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => tree.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+
+    const plant = page.getByTestId('plant-panel');
+    const cockpit = page.getByTestId('miner-cockpit');
+    await plant.getByText('Amount to plant').click();
+    await expect(plant).toHaveAttribute('data-active', 'true');
+    await cockpit.getByText('My grove').click();
+    await expect(cockpit).toHaveAttribute('data-active', 'true');
+    await expect(plant).not.toHaveAttribute('data-active', 'true');
+    // Keyboard focus moves it too.
+    await page.getByLabel('Amount in SOL').focus();
+    await expect(plant).toHaveAttribute('data-active', 'true');
+    await expect(cockpit).not.toHaveAttribute('data-active', 'true');
+  });
+
   test('trust panel separates proven data from unavailable authority metadata', async ({ page }) => {
     await stubCherryHost(page);
     await stubRpc(page);

@@ -235,6 +235,25 @@ test.describe('miner cadence surfaces', () => {
     await expect(cockpit.getByTestId('reward-health')).toContainText(/Funded until/);
   });
 
+  test('a wallet with no seeds sees Plant Seeds above a compact cockpit', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { withMiner: false });
+    await page.goto('/');
+    const cockpit = page.getByTestId('miner-cockpit');
+    await expect(cockpit.getByTestId('cockpit-empty')).toBeVisible({ timeout: 15_000 });
+    // Nothing to manage yet: no harvest, replant or zero-filled position rows.
+    await expect(cockpit.getByTestId('harvest-state')).toHaveCount(0);
+    await expect(cockpit.getByTestId('replant-state')).toHaveCount(0);
+    await expect(cockpit.getByText('My grove')).toHaveCount(0);
+
+    const plantAboveCockpit = await page.evaluate(() => {
+      const plant = Array.from(document.querySelectorAll('h2')).find((h) => h.textContent === 'Plant seeds');
+      const cockpitEl = document.querySelector('[data-testid="miner-cockpit"]');
+      return !!plant && !!cockpitEl && !!(plant.compareDocumentPosition(cockpitEl) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(plantAboveCockpit).toBe(true);
+  });
+
   test('trust panel separates proven data from unavailable authority metadata', async ({ page }) => {
     await stubCherryHost(page);
     await stubRpc(page);

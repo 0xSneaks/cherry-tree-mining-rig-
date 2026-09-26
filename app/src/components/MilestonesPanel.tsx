@@ -67,7 +67,7 @@ export function MilestonesPanel({ config, miner, chainTime }: { config: Config; 
       <p className="note" style={{ marginTop: 8 }}>
         Earned {earned.length} of {list.length}:
       </p>
-      <ul className="note" data-testid="achievements">
+      <ul className="note note-list" data-testid="achievements">
         {list.map((a) => (
           <li key={a.id} data-earned={a.earned} style={{ opacity: a.earned ? 1 : 0.45 }}>
             {a.earned ? '✿' : '○'} {a.label} — {a.detail}
@@ -77,7 +77,7 @@ export function MilestonesPanel({ config, miner, chainTime }: { config: Config; 
       {upcoming.length ? (
         <>
           <p className="note">Coming up:</p>
-          <ul className="note" data-testid="reminders">
+          <ul className="note note-list" data-testid="reminders">
             {upcoming.map((r) => (
               <li key={r.id}>
                 in {formatDuration(r.atSeconds - chainTime)} — {r.text}

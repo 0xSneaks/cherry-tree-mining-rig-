@@ -71,10 +71,10 @@ test.describe('referral link', () => {
     await stubCherryHost(page);
     await stubRpc(page, { withMiner: false });
     await page.goto(`/?ref=${WALLET}`);
-    await expect(page.getByText('My grove')).toBeVisible();
+    await expect(page.getByTestId('cockpit-empty')).toBeVisible();
     await expect(page.getByText(/Referred by/)).toHaveCount(0);
     await page.goto('/?ref=not-an-address');
-    await expect(page.getByText('My grove')).toBeVisible();
+    await expect(page.getByTestId('cockpit-empty')).toBeVisible();
     await expect(page.getByText(/Referred by/)).toHaveCount(0);
   });
 

@@ -358,60 +358,10 @@ export function Game({ host }: { host: Host }) {
             weight={miner?.weight ?? 0}
           />
 
-          <MinerCockpit
-            config={config}
-            miner={miner}
-            claimable={claimable}
-            rewardVaultLamports={snap.rewardVaultDistributable}
-            chainTime={chainTime}
-            currentOutputPerDay={outputPerDay}
-            canAct={canAct}
-            busy={busy}
-            onReplant={onCompound}
-            onHarvest={() => setConfirmingClaim(true)}
-            claimLabel={CLAIM_ACTION_LABEL}
-            hasReferralLink={hasPosition && host.address !== null}
-            referralSummary={referralSummary}
-          />
-
-          {!host.walletConnected ? (
-            <div className="banner">
-              Wallet disconnected. Your grove keeps growing — reconnect to claim,
-              replant or plant.
-            </div>
-          ) : null}
-          {paused ? (
-            <div className="banner banner--alert">
-              The program is halted by its authority. Existing state is
-              unaffected; actions resume when it is unhalted.
-            </div>
-          ) : null}
-          {actionError ? (
-            <div className="banner banner--alert">{actionError}</div>
-          ) : null}
-
-          {confirmingClaim && claimQuote ? (
-            <ClaimConfirm
-              quote={claimQuote}
-              busy={busy === 'claim'}
-              onConfirm={() => {
-                setConfirmingClaim(false);
-                onClaim();
-              }}
-              onCancel={() => setConfirmingClaim(false)}
-            />
-          ) : null}
-
-          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
-          {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
-          <ProgressShareCard
-            wallet={host.address}
-            miner={miner}
-            chainTime={chainTime}
-            onShare={host.share}
-          />
-          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
-
+          {/* The mobile journey, top to bottom: see the opportunity
+              (status → runway → yield), plant (the primary action, before any
+              management of the position it creates), then manage, then the
+              social / analytical / verification tail. */}
           <hr className="rule" />
 
           <BuyPanel
@@ -437,17 +387,60 @@ export function Game({ host }: { host: Host }) {
             onBuy={onBuy}
           />
 
+          {!host.walletConnected ? (
+            <div className="banner">
+              Wallet disconnected. Your grove keeps growing — reconnect to claim,
+              replant or plant.
+            </div>
+          ) : null}
+          {paused ? (
+            <div className="banner banner--alert">
+              The program is halted by its authority. Existing state is
+              unaffected; actions resume when it is unhalted.
+            </div>
+          ) : null}
+          {actionError ? (
+            <div className="banner banner--alert">{actionError}</div>
+          ) : null}
+
+          <MinerCockpit
+            config={config}
+            miner={miner}
+            claimable={claimable}
+            rewardVaultLamports={snap.rewardVaultDistributable}
+            chainTime={chainTime}
+            currentOutputPerDay={outputPerDay}
+            canAct={canAct}
+            busy={busy}
+            onReplant={onCompound}
+            onHarvest={() => setConfirmingClaim(true)}
+            claimLabel={CLAIM_ACTION_LABEL}
+            hasReferralLink={hasPosition && host.address !== null}
+            referralSummary={referralSummary}
+          />
+
+          {confirmingClaim && claimQuote ? (
+            <ClaimConfirm
+              quote={claimQuote}
+              busy={busy === 'claim'}
+              onConfirm={() => {
+                setConfirmingClaim(false);
+                onClaim();
+              }}
+              onCancel={() => setConfirmingClaim(false)}
+            />
+          ) : null}
+
+          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
+
           {host.room ? (
-            <>
-              <hr className="rule" />
-              <RoomLeaderboard
-                roomId={host.room.id}
-                roomTitle={host.room.title}
-                launchToken={host.launchToken}
-                viewer={host.address}
-                onOpenProfile={host.openProfile}
-              />
-            </>
+            <RoomLeaderboard
+              roomId={host.room.id}
+              roomTitle={host.room.title}
+              launchToken={host.launchToken}
+              viewer={host.address}
+              onOpenProfile={host.openProfile}
+            />
           ) : null}
 
           <hr className="rule" />
@@ -457,6 +450,17 @@ export function Game({ host }: { host: Host }) {
             hasPosition={hasPosition}
             onSummary={onReferralSummary}
           />
+          {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          <ProgressShareCard
+            wallet={host.address}
+            miner={miner}
+            chainTime={chainTime}
+            onShare={host.share}
+          />
+          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
+
+          <hr className="rule" />
+
           <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
           <DistributionPanel viewer={host.address} />
 

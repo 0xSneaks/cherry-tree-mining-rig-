@@ -220,6 +220,20 @@ body {
   margin: 6px 0 0;
 }
 
+/*
+ * Compact note lists (milestone achievements, reminders). The browser's
+ * default 40px bullet gutter eats an eighth of a phone-width panel, so the
+ * lists get a tighter indent and no extra margins.
+ */
+.note-list {
+  margin: 0;
+  padding-inline-start: 18px;
+}
+
+.note-list li {
+  margin: 2px 0;
+}
+
 /* --- controls --- */
 
 .actions {

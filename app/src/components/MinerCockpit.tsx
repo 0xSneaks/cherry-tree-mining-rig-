@@ -55,6 +55,30 @@ export function MinerCockpit({
   const milestone = groveTier(rigs);
   const nextMilestone = nextGroveTier(rigs);
 
+  // A wallet with no seeds has nothing to manage: harvest, replant and the
+  // cadence are all empty, so the full instrument panel would be a wall of
+  // zeros above the fold. One compact card; the panel appears with a position.
+  if (!miner) {
+    return (
+      <section className="cockpit" data-testid="miner-cockpit">
+        <div className="cockpit-heading">
+          <div>
+            <p className="section-title">Daily miner cockpit</p>
+            <p className="cockpit-cadence" aria-label="Miner cadence">
+              Plant <span>→</span> tend <span>→</span> watch <span>→</span> rooted <span>→</span> harvest or replant <span>→</span> share
+            </p>
+          </div>
+          <span className={`cockpit-state cockpit-state--${health.status}`}>
+            {STATUS_LABEL[health.status]}
+          </span>
+        </div>
+        <p className="note" data-testid="cockpit-empty">
+          Plant your first seeds to activate your grove.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="cockpit" data-testid="miner-cockpit">
       <div className="cockpit-heading">

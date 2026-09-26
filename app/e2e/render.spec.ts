@@ -139,7 +139,7 @@ test.describe('embedded path', () => {
   /** §10 — the buy quote adds up on screen, fee included and disclosed. */
   test('quotes cost, fee and total, and they add up', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Plant seeds')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Plant seeds' })).toBeVisible();
 
     const value = async (label: string) => {
       const row = page.locator('.quote .readout', { hasText: label }).first();
@@ -587,14 +587,12 @@ test.describe('genesis yield', () => {
     const apr = aprBps(yieldInputs(config, NOW));
     await expect(page.getByTestId('yield-apr')).toContainText(formatAprBps(apr));
     await expect(panel).toContainText(`${PHASE_LABEL[phaseFromAprBps(apr)]} yield`);
-    for (const label of [
-      'Next decay',
-      'Reward pool',
-      'Your accrued',
-      'Your effective rate',
-    ]) {
+    // The opportunity as a newcomer reads it: rate, pool, runway, price.
+    for (const label of ['Reward pool', 'Funded runway', 'Seed price', 'Next decay']) {
       await expect(panel.getByText(label)).toBeVisible();
     }
+    // Personal figures belong to the cockpit, not the opportunity.
+    await expect(panel.getByText('Your effective rate')).toHaveCount(0);
     await expect(panel).toContainText('Variable rate');
     await expect(panel).toContainText("Genesis yields start absurd. They don't stay absurd.");
   });

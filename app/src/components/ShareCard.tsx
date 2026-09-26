@@ -106,7 +106,7 @@ export function ProgressShareCard({
         <p className="section-title">Share the grove</p>
         <p className="progress-card-title">{formatCount(miner.rigs)} seeds · {tier}</p>
         <p className="note">
-          {rooted ? 'Rooted · penalty-free' : 'Tending toward Rooted'} · referral weight {miner.weight || 100}
+          {rooted ? 'Rooted · penalty-free' : 'Tending toward Rooted'}
         </p>
       </div>
       <div className="progress-card-actions">

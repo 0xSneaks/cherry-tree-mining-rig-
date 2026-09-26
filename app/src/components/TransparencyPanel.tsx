@@ -65,31 +65,8 @@ export function TransparencyPanel({
       <h2 className="section-title">Trust &amp; release</h2>
       <div className="panel">
         <p className="trust-kicker">Global grove</p>
-        <Readout label="Network" value={CLUSTER.toUpperCase()} />
-        <Readout label="Release / build" value={RELEASE_ID ?? 'Not available'} />
-        <Readout label="Source repository" value={SOURCE_URL ? 'Public source' : 'Not configured'} />
-        {SOURCE_URL ? (
-          <a className="verify" href={SOURCE_URL} target="_blank" rel="noreferrer noopener">
-            View source ↗
-          </a>
-        ) : null}
-        {accountLink('Program ID', PROGRAM_ID)}
-        {accountLink('Program authority', config.authority)}
-        <Readout label="Pending authority" value={pendingAuthority} />
-        <Readout label="Upgrade authority" value="Not available" />
-        <Readout label="Authority multisig" value="Not available" />
-        <Readout label="Timelock" value="Not available" />
-
-        <hr className="rule" style={{ margin: '12px 0' }} />
-
         <Readout label="Reward vault" value={formatSol(rewardVaultLamports, 3)} unit="SOL" />
-        {accountLink('REWARD account', rewardVaultAddress)}
-        <Readout label="Capital vault · locked" value={formatSol(capitalVaultLamports, 3)} unit="SOL" />
-        {accountLink('CAPITAL account', capitalVaultAddress)}
-        <Readout label="Fee vault" value={formatSol(feeVaultLamports, 3)} unit="SOL" />
-        {accountLink('FEE account', feeVaultAddress)}
         <Readout label="Reward backing" value={health.backed ? 'Backed' : 'Shortfall'} />
-        <Readout label="Accrued backing" value={formatSol(health.accruedBackingLamports, 3)} unit="SOL" />
         <Readout label="Current distribution" value={formatSol(perDay, 3)} unit="SOL / day" />
         <Readout
           label="Funded until"
@@ -97,22 +74,12 @@ export function TransparencyPanel({
         />
         <Readout label="Funded runway" value={formatDuration(runway)} />
         <Readout label="Seeds planted" value={formatCount(config.totalRigs)} />
+        <Readout label="Planters" value={formatCount(config.minerCount)} />
         <Readout
           label="Your share"
           value={formatSharePercent(miner ? minerShares(miner) : 0n, config.totalShares)}
         />
         <Readout label="Protocol fee" value={formatBps(config.purchaseFeeBps)} />
-        <Readout label="Planters" value={formatCount(config.minerCount)} />
-
-        <hr className="rule" style={{ margin: '12px 0' }} />
-
-        <Readout label="Total funded" value={formatSol(config.totalRewardFunded, 3)} unit="SOL" />
-        <Readout label="Total claimed" value={formatSol(config.totalRewardClaimed, 3)} unit="SOL" />
-        <Readout
-          label="Total replanted"
-          value={formatSol(config.totalRewardCompounded, 3)}
-          unit="SOL"
-        />
 
         <a
           className="verify"
@@ -123,6 +90,44 @@ export function TransparencyPanel({
           Verify on Solana ↗
         </a>
 
+        {/* Raw addresses and protocol internals: there for anyone verifying,
+            folded away for everyone else. */}
+        <details className="trust-details" data-testid="trust-details">
+          <summary className="trust-kicker">Program &amp; accounts</summary>
+          <Readout label="Network" value={CLUSTER.toUpperCase()} />
+          <Readout label="Release / build" value={RELEASE_ID ?? 'Not available'} />
+          <Readout label="Source repository" value={SOURCE_URL ? 'Public source' : 'Not configured'} />
+          {SOURCE_URL ? (
+            <a className="verify" href={SOURCE_URL} target="_blank" rel="noreferrer noopener">
+              View source ↗
+            </a>
+          ) : null}
+          {accountLink('Program ID', PROGRAM_ID)}
+          {accountLink('Program authority', config.authority)}
+          <Readout label="Pending authority" value={pendingAuthority} />
+          <Readout label="Upgrade authority" value="Not available" />
+          <Readout label="Authority multisig" value="Not available" />
+          <Readout label="Timelock" value="Not available" />
+
+          <hr className="rule" style={{ margin: '12px 0' }} />
+
+          {accountLink('REWARD account', rewardVaultAddress)}
+          <Readout label="Capital vault · locked" value={formatSol(capitalVaultLamports, 3)} unit="SOL" />
+          {accountLink('CAPITAL account', capitalVaultAddress)}
+          <Readout label="Fee vault" value={formatSol(feeVaultLamports, 3)} unit="SOL" />
+          {accountLink('FEE account', feeVaultAddress)}
+          <Readout label="Accrued backing" value={formatSol(health.accruedBackingLamports, 3)} unit="SOL" />
+
+          <hr className="rule" style={{ margin: '12px 0' }} />
+
+          <Readout label="Total funded" value={formatSol(config.totalRewardFunded, 3)} unit="SOL" />
+          <Readout label="Total claimed" value={formatSol(config.totalRewardClaimed, 3)} unit="SOL" />
+          <Readout
+            label="Total replanted"
+            value={formatSol(config.totalRewardCompounded, 3)}
+            unit="SOL"
+          />
+        </details>
       </div>
 
       <p className="note">

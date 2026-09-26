@@ -40,7 +40,7 @@ import { DilutionPanel } from './DilutionPanel';
 import { DistributionPanel } from './DistributionPanel';
 import { GroveStatus } from './GroveStatus';
 import { MilestonesPanel } from './MilestonesPanel';
-import { ReferralPanel, type ReferralSummary } from './ReferralPanel';
+import { ReferralPanel } from './ReferralPanel';
 import { MinerCockpit } from './MinerCockpit';
 import { ActivityHistory } from './ActivityHistory';
 import { usePlanterStatus } from '../hooks/usePlanterStatus';
@@ -107,25 +107,14 @@ export function Game({ host }: { host: Host }) {
   }, [host.address]);
 
   const [busy, setBusy] = useState<null | 'buy' | 'claim' | 'compound'>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // Kept with the action that failed, so the message renders beside the
+  // button the user just pressed rather than somewhere else on the page.
+  const [actionError, setActionError] = useState<
+    null | { kind: 'buy' | 'claim' | 'compound'; message: string }
+  >(null);
   const [confirmingClaim, setConfirmingClaim] = useState(false);
   const [walletLamports, setWalletLamports] = useState<bigint | null>(null);
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
-  const [referralSummary, setReferralSummary] = useState<ReferralSummary | null>(null);
-  const onReferralSummary = useCallback((next: ReferralSummary | null) => {
-    setReferralSummary((current) => {
-      if (current === next) return current;
-      if (
-        current && next &&
-        current.total === next.total &&
-        current.qualified === next.qualified &&
-        current.pending === next.pending &&
-        current.configured === next.configured &&
-        current.tier === next.tier
-      ) return current;
-      return next;
-    });
-  }, []);
 
   // Wallet balance backs the MAX button only; it is never used in accounting.
   useEffect(() => {
@@ -235,7 +224,7 @@ export function Game({ host }: { host: Host }) {
         // the raw error stays in the developer console, never hidden.
         const explained = explainActionError(e);
         console.error(`[cherry-tree] ${kind} failed:`, explained.raw);
-        setActionError(explained.message);
+        setActionError({ kind, message: explained.message });
       } finally {
         setBusy(null);
       }
@@ -284,8 +273,12 @@ export function Game({ host }: { host: Host }) {
           ? 'Live'
           : 'Unfunded';
 
+  const buyError = actionError?.kind === 'buy' ? actionError.message : null;
+  const positionError = actionError && actionError.kind !== 'buy' ? actionError.message : null;
+
   return (
     <main className="shell">
+      {/* 1 · What this is, which network, whether it is live. */}
       <header className="masthead">
         <h1 className="wordmark">{PRODUCT_NAME}</h1>
         {host.mode === 'standalone' ? host.connectSlot : null}
@@ -309,6 +302,27 @@ export function Game({ host }: { host: Host }) {
         </p>
       ) : null}
 
+      <p className="lede">
+        Plant seeds with SOL. They share a funded SOL reward pool at a variable
+        rate.
+      </p>
+
+      {/* State-wide conditions that change what every button below does.
+          "Disconnected" only when there is a wallet to reconnect — a
+          first-time standalone visitor has the connect button above. */}
+      {!host.walletConnected && host.address !== null ? (
+        <div className="banner">
+          Wallet disconnected. Your grove keeps growing — reconnect to claim,
+          replant or plant.
+        </div>
+      ) : null}
+      {paused ? (
+        <div className="banner banner--alert">
+          The program is halted by its authority. Existing state is
+          unaffected; actions resume when it is unhalted.
+        </div>
+      ) : null}
+
       <hr className="rule" />
 
       {loading && !snapshot ? (
@@ -323,12 +337,30 @@ export function Game({ host }: { host: Host }) {
         </div>
       ) : (
         <>
+          {/* The grove itself, from the real seed count. */}
+          <RigVisual rigs={rigs} running={scheduleLive && !paused} />
+
+          {/* 2 · The opportunity: rate, pool, runway, price. */}
+          <YieldPanel
+            config={config}
+            miner={miner}
+            rewardVaultLamports={snap.rewardVaultDistributable}
+            chainTime={chainTime}
+            snapshotTime={snap.chainTimeSeconds}
+          />
+
+          {/* 3 · The rules that decide whether and how this wallet can plant. */}
           <LaunchPanel
             config={config}
             chainTime={chainTime}
             wallet={host.address}
             identity={identity}
             lifetimeRigsBought={miner?.lifetimeRigsBought ?? 0n}
+          />
+          <GroveStatus
+            config={config}
+            rewardVaultLamports={snap.rewardVaultDistributable}
+            chainTime={chainTime}
           />
 
           {phase === 'preLaunch' &&
@@ -338,32 +370,7 @@ export function Game({ host }: { host: Host }) {
             <FounderActivation founder={host.address} signer={host.signer} onDone={refresh} />
           ) : null}
 
-          <GroveStatus
-            config={config}
-            rewardVaultLamports={snap.rewardVaultDistributable}
-            chainTime={chainTime}
-            claimable={claimable}
-          />
-
-          {/* The centerpiece: the grove itself, from the real rig count. */}
-          <RigVisual rigs={rigs} running={scheduleLive && !paused} />
-
-          <YieldPanel
-            config={config}
-            miner={miner}
-            claimable={claimable}
-            rewardVaultLamports={snap.rewardVaultDistributable}
-            chainTime={chainTime}
-            snapshotTime={snap.chainTimeSeconds}
-            weight={miner?.weight ?? 0}
-          />
-
-          {/* The mobile journey, top to bottom: see the opportunity
-              (status → runway → yield), plant (the primary action, before any
-              management of the position it creates), then manage, then the
-              social / analytical / verification tail. */}
-          <hr className="rule" />
-
+          {/* 4 · The primary action. */}
           <BuyPanel
             config={config}
             chainTime={chainTime}
@@ -385,24 +392,10 @@ export function Game({ host }: { host: Host }) {
             accruedRewardLamports={claimable}
             busy={busy === 'buy'}
             onBuy={onBuy}
+            error={buyError}
           />
 
-          {!host.walletConnected ? (
-            <div className="banner">
-              Wallet disconnected. Your grove keeps growing — reconnect to claim,
-              replant or plant.
-            </div>
-          ) : null}
-          {paused ? (
-            <div className="banner banner--alert">
-              The program is halted by its authority. Existing state is
-              unaffected; actions resume when it is unhalted.
-            </div>
-          ) : null}
-          {actionError ? (
-            <div className="banner banner--alert">{actionError}</div>
-          ) : null}
-
+          {/* 5 · The position and its two actions. */}
           <MinerCockpit
             config={config}
             miner={miner}
@@ -415,8 +408,7 @@ export function Game({ host }: { host: Host }) {
             onReplant={onCompound}
             onHarvest={() => setConfirmingClaim(true)}
             claimLabel={CLAIM_ACTION_LABEL}
-            hasReferralLink={hasPosition && host.address !== null}
-            referralSummary={referralSummary}
+            error={positionError}
           />
 
           {confirmingClaim && claimQuote ? (
@@ -431,8 +423,14 @@ export function Game({ host }: { host: Host }) {
             />
           ) : null}
 
+          {/* 6 · The decoded account behind the position. */}
           {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
 
+          <hr className="rule" />
+
+          {/* 7 · Status and social: milestones, referrals, the room. */}
+          {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
           {host.room ? (
             <RoomLeaderboard
               roomId={host.room.id}
@@ -443,14 +441,7 @@ export function Game({ host }: { host: Host }) {
             />
           ) : null}
 
-          <hr className="rule" />
-
-          <ReferralPanel
-            wallet={host.address}
-            hasPosition={hasPosition}
-            onSummary={onReferralSummary}
-          />
-          {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          {/* 8 · Share the position; see how it dilutes. */}
           <ProgressShareCard
             wallet={host.address}
             miner={miner}
@@ -461,11 +452,13 @@ export function Game({ host }: { host: Host }) {
 
           <hr className="rule" />
 
+          {/* 9 · History: this wallet's, then the whole grove's. */}
           <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
           <DistributionPanel viewer={host.address} />
 
           <hr className="rule" />
 
+          {/* 10 · Verification: vaults, accounts, authorities. */}
           <TransparencyPanel
             config={config}
             miner={miner}

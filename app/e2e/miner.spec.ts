@@ -222,7 +222,7 @@ test.describe('miner cadence surfaces', () => {
     await expect.poll(() => sends).toBeGreaterThan(0);
   });
 
-  test('cockpit shows position, penalty countdown, replant arithmetic and reward health', async ({ page }) => {
+  test('cockpit shows position, penalty countdown, replant arithmetic and reward state', async ({ page }) => {
     await stubCherryHost(page);
     await stubRpc(page);
     await page.goto('/');
@@ -232,7 +232,16 @@ test.describe('miner cadence surfaces', () => {
     await expect(cockpit.getByTestId('harvest-state')).toContainText('15%');
     await expect(cockpit.getByTestId('harvest-state')).toContainText(/5% in 18h/);
     await expect(cockpit.getByTestId('replant-state')).toContainText(/Resulting grove/);
-    await expect(cockpit.getByTestId('reward-health')).toContainText(/Funded until/);
+    // Pool and runway detail lives in the yield panel; the cockpit carries the state.
+    await expect(cockpit.getByTestId('reward-state')).toHaveText(/Live|Low runway|Dormant|Unfunded/);
+    await expect(cockpit.getByText('Your effective rate')).toBeVisible();
+    // The actions come before the detail that explains them.
+    const actionsFirst = await cockpit.evaluate((el) => {
+      const claim = Array.from(el.querySelectorAll('button')).find((b) => /Claim SOL/i.test(b.textContent ?? ''));
+      const harvest = el.querySelector('[data-testid="harvest-state"]');
+      return !!claim && !!harvest && !!(claim.compareDocumentPosition(harvest) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(actionsFirst).toBe(true);
   });
 
   test('a wallet with no seeds sees Plant Seeds above a compact cockpit', async ({ page }) => {

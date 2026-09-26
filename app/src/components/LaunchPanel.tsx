@@ -87,6 +87,17 @@ export function LaunchPanel({
     }
   }
 
+  // Once the grove is public there is no gate left to explain: one line.
+  if (phase === 'public' || phase === 'skrSnsEarly') {
+    return (
+      <section className="launch launch--compact" data-testid="launch-panel" data-phase={phase}>
+        <p className="launch-line">
+          {title} · {line}
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className={`launch launch--${phase}`} data-testid="launch-panel" data-phase={phase}>
       <p className="launch-title">{title}</p>
@@ -99,7 +110,8 @@ export function LaunchPanel({
       {phase === 'skrGenesis' && allowance !== null && config.genesisCapRigs !== null ? (
         <p className="note" data-testid="genesis-allowance">
           Genesis fresh buys: {lifetimeRigsBought.toString()} /{' '}
-          {config.genesisCapRigs.toString()} · {allowance.toString()} remaining
+          {config.genesisCapRigs.toString()} · {allowance.toString()} remaining. Replanting
+          does not consume it.
         </p>
       ) : null}
       {eligibility ? <p className="note">{eligibility}</p> : null}

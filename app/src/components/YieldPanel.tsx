@@ -7,17 +7,19 @@
  * `rigs_engine::yield_curve` checked row-for-row against the Rust engine, from
  * decoded program state and the chain clock. The APR is the rate the reward
  * accumulator is paying right now; it is never a target, a cap or a promise.
+ *
+ * This is the opportunity as a newcomer sees it — rate, pool, runway, price.
+ * Figures about the viewer's own position live in the cockpit.
  */
 import { useMemo } from 'react';
 
-import { formatCount, formatDuration, formatSol, formatUtcInstant } from '../lib/format';
+import { formatBps, formatCount, formatDuration, formatSol, formatUtcInstant } from '../lib/format';
 import type { Config, Miner } from '../lib/program/accounts';
-import { WEIGHT_BASE, WEIGHT_REFERRED, fundedRunwaySeconds } from '../lib/program/accrual';
+import { WEIGHT_BASE, fundedRunwaySeconds } from '../lib/program/accrual';
 import {
   PHASE_LABEL,
   SECONDS_PER_YEAR,
   aprBps,
-  effectiveRateBps,
   formatAprBps,
   hypotheticalPlanting,
   nextThreshold,
@@ -42,22 +44,17 @@ const TAGLINE: Record<YieldPhase, string> = {
 export function YieldPanel({
   config,
   miner,
-  claimable,
   rewardVaultLamports,
   chainTime,
   snapshotTime,
-  weight = 0,
 }: {
   config: Config;
   miner: Miner | null;
-  claimable: bigint;
   rewardVaultLamports: bigint;
   /** Live, interpolated chain clock. */
   chainTime: bigint;
   /** Chain clock at the last fetch — the projection is pinned to state. */
   snapshotTime: bigint;
-  /** The viewer's reward weight per rig (0 = none / base). */
-  weight?: number;
 }) {
   const inputs = yieldInputs(config, chainTime);
   const apr = aprBps(inputs);
@@ -78,10 +75,6 @@ export function YieldPanel({
       return null;
     }
   }, [config, miner, snapshotTime]);
-
-  const effective = miner ? effectiveRateBps(miner, claimable, chainTime) : null;
-  const referred = weight === Number(WEIGHT_REFERRED);
-  const yourApr = referred ? aprBps(inputs, 0n, WEIGHT_REFERRED) : null;
 
   const fullYear = projection !== null && projection.horizonSeconds >= SECONDS_PER_YEAR;
   // Only a full funded year earns the name APY. A shorter window is shown as
@@ -117,23 +110,18 @@ export function YieldPanel({
       <p className="yield-tagline">{TAGLINE[phase]}</p>
 
       <div className="yield-readouts">
+        <Readout label="Reward pool" value={formatSol(rewardVaultLamports, 3)} unit="SOL" />
+        <Readout label="Funded runway" value={runway > 0n ? formatDuration(runway) : 'Ended'} />
+        <Readout
+          label={`Seed price · +${formatBps(config.purchaseFeeBps)} fee`}
+          value={formatSol(config.rigPriceLamports, 4)}
+          unit="SOL"
+        />
         <Readout
           label={apyLabel}
           value={projection && projectionsAllowed(config, chainTime) ? formatAprBps(projection.yieldBps) : '—'}
         />
         <Readout label="Next decay" value={nextLabel} />
-        <Readout
-          label="Reward pool"
-          value={`${formatSol(rewardVaultLamports, 3)} SOL · ${runway > 0n ? formatDuration(runway) : 'ended'}`}
-        />
-        <Readout label="Your accrued" value={formatSol(claimable, 6)} unit="SOL" />
-        {yourApr !== null ? (
-          <Readout label="Your APR · 1.05× referred weight" value={formatAprBps(yourApr)} />
-        ) : null}
-        <Readout
-          label="Your effective rate"
-          value={effective === null ? '—' : formatAprBps(effective)}
-        />
       </div>
 
       <p className="note">

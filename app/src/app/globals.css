@@ -291,6 +291,24 @@ button.primary:disabled {
   border-color: var(--rule);
 }
 
+/* The page's primary actions — Plant, Claim — are the only solid buttons. */
+button.primary.cta {
+  background: var(--blossom);
+  border-color: var(--blossom);
+  color: var(--bg);
+  font-weight: 700;
+}
+button.primary.cta:hover:not(:disabled) {
+  background: var(--blossom-soft);
+  border-color: var(--blossom-soft);
+}
+button.primary.cta:disabled {
+  background: var(--bg-panel);
+  border-color: var(--rule);
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
 .stepper {
   display: grid;
   grid-template-columns: 46px 1fr 46px;
@@ -350,6 +368,34 @@ button.primary:disabled {
   padding: 12px 14px;
 }
 
+/* Collapsed sections stack as a list, not as one fused block. */
+details.panel {
+  margin: 8px 0;
+}
+
+/* One sentence under the status line: what this is. */
+.lede {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* PLANT SEEDS — the primary action card. */
+.plant {
+  background: var(--bg-panel);
+  border: 1px solid var(--rule-strong);
+  border-top: 2px solid var(--blossom);
+  border-radius: 3px;
+  padding: 14px;
+  margin: 14px 0;
+}
+.plant > .section-title {
+  color: var(--blossom);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 /* Daily cadence: one dense instrument panel, still the same terminal grove. */
 .cockpit {
   background: var(--bg-panel);
@@ -358,6 +404,11 @@ button.primary:disabled {
   border-radius: 3px;
   padding: 14px;
   margin: 14px 0;
+}
+
+/* Nothing to act on yet: the Plant card above keeps the only accent. */
+.cockpit--empty {
+  border-top: 1px solid var(--rule-strong);
 }
 
 .cockpit-heading {
@@ -396,6 +447,10 @@ button.primary:disabled {
 .cockpit-state--lowRunway { color: var(--blossom-soft); }
 .cockpit-state--dormant,
 .cockpit-state--unfunded { color: var(--text-faint); }
+
+.cockpit-summary {
+  margin-top: 10px;
+}
 
 .cockpit-grid {
   display: grid;
@@ -451,6 +506,14 @@ button.primary:disabled {
   color: var(--text);
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.trust-details {
+  margin-top: 12px;
+}
+.trust-details > summary {
+  cursor: pointer;
+  padding: 8px 0;
 }
 
 .trust-row {
@@ -542,7 +605,7 @@ button.primary:disabled {
   .activity-meta a { text-align: left; }
 }
 
-/* Launch state: a quiet strip above the yield. Blossom only while live. */
+/* Launch state: a quiet strip above Plant seeds. Blossom only while live. */
 .launch {
   border: 1px solid var(--rule);
   border-left: 2px solid var(--rule-strong);
@@ -550,6 +613,12 @@ button.primary:disabled {
   border-radius: 2px;
   padding: 10px 12px;
   margin-bottom: 12px;
+}
+.launch--compact {
+  padding: 8px 12px;
+}
+.launch--compact .launch-line {
+  margin: 0;
 }
 .launch--skrGenesis,
 .launch--skrSnsEarly {
@@ -587,7 +656,6 @@ button.primary:disabled {
 .yield {
   background: var(--bg-panel);
   border: 1px solid var(--rule);
-  border-top: 2px solid var(--blossom);
   border-radius: 3px;
   padding: 14px 14px 12px;
   margin-bottom: 16px;

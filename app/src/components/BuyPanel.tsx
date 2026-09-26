@@ -34,6 +34,7 @@ export function BuyPanel({
   accruedRewardLamports,
   busy,
   onBuy,
+  error = null,
 }: {
   config: Config;
   chainTime: bigint;
@@ -52,6 +53,8 @@ export function BuyPanel({
   accruedRewardLamports: bigint;
   busy: boolean;
   onBuy: (count: bigint) => void;
+  /** The last failed planting, in product language. */
+  error?: string | null;
 }) {
   const [count, setCount] = useState<bigint>(10n);
   const [pendingCount, setPendingCount] = useState<bigint | null>(null);
@@ -95,8 +98,18 @@ export function BuyPanel({
   };
 
   return (
-    <section>
+    <section className="plant" data-testid="plant-panel">
       <h2 className="section-title">Plant seeds</h2>
+
+      {/* What stops or changes this planting comes before the controls. */}
+      {closedReason ? <p className="banner banner--alert">{closedReason}</p> : null}
+      {!emissionLive ? (
+        <p className="banner banner--alert" data-testid="buy-dormant-note">
+          No funded emission right now. Seeds planted now earn nothing until a new
+          schedule is separately funded — planting does not restart emission, and
+          no refill is promised.
+        </p>
+      ) : null}
 
       <div className="stepper">
         <button
@@ -172,17 +185,35 @@ export function BuyPanel({
         />
       </div>
 
+      {/* The essential rules, read once, directly above the button. */}
       <div className="buy-reset-warning" data-testid="buy-reset-warning">
-        <strong>Fresh-purchase clock reset</strong>
-        <span>{resetDisclosure}</span>
-        {hasPosition && accruedRewardLamports > 0n ? (
-          <span>Accrued now: {formatSol(accruedRewardLamports, 6)} SOL.</span>
-        ) : null}
+        <strong>Before you plant</strong>
+        <span>
+          {resetDisclosure}
+          {hasPosition && accruedRewardLamports > 0n
+            ? ` Accrued now: ${formatSol(accruedRewardLamports, 6)} SOL.`
+            : null}
+        </span>
+        <span>
+          Seeds are game production capacity, not a deposit. They are
+          non-redeemable — you are planting capacity, not staking principal you
+          can withdraw later.
+        </span>
       </div>
+
+      {referralNote ? (
+        <p
+          className={officialFallback ? 'banner' : 'note'}
+          data-testid="referral-note"
+          data-official-fallback={officialFallback ? 'true' : 'false'}
+        >
+          {referralNote}
+        </p>
+      ) : null}
 
       <button
         type="button"
-        className="primary"
+        className="primary cta"
         style={{ width: '100%' }}
         disabled={disabled || busy || !quote || count > maxAllowed}
         onClick={() => quote && setPendingCount(quote.count)}
@@ -214,35 +245,7 @@ export function BuyPanel({
         </div>
       ) : null}
 
-      {closedReason ? <p className="note">{closedReason}</p> : null}
-      {genesisRemaining !== null ? (
-        <p className="note" data-testid="buy-genesis-allowance">
-          Genesis allowance remaining: {genesisRemaining.toString()} fresh seed
-          {genesisRemaining === 1n ? '' : 's'}. Replanting does not consume it.
-        </p>
-      ) : null}
-      {referralNote ? (
-        <p
-          className={officialFallback ? 'banner' : 'note'}
-          data-testid="referral-note"
-          data-official-fallback={officialFallback ? 'true' : 'false'}
-        >
-          {referralNote}
-        </p>
-      ) : null}
-      {!emissionLive ? (
-        <p className="note" data-testid="buy-dormant-note">
-          No funded emission right now. Seeds planted now earn nothing until a new
-          schedule is separately funded — planting does not restart emission, and
-          no refill is promised.
-        </p>
-      ) : null}
-
-      <p className="note">
-        Seeds are game production capacity, not a deposit. They are
-        non-redeemable — you are planting capacity, not staking principal you can
-        withdraw later.
-      </p>
+      {error ? <div className="banner banner--alert">{error}</div> : null}
     </section>
   );
 }

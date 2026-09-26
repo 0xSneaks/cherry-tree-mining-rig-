@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * Referrals — your link, your standing, and the season board, from
+ * Referrals — how they work, your standing, and the season board, from
  * `/api/referrals`. Status only: the program pays referrers nothing and has no
- * levels. Any season prize is separately funded and disclosed.
+ * levels. Any season prize is separately funded and disclosed. The link itself
+ * is copied from the Share the grove card, which follows this panel.
  */
 import { useEffect, useState } from 'react';
 
@@ -21,25 +22,14 @@ type Api = {
   note: string;
 };
 
-export type ReferralSummary = {
-  total: number;
-  qualified: number;
-  pending: number;
-  configured: boolean;
-  tier: string | null;
-};
-
 export function ReferralPanel({
   wallet,
   hasPosition,
-  onSummary,
 }: {
   wallet: string | null;
   hasPosition: boolean;
-  onSummary?: (summary: ReferralSummary | null) => void;
 }) {
   const [result, setResult] = useState<{ key: string; data: Api } | null>(null);
-  const [copied, setCopied] = useState(false);
   const [season, setSeason] = useState<string | null>(null);
   const requestKey = `${wallet ?? 'disconnected'}:${season ?? 'all'}`;
 
@@ -61,40 +51,14 @@ export function ReferralPanel({
 
   const data = result?.key === requestKey ? result.data : null;
 
-  useEffect(() => {
-    const me = data?.me;
-    onSummary?.(me ? {
-      total: me.total,
-      qualified: me.qualified,
-      pending: me.pending,
-      configured: me.configured,
-      tier: me.tier?.label ?? null,
-    } : null);
-  }, [data?.me, onSummary]);
-
-  const link =
-    wallet && typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?ref=${wallet}`
-      : null;
-
   return (
     <details className="panel" data-testid="referral-panel">
       <summary className="section-title">Referrals</summary>
-      {link && hasPosition ? (
-        <>
-          <p className="note">
-            Share your link. A new planter who uses it on their first planting gets the 1.05× referred weight on the
-            same funded emission. What you get is status here — no payout, no levels.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              void navigator.clipboard?.writeText(link).then(() => setCopied(true), () => setCopied(false));
-            }}
-          >
-            {copied ? 'Link copied' : 'Copy referral link'}
-          </button>
-        </>
+      {wallet && hasPosition ? (
+        <p className="note">
+          A new planter who uses your link on their first planting gets the 1.05× referred weight on the same
+          funded emission. What you get is status here — no payout, no levels. Copy your link from Share the grove.
+        </p>
       ) : (
         <p className="note">Your referral link appears after your first planting — a referrer must already be a planter.</p>
       )}

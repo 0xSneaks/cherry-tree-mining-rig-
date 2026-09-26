@@ -493,8 +493,8 @@ export function Game({ host }: { host: Host }) {
             chainTime={chainTime}
             onShare={host.share}
           />
-          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
           <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
+          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
 
           <hr className="rule" />
 

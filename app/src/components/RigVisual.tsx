@@ -1,210 +1,88 @@
 /**
- * The mine shaft: a cross-section, not a scene.
+ * Grove visual: the miner's tree, not a mine shaft.
  *
- * Deterministic tier from the real rig count, cosmetic only — it never
- * affects a number. Individual machines are deliberately not drawn: at 500
- * rigs that is a pointless render, and a tier reads faster anyway.
- *
- * The canvas is sized to its content so a small operation does not sit in a
- * field of empty rock.
+ * Cosmetic only — tier is derived from the real rig/seed count and never
+ * touches a number. Assets live in /grove.
  */
-export type RigTier = {
-  key: string;
+
+export type GroveTier = {
+  key: 'seed' | 'sprout' | 'young' | 'bloom' | 'producing';
   label: string;
-  /** Gallery levels cut into the rock. */
-  levels: number;
-  /** Machines drawn per gallery, split either side of the hoist shaft. */
-  perLevel: number;
+  caption: string;
+  src: string;
+  min: bigint;
+  mark: string;
 };
 
-export function rigTier(rigs: bigint): RigTier {
-  if (rigs >= 500n)
-    return { key: 'facility', label: 'MAJOR MINING FACILITY', levels: 4, perLevel: 6 };
-  if (rigs >= 100n)
-    return { key: 'multi', label: 'MULTI-RIG SHAFT', levels: 3, perLevel: 4 };
-  if (rigs >= 25n)
-    return { key: 'industrial', label: 'INDUSTRIAL RIG', levels: 2, perLevel: 3 };
-  if (rigs >= 5n)
-    return { key: 'small', label: 'SMALL MINING MACHINE', levels: 1, perLevel: 2 };
-  if (rigs >= 1n)
-    return { key: 'hand', label: 'HAND-OPERATED SHAFT', levels: 1, perLevel: 1 };
-  return { key: 'empty', label: 'SHAFT IDLE', levels: 1, perLevel: 0 };
+export const GROVE_TIERS: GroveTier[] = [
+  { key: 'seed', label: 'Bare soil', caption: 'Plant your first seed to sprout a seedling', src: '/grove/stage-0-seed.svg', min: 0n, mark: '0' },
+  { key: 'sprout', label: 'Sapling', caption: 'Taking root', src: '/grove/stage-1-sprout.svg', min: 1n, mark: '1+' },
+  { key: 'young', label: 'Young tree', caption: 'Growing fast', src: '/grove/stage-2-young.svg', min: 100n, mark: '100+' },
+  { key: 'bloom', label: 'Cherry tree', caption: 'In full bloom', src: '/grove/stage-3-bloom.svg', min: 1000n, mark: '1K+' },
+  { key: 'producing', label: 'Producing', caption: 'Earning rewards', src: '/grove/stage-4-producing.svg', min: 10_000n, mark: '10K+' },
+];
+
+export function groveTier(rigs: bigint): GroveTier {
+  let current = GROVE_TIERS[0];
+  for (const tier of GROVE_TIERS) {
+    if (rigs >= tier.min) current = tier;
+  }
+  return current;
 }
 
-// A narrow viewBox on purpose: the SVG scales to the column width, so fewer
-// user units means larger machines on a 390px phone.
-const WIDTH = 300;
-const SURFACE_Y = 44;
-const LEVEL_GAP = 40;
-const CENTRE = WIDTH / 2;
-/** Half-width of the hoist shaft; galleries start clear of it. */
-const SHAFT_CLEARANCE = 22;
-const MARGIN = 22;
-
-/**
- * Machine positions along one gallery: evenly spaced either side of the
- * hoist shaft, with the left bank filled first so an odd count leans the way
- * the headframe does.
- */
-function galleryPositions(count: number): number[] {
-  if (count === 0) return [];
-  if (count === 1) return [CENTRE - SHAFT_CLEARANCE - 26];
-
-  const left = Math.ceil(count / 2);
-  const right = count - left;
-
-  const spread = (n: number, from: number, to: number): number[] => {
-    if (n === 0) return [];
-    if (n === 1) return [(from + to) / 2];
-    const step = (to - from) / (n - 1);
-    return Array.from({ length: n }, (_, i) => from + step * i);
-  };
-
-  return [
-    ...spread(left, MARGIN + 14, CENTRE - SHAFT_CLEARANCE - 14),
-    ...spread(right, CENTRE + SHAFT_CLEARANCE + 14, WIDTH - MARGIN - 14),
-  ];
+function nextTier(rigs: bigint): GroveTier | null {
+  for (const tier of GROVE_TIERS) {
+    if (rigs < tier.min) return tier;
+  }
+  return null;
 }
 
-function Machine({
-  x,
-  y,
-  running,
-  delay,
-}: {
-  x: number;
-  y: number;
-  running: boolean;
-  delay: number;
-}) {
-  return (
-    <g>
-      {/* Drill head biting into the gallery floor */}
-      <line x1={x} y1={y - 4} x2={x} y2={y} stroke="var(--steel)" strokeWidth="1.2" />
-      <line x1={x - 3} y1={y - 1} x2={x + 3} y2={y - 1} stroke="var(--steel)" strokeWidth="1.2" />
-      {/* Housing */}
-      <rect
-        x={x - 11}
-        y={y - 17}
-        width="22"
-        height="13"
-        fill="var(--bg)"
-        stroke="var(--steel)"
-        strokeWidth="1.2"
-      />
-      {/* Status lamp — amber only while the schedule is actually paying */}
-      <rect
-        x={x - 8}
-        y={y - 14}
-        width="5"
-        height="7"
-        fill={running ? 'var(--blossom)' : 'var(--rule-strong)'}
-      >
-        {running ? (
-          <animate
-            attributeName="opacity"
-            values="0.25;1;0.25"
-            dur="1.8s"
-            begin={`${delay}s`}
-            repeatCount="indefinite"
-          />
-        ) : null}
-      </rect>
-      {/* Vent slots */}
-      <line x1={x - 1} y1={y - 13} x2={x + 7} y2={y - 13} stroke="var(--rule-strong)" strokeWidth="1" />
-      <line x1={x - 1} y1={y - 10} x2={x + 7} y2={y - 10} stroke="var(--rule-strong)" strokeWidth="1" />
-      <line x1={x - 1} y1={y - 7} x2={x + 7} y2={y - 7} stroke="var(--rule-strong)" strokeWidth="1" />
-    </g>
-  );
+function progressToNext(rigs: bigint): number {
+  const next = nextTier(rigs);
+  if (!next) return 1;
+  const current = groveTier(rigs);
+  const span = Number(next.min - current.min);
+  if (span <= 0) return 1;
+  return Math.min(1, Number(rigs - current.min) / span);
 }
 
 export function RigVisual({ rigs, running }: { rigs: bigint; running: boolean }) {
-  const tier = rigTier(rigs);
-  const height = SURFACE_Y + tier.levels * LEVEL_GAP + 16;
-  const shaftBottom = SURFACE_Y + tier.levels * LEVEL_GAP;
+  const tier = groveTier(rigs);
+  const next = nextTier(rigs);
+  const pct = Math.round(progressToNext(rigs) * 100);
 
   return (
-    <figure style={{ margin: '14px 0 0' }} aria-label={`Mine shaft: ${tier.label.toLowerCase()}`}>
-      <svg
-        viewBox={`0 0 ${WIDTH} ${height}`}
-        width="100%"
-        role="img"
-        aria-hidden="true"
-        style={{ display: 'block', background: 'var(--bg-inset)' }}
-      >
-        {/* Headframe: winding wheel and A-frame above the surface */}
-        <circle cx={CENTRE} cy="13" r="8" fill="none" stroke="var(--steel)" strokeWidth="1.4" />
-        <circle cx={CENTRE} cy="13" r="2" fill="var(--steel)" />
-        <path
-          d={`M${CENTRE - 24} ${SURFACE_Y} L${CENTRE} 20 L${CENTRE + 24} ${SURFACE_Y}`}
-          fill="none"
-          stroke="var(--steel)"
-          strokeWidth="1.4"
-        />
-        <line
-          x1={CENTRE - 12}
-          y1={SURFACE_Y - 11}
-          x2={CENTRE + 12}
-          y2={SURFACE_Y - 11}
-          stroke="var(--rule-strong)"
-          strokeWidth="1"
-        />
+    <figure className="grove" aria-label={`Grove: ${tier.label.toLowerCase()}`}>
+      <div className="grove-hero">
+        <img src={tier.src} alt="" width={400} height={320} />
+      </div>
 
-        {/* Surface line */}
-        <line x1="0" y1={SURFACE_Y} x2={WIDTH} y2={SURFACE_Y} stroke="var(--rule-strong)" strokeWidth="1" />
-
-        {/* Hoist shaft */}
-        <line x1={CENTRE - 7} y1={SURFACE_Y} x2={CENTRE - 7} y2={shaftBottom} stroke="var(--rule-strong)" strokeWidth="1.2" />
-        <line x1={CENTRE + 7} y1={SURFACE_Y} x2={CENTRE + 7} y2={shaftBottom} stroke="var(--rule-strong)" strokeWidth="1.2" />
-        {/* Cage, riding the shaft only while the mine is producing */}
-        <rect x={CENTRE - 5} y={SURFACE_Y + 6} width="10" height="12" fill="var(--steel)" opacity="0.5">
-          {running ? (
-            <animate
-              attributeName="y"
-              values={`${SURFACE_Y + 6};${shaftBottom - 18};${SURFACE_Y + 6}`}
-              dur="7s"
-              repeatCount="indefinite"
-            />
-          ) : null}
-        </rect>
-
-        {Array.from({ length: tier.levels }, (_, level) => {
-          const y = SURFACE_Y + (level + 1) * LEVEL_GAP;
+      <ol className="grove-stages">
+        {GROVE_TIERS.map((t) => {
+          const reached = rigs >= t.min;
+          const active = t.key === tier.key;
           return (
-            <g key={level}>
-              {/* Gallery floor */}
-              <line x1={MARGIN} y1={y} x2={WIDTH - MARGIN} y2={y} stroke="var(--rule-strong)" strokeWidth="1.2" />
-              {/* Rock either side, hatched lightly */}
-              <line x1="0" y1={y} x2={MARGIN} y2={y} stroke="var(--rule)" strokeWidth="1" strokeDasharray="2 4" />
-              <line
-                x1={WIDTH - MARGIN}
-                y1={y}
-                x2={WIDTH}
-                y2={y}
-                stroke="var(--rule)"
-                strokeWidth="1"
-                strokeDasharray="2 4"
-              />
-              {galleryPositions(tier.perLevel).map((x, i) => (
-                <Machine key={i} x={x} y={y} running={running} delay={(level * 3 + i) * 0.23} />
-              ))}
-            </g>
+            <li key={t.key} className={active ? 'is-active' : reached ? 'is-reached' : undefined}>
+              <img src={t.src} alt="" />
+              <span>{t.mark}</span>
+            </li>
           );
         })}
-      </svg>
-      <figcaption
-        style={{
-          fontSize: 11,
-          letterSpacing: '0.18em',
-          color: 'var(--text-faint)',
-          marginTop: 8,
-          display: 'flex',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span>{tier.label}</span>
-        <span>{running ? 'PRODUCING' : 'IDLE'}</span>
+      </ol>
+
+      <figcaption className="grove-caption">
+        <span>
+          {tier.label} · {rigs.toString()} seeds
+        </span>
+        <span className={running ? 'grove-live' : undefined}>{running ? 'Growing' : 'Not planted'}</span>
       </figcaption>
+
+      <div className="grove-bar" aria-hidden="true">
+        <i style={{ width: `${pct}%` }} />
+      </div>
+      <p className="grove-hint">
+        {next ? `${next.label} at ${next.min.toString()} seeds` : tier.caption}
+      </p>
     </figure>
   );
 }

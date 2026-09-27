@@ -35,6 +35,7 @@ import {
 import { programAddresses } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
 import { withdrawFeesInstruction } from './admin-instructions';
+import { feeWithdrawable, resolveWithdrawAmount } from './fee-math';
 
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 
@@ -79,28 +80,37 @@ async function main(): Promise<void> {
     );
   }
 
-  // Rent stays put: only the surplus above the rent-exempt reserve can move.
-  const available = await vaultDistributable(chain, pdas.feeVault);
-  const amount = requested === 'all' ? available : requested;
+  // Rent stays put: only the surplus above the rent-exempt reserve can move,
+  // and reserved referral commissions never move (§7a item 11):
+  // withdrawable = distributable(FEE) - reserved_commissions.
+  const distributable = await vaultDistributable(chain, pdas.feeVault);
+  let limits;
+  try {
+    limits = feeWithdrawable(distributable, config.reservedCommissions);
+  } catch (e) {
+    fail(e instanceof Error ? e.message : String(e));
+  }
+  const available = limits.withdrawable;
 
   section('about to withdraw');
   row('program ID', PROGRAM_ID);
   row('FEE VAULT PDA', pdas.feeVault);
+  row('gross distributable FEE', `${sol(limits.distributable)} SOL`);
+  row('reserved commissions', `${sol(limits.reserved)} SOL (never withdrawable)`);
   row('withdrawable now', `${sol(available)} SOL`);
-  row('amount', `${amount} lamports (${sol(amount)} SOL)`);
   row('destination', config.feeRecipient);
   row('  (pinned in config)', 'the program rejects any other destination');
   row('signed by', authority.address);
   row('total fees to date', `${sol(config.totalProtocolFees)} SOL`);
   row('already withdrawn', `${sol(config.totalFeesWithdrawn)} SOL`);
 
-  if (amount <= 0n) fail('nothing to withdraw.');
-  if (amount > available) {
-    fail(
-      `requested ${sol(amount)} SOL but only ${sol(available)} SOL is above the ` +
-        'rent-exempt reserve.',
-    );
+  let amount: bigint;
+  try {
+    amount = resolveWithdrawAmount(requested, limits);
+  } catch (e) {
+    fail(e instanceof Error ? e.message : String(e));
   }
+  row('amount', `${amount} lamports (${sol(amount)} SOL)`);
 
   // Proof that the other two vaults are untouched, measured rather than claimed.
   const rewardBefore = await lamportsOf(chain, pdas.rewardVault);
@@ -133,6 +143,12 @@ async function main(): Promise<void> {
       config.totalFeesWithdrawn + amount,
     ],
     ['fee_recipient unchanged', after.feeRecipient, config.feeRecipient],
+    ['reserved commissions unchanged', after.reservedCommissions, config.reservedCommissions],
+    [
+      'FEE still backs the reservation',
+      (await vaultDistributable(chain, pdas.feeVault)) >= after.reservedCommissions,
+      true,
+    ],
   ];
 
   let bad = 0;

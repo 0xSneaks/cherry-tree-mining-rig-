@@ -149,7 +149,13 @@ Production V2 Genesis, only `.skr` is considered by the on-chain gate;
   purchase to an existing planter.
 - **Rejected:** self-referral, a non-planter referrer, a forged referrer
   account, and any referrer on a later purchase.
-- **No payouts.** There is no referrer payout and there are no levels.
+- **Referral commission.** A direct referrer accrues an on-chain commission
+  of up to 20% of the protocol fees its referred planters pay on seed
+  purchases and replants; the Protocol Treasury keeps 80%, and always at
+  least 8% of the amount planted, so a fee below 10% shrinks the commission
+  and a fee of 8% or less makes it zero. It is reserved in the fee vault and
+  claimed with `claim_commission`. One level only; early-claim fees earn
+  none.
 - **Links.** `?ref=<wallet>` is read from the launch URL in both modes
   (`app/e2e/render.spec.ts`, "referral link"). Whether Cherry forwards a
   shared link's query string into the mini-app launch is Cherry host

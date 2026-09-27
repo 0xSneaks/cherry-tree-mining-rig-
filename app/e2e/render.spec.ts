@@ -115,7 +115,9 @@ test.describe('embedded path', () => {
     await expect(note).toContainText(/SOL net/);
     await expect(note).toContainText(/drops in 1[78]h/);
     await expect(note).toContainText('60% of the fee goes to the Protocol Treasury, 40% to the other planters.');
-    await expect(note).toContainText('Replanting is never charged.');
+    // The compound fee is disclosed, never presented as free (§7a item 2).
+    await expect(note).toContainText('Replanting does not pay the early-claim fee, but the 3% replant (compound) fee applies.');
+    await expect(note).not.toContainText('never charged');
   });
 
   /** §12.21 — zero connect-wallet UI in the embed. */

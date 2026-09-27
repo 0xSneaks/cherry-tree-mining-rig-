@@ -1834,13 +1834,15 @@ impl Fx {
     }
 }
 
-/// Test 89 on-chain: a complete lock root carrying `forfeited` finalizes;
-/// the close releases `E - final_total` U → Z, then pays exactly
-/// `floor(0.80 forfeited)` from the lock vault to the Protocol Treasury
-/// (`config.fee_recipient`); 20% and all other released capacity stay in Z;
-/// L untouched; base vaults untouched.
+/// Test 89 on-chain, fail-closed half. The tight bound
+/// `forfeited <= sum A_i - final_total` needs `sum A_i` from lock
+/// registration, which this program version does not have. So a lock root
+/// carrying any forfeiture — even one inside `E - total` — is refused, and a
+/// forfeiture-free lock pool closes with 100% of released capacity in `Z`
+/// and nothing to the treasury. The 80/20 split itself is covered by the
+/// engine (`crates/rigs-engine/tests/fruit_ledger.rs`).
 #[tokio::test]
-async fn t89_lock_close_pays_eighty_percent_of_forfeited_to_treasury() {
+async fn t89_lock_forfeiture_fails_closed_until_lock_allocation_exists() {
     let mut fx = Fx::with_lock_pool_slot(1).await;
     let now = fx.now().await;
     let (t0, t1) = (now + 10, now + 10 + 5 * 86_400);
@@ -1850,48 +1852,73 @@ async fn t89_lock_close_pays_eighty_percent_of_forfeited_to_treasury() {
     let p = fx.poster.insecure_clone();
 
     let total = 6 * SOL;
-    // forfeited above E - total: rejected.
-    let ix = Fx::post_forfeit_ix(&p.pubkey(), LOCK, 1, 1, t1, total, true, e - total + 1);
-    assert_rigs_error(
-        fx.env.send(ix, &[&p]).await.unwrap_err(),
-        RigsError::InvalidForfeited,
-    );
-    // forfeited on an incomplete root: rejected.
-    let ix = Fx::post_forfeit_ix(&p.pubkey(), LOCK, 1, 1, t1 - 1, total, false, 1);
-    assert_rigs_error(
-        fx.env.send(ix, &[&p]).await.unwrap_err(),
-        RigsError::InvalidForfeited,
-    );
+    for forfeited in [1, SOL + 9, e - total, e - total + 1] {
+        let ix = Fx::post_forfeit_ix(&p.pubkey(), LOCK, 1, 1, t1, total, true, forfeited);
+        assert_rigs_error(
+            fx.env.send(ix, &[&p]).await.unwrap_err(),
+            RigsError::LockPoolsNotImplemented,
+        );
+        fx.env.warp(1).await;
+    }
+    assert_eq!(fx.pool(LOCK, 1).await.pending_version, 0, "nothing posted");
 
-    let forfeited = SOL + 9;
-    let ix = Fx::post_forfeit_ix(&p.pubkey(), LOCK, 1, 1, t1, total, true, forfeited);
-    fx.env.send(ix, &[&p]).await.unwrap();
-    assert_eq!(fx.root(LOCK, 1, 1).await.forfeited, forfeited);
-    assert_eq!(fx.pool(LOCK, 1).await.pending_forfeited, forfeited);
-    fx.env.warp(WINDOW).await;
-    fx.finalize(LOCK, 1, 1).await.unwrap();
-    assert_eq!(fx.pool(LOCK, 1).await.final_forfeited, forfeited);
-
+    fx.settle(LOCK, 1, 1, [5u8; 32], t1, total, true).await;
     let before = fx.ledger(LOCK).await;
     let v_before = fx.v(LOCK).await;
     let treasury_before = fx.env.lamports(fee_recipient()).await;
     let base_before = fx.base_lamports().await;
     fx.close(LOCK, 1).await.unwrap();
     let after = fx.ledger(LOCK).await;
-    let t = forfeited * 8 / 10;
     assert_eq!(after.liabilities, before.liabilities, "L untouched");
     assert_eq!(after.committed, before.committed - (e - total));
-    assert_eq!(after.reserve, before.reserve + (e - total) - t);
-    assert_eq!(fx.v(LOCK).await, v_before - t);
-    assert_eq!(fx.env.lamports(fee_recipient()).await, treasury_before + t);
-    assert_eq!(fx.pool(LOCK, 1).await.forfeit_treasury_released, t);
+    assert_eq!(after.reserve, before.reserve + (e - total), "100% to Z");
+    assert_eq!(fx.v(LOCK).await, v_before);
+    assert_eq!(fx.env.lamports(fee_recipient()).await, treasury_before);
+    assert_eq!(fx.pool(LOCK, 1).await.forfeit_treasury_released, 0);
     assert_eq!(fx.base_lamports().await, base_before, "no base vault moved");
-    // Exactly once.
+}
+
+/// A Final lock root whose carried `forfeited` was injected (corrupted or
+/// pre-upgrade state) cannot release anything: close re-checks the bound,
+/// finds no established `sum A_i`, and refuses without moving lamports.
+#[tokio::test]
+async fn t89_injected_forfeiture_cannot_close() {
+    use anchor_lang::AccountSerialize;
+    let mut fx = Fx::with_lock_pool_slot(1).await;
+    let now = fx.now().await;
+    let (t0, t1) = (now + 10, now + 10 + 86_400);
+    fx.plant_lock_pool(1, 5 * SOL, t0, t1).await;
+    fx.env.set_time(t1).await;
+    fx.settle(LOCK, 1, 1, [5u8; 32], t1, 0, true).await;
+
+    let key = pool_pda(LOCK, 1);
+    let mut pool = fx.pool(LOCK, 1).await;
+    pool.final_forfeited = 5 * SOL;
+    let mut data = Vec::new();
+    pool.try_serialize(&mut data).unwrap();
+    let mut acc = fx.env.account_raw(key).await.unwrap();
+    acc.data = data;
+    fx.env.ctx.set_account(&key, &acc.into());
+
+    let ledger_before = fx.ledger(LOCK).await;
+    let v_before = fx.v(LOCK).await;
+    let treasury_before = fx.env.lamports(fee_recipient()).await;
     fx.env.warp(1).await;
     assert_rigs_error(
         fx.close(LOCK, 1).await.unwrap_err(),
-        RigsError::FruitPoolClosed,
+        RigsError::InvalidForfeited,
     );
+    let after = fx.ledger(LOCK).await;
+    assert_eq!(
+        (after.reserve, after.committed, after.liabilities),
+        (
+            ledger_before.reserve,
+            ledger_before.committed,
+            ledger_before.liabilities
+        )
+    );
+    assert_eq!(fx.v(LOCK).await, v_before);
+    assert_eq!(fx.env.lamports(fee_recipient()).await, treasury_before);
 }
 
 /// Forfeiture is a lock-ledger concept only; a core root carrying it is
@@ -1923,32 +1950,4 @@ async fn forfeit_only_on_lock_and_treasury_is_pinned() {
     let treasury_before = fx.env.lamports(fee_recipient()).await;
     fx.close(CORE, 1).await.unwrap();
     assert_eq!(fx.env.lamports(fee_recipient()).await, treasury_before);
-}
-
-/// A lock close whose treasury (the fee recipient) was pointed at a
-/// program-owned account is refused: released bonus allocation can never be
-/// recycled into a vault.
-#[tokio::test]
-async fn lock_release_refuses_program_owned_treasury() {
-    let mut fx = Fx::with_lock_pool_slot(1).await;
-    let now = fx.now().await;
-    let (t0, t1) = (now + 10, now + 10 + 86_400);
-    fx.plant_lock_pool(1, 5 * SOL, t0, t1).await;
-    fx.env.set_time(t1).await;
-    let p = fx.poster.insecure_clone();
-    let ix = Fx::post_forfeit_ix(&p.pubkey(), LOCK, 1, 1, t1, 0, true, 5 * SOL);
-    fx.env.send(ix, &[&p]).await.unwrap();
-    fx.env.warp(WINDOW).await;
-    fx.finalize(LOCK, 1, 1).await.unwrap();
-
-    let a = fx.admin();
-    let ix = fx.env.set_fee_recipient_ix(&a.pubkey(), reward_vault_pda());
-    fx.env.send(ix, &[&a]).await.unwrap();
-    let mut ix = Fx::close_ix(LOCK, 1);
-    let n = ix.accounts.len();
-    ix.accounts[n - 1].pubkey = reward_vault_pda();
-    assert_rigs_error(
-        fx.env.send(ix, &[]).await.unwrap_err(),
-        RigsError::TreasuryDestinationInvalid,
-    );
 }

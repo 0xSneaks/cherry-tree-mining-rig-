@@ -2,7 +2,9 @@
  * Protocol fee mirrors — `crates/rigs-engine/src/fees.rs` (architecture §7a),
  * checked against Rust-emitted vectors (`app/tests/fees.test.ts`).
  */
-import type { Config } from './accounts';
+import type { Address } from '@solana/kit';
+
+import { unpaidCommission, type Config, type ReferralLedger } from './accounts';
 import {
   BPS_DENOMINATOR,
   FEE_CHANGE_TIMELOCK_SECONDS,
@@ -55,6 +57,49 @@ export function pendingFeeChange(
     secondsRemaining,
     applicable: secondsRemaining === 0n,
   };
+}
+
+/**
+ * A referrer's commission ledger as the claim UI shows it. `none`: no
+ * ledger exists yet (nothing has ever accrued). `invalid`: the account at
+ * the wallet's referral PDA names a different referrer — never claimable.
+ */
+export type CommissionView =
+  | { state: 'none' }
+  | { state: 'invalid' }
+  | { state: 'ready'; accrued: bigint; claimed: bigint; claimable: bigint };
+
+export function commissionView(ledger: ReferralLedger | null, wallet: Address): CommissionView {
+  if (!ledger) return { state: 'none' };
+  if (ledger.referrer !== wallet) return { state: 'invalid' };
+  return {
+    state: 'ready',
+    accrued: ledger.accruedCum,
+    claimed: ledger.claimedCum,
+    claimable: unpaidCommission(ledger),
+  };
+}
+
+/**
+ * Why a commission claim cannot be submitted right now, or `null` when it
+ * can. Only the referrer's own connected wallet may claim; the program
+ * re-checks the same (ledger PDA seeded by the signer, `has_one = referrer`).
+ */
+export function commissionClaimBlock(i: {
+  view: CommissionView;
+  wallet: Address | null;
+  signerAddress: Address | null;
+  paused: boolean;
+  busy: boolean;
+}): string | null {
+  if (!i.wallet || !i.signerAddress) return 'Connect the referrer wallet to claim.';
+  if (i.signerAddress !== i.wallet) return 'Only the referrer wallet itself can claim.';
+  if (i.view.state === 'none') return 'No commission has accrued yet.';
+  if (i.view.state === 'invalid') return 'The commission account does not match this wallet.';
+  if (i.view.claimable === 0n) return 'Nothing to claim right now.';
+  if (i.paused) return 'Claims are paused while the program is paused.';
+  if (i.busy) return 'A claim is already in progress.';
+  return null;
 }
 
 export { FEE_CHANGE_TIMELOCK_SECONDS };

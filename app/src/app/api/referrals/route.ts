@@ -2,7 +2,10 @@
  * `GET /api/referrals[?season=<id>][&wallet=<address>]` — public referral
  * standings, derived from permanent Miner state (referrer + createdAt).
  *
- * Status only: no referrer payout exists and none is implied. Qualification
+ * These standings are status (count, tier, rank). The on-chain referral
+ * commission (architecture §7a item 4) is separate — it accrues in each
+ * referrer's ledger PDA and is claimed on-chain; this route neither computes
+ * nor promises it. Qualification
  * thresholds and seasons are deployment configuration; unconfigured, the
  * leaderboard is closed rather than ranking raw wallet creation.
  */
@@ -84,7 +87,7 @@ export async function GET(req: Request): Promise<Response> {
         past: pastSeasons(list, now).map(seasonView),
         leaderboard: ser(board),
         me: wallet ? ser(myReferrals(referred, wallet, { qualification, at: now })) : null,
-        note: 'Referral standings are status only. Referrers receive no payout from the program; any season prize is separately funded and disclosed.',
+        note: 'Referral standings are status. Separately, direct referrers accrue an on-chain commission of up to 20% of the protocol fees their referred planters pay (the Protocol Treasury keeps 80%, and always at least 8% of the amount planted, so lower fees mean a smaller or zero commission); it is reserved in the fee vault and claimed on-chain. Any season prize is separately funded and disclosed.',
       },
       200,
       { 'cache-control': 'public, max-age=30, stale-while-revalidate=60' },

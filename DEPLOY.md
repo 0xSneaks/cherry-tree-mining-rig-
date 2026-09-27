@@ -68,8 +68,14 @@ To collect:
 ./scripts/devnet-withdraw-fees.sh 0.25   # or: all
 ```
 
-It verifies afterwards that the recipient was credited by exactly the amount
-and that the reward and capital vaults are byte-for-byte unchanged.
+It prints the gross distributable FEE balance, the reserved referral
+commissions and the withdrawable amount
+(`withdrawable = distributable(FEE) - reserved_commissions`); `all` withdraws
+exactly the withdrawable amount and never the reservation, and the script
+refuses to run if the reservation is not backed. It verifies afterwards that
+the recipient was credited by exactly the amount, that the reservation is
+unchanged and still backed, and that the reward and capital vaults are
+byte-for-byte unchanged.
 
 **Nothing here ever holds key material.** Wallets are referenced by file path
 or public key. The scripts print public keys only — never secret bytes, and

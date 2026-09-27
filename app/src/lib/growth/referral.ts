@@ -20,9 +20,10 @@
  *    chain. Unconfigured or unverifiable fails closed to no referral — a
  *    non-planter referrer would make the whole purchase fail on chain.
  *
- * The official referrer receives nothing: there is no referrer payout in this
- * program version. The planter gets the existing 1.05× weight on the same
- * pre-funded emission — no new emission, no levels.
+ * Like any direct referrer, the official referrer accrues the on-chain
+ * referral commission (architecture §7a item 4: up to 20% of eligible fees,
+ * 8% treasury margin, one level). The planter gets the existing 1.05× weight
+ * on the same pre-funded emission — no new emission, no levels.
  */
 import { isAddress, type Address } from '@solana/kit';
 

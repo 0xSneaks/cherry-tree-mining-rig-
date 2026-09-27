@@ -40,6 +40,7 @@ import { DilutionPanel } from './DilutionPanel';
 import { DistributionPanel } from './DistributionPanel';
 import { GroveStatus } from './GroveStatus';
 import { MilestonesPanel } from './MilestonesPanel';
+import { CommissionPanel } from './CommissionPanel';
 import { ReferralPanel } from './ReferralPanel';
 import { MinerCockpit } from './MinerCockpit';
 import { ActivityHistory } from './ActivityHistory';
@@ -417,6 +418,7 @@ export function Game({ host }: { host: Host }) {
           {confirmingClaim && claimQuote ? (
             <ClaimConfirm
               quote={claimQuote}
+              compoundFeeBps={config.compoundFeeBps}
               busy={busy === 'claim'}
               onConfirm={() => {
                 setConfirmingClaim(false);
@@ -434,6 +436,14 @@ export function Game({ host }: { host: Host }) {
           {/* 7 · Status and social: milestones, referrals, the room. */}
           {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
           <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
+          {host.address ? (
+            <CommissionPanel
+              wallet={host.address}
+              signer={host.walletConnected ? host.signer : null}
+              paused={paused}
+              onClaimed={() => void refresh()}
+            />
+          ) : null}
           {host.room ? (
             <RoomLeaderboard
               roomId={host.room.id}

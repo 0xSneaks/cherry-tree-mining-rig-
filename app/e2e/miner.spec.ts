@@ -387,3 +387,83 @@ test.describe('responsive', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
   });
 });
+
+test.describe('referral commission', () => {
+  test('no ledger: nothing accrued, claim disabled', async ({ page }) => {
+    await stubWalletStandard(page);
+    await stubRpc(page);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Seeker Test Wallet' }).click();
+    const panel = page.getByTestId('commission-panel');
+    await expect(panel.getByTestId('commission-none')).toBeVisible();
+    await expect(panel.getByTestId('commission-claim')).toBeDisabled();
+    // Disclosure: commission exists, 20/80, 8% clamp — never "no payout".
+    await expect(panel).toContainText('up to 20% of that fee');
+    await expect(panel).toContainText('other 80%');
+    await expect(panel).toContainText('keeps 8% of the amount planted');
+    await expect(page.getByTestId('referral-panel')).not.toContainText('no payout');
+  });
+
+  test('shows accrued, claimed and claimable; one claim, then re-read from chain', async ({ page }) => {
+    await stubWalletStandard(page);
+    await stubRpc(page, {
+      referralLedger: { accrued: 50_000_000n, claimed: 10_000_000n, claimSettles: true },
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Seeker Test Wallet' }).click();
+    const panel = page.getByTestId('commission-panel');
+    const value = (label: string) =>
+      panel.locator('.readout', { hasText: label }).locator('.readout-value');
+    await expect(value('Accrued (all time)')).toHaveText('0.050000SOL');
+    await expect(value('Claimed')).toHaveText('0.010000SOL');
+    await expect(value('Claimable now')).toHaveText('0.040000SOL');
+
+    let sends = 0;
+    page.on('request', (r) => {
+      if (/getLatestBlockhash/.test(r.postData() ?? '')) sends += 1;
+    });
+    const claim = panel.getByTestId('commission-claim');
+    await expect(claim).toBeEnabled();
+    await claim.click();
+    await expect(panel.getByTestId('commission-message')).toContainText('Commission claimed');
+    // Refreshed from chain: fully claimed, so the button is disabled again.
+    await expect(value('Claimed')).toHaveText('0.050000SOL');
+    await expect(value('Claimable now')).toHaveText('0.000000SOL');
+    await expect(claim).toBeDisabled();
+    expect(sends).toBe(1);
+  });
+
+  test('paused: claims blocked and explained, reserve stays protected', async ({ page }) => {
+    await stubWalletStandard(page);
+    await stubRpc(page, { paused: true, referralLedger: { accrued: 50_000_000n, claimed: 0n } });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Seeker Test Wallet' }).click();
+    const panel = page.getByTestId('commission-panel');
+    await expect(panel.getByTestId('commission-paused')).toContainText('commission claims are blocked');
+    await expect(panel.getByTestId('commission-claim')).toBeDisabled();
+  });
+
+  test('an on-chain refusal is shown honestly and the ledger is re-read', async ({ page }) => {
+    await stubWalletStandard(page, {
+      failWith:
+        'AnchorError. Error Code: NothingToClaimCommission. Error Number: 6099. ' +
+        'Error Message: nothing to claim.',
+    });
+    await stubRpc(page, { referralLedger: { accrued: 50_000_000n, claimed: 0n } });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Seeker Test Wallet' }).click();
+    const panel = page.getByTestId('commission-panel');
+    await panel.getByTestId('commission-claim').click();
+    await expect(panel.getByTestId('commission-message')).toContainText(
+      'No referral commission is waiting to be claimed.',
+    );
+    await expect(panel.getByTestId('commission-claim')).toBeEnabled();
+  });
+
+  test('not connected: figures visible, claim needs the referrer wallet', async ({ page }) => {
+    await stubWalletStandard(page);
+    await stubRpc(page, { referralLedger: { accrued: 50_000_000n, claimed: 0n } });
+    await page.goto('/');
+    await expect(page.getByTestId('commission-panel')).toHaveCount(0);
+  });
+});

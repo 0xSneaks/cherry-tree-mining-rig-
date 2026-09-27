@@ -250,6 +250,9 @@ jobs:
           CHERRY_TREE_ALLOW_OTHER_FOUNDER=1
           CHERRY_TREE_FOUNDER_KEYPAIR=$RUNNER_TEMP/keys/founder.json
           CHERRY_TREE_PURCHASE_FEE_BPS=300
+          # Deliberately different from the purchase fee (§7a: compound <=
+          # purchase) so the smoke and rehearsal prove compound charges its own rate.
+          CHERRY_TREE_COMPOUND_FEE_BPS=250
           # Explicit Devnet rehearsal value only; not a production-cap choice.
           CHERRY_TREE_GENESIS_CAP_RIGS=10000
           CHERRY_TREE_SMOKE_WALLET_A=$RUNNER_TEMP/keys/smoke-a.json

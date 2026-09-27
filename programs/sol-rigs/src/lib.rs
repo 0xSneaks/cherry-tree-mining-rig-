@@ -319,7 +319,9 @@ pub mod sol_rigs {
     }
 
     /// Reconciled close: `U -= E - final_total; Z += E - final_total`; a lock
-    /// pool then pays `floor(0.80 forfeited)` from `Z` to the treasury.
+    /// pool then pays `floor(0.80 forfeited)` from `Z` to the treasury. No
+    /// forfeiture can be carried in this version (it needs `sum A_i` from lock
+    /// registration), so that release is 0 until the lock engine exists.
     pub fn close_fruit_pool(ctx: Context<CloseFruitPool>) -> Result<()> {
         instructions::fruit_roots::close_fruit_pool(ctx)
     }

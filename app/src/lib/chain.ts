@@ -14,8 +14,16 @@ import {
 } from '@solana/kit';
 
 import { RPC_URL } from './env';
-import { decodeConfig, decodeMiner, type Config, type Miner } from './program/accounts';
-import { minerPda, programAddresses } from './program/pdas';
+import {
+  decodeConfig,
+  decodeMiner,
+  decodeReferralLedger,
+  type Config,
+  type Miner,
+  type ReferralLedger,
+} from './program/accounts';
+import { PROGRAM_ID } from './program/constants';
+import { minerPda, programAddresses, referralPda } from './program/pdas';
 import type { ChainSnapshot } from './program/accrual';
 
 export type RigsRpc = Rpc<SolanaRpcApi>;
@@ -150,4 +158,22 @@ export async function confirmSignature(
     }
     await new Promise((r) => setTimeout(r, 750));
   }
+}
+
+/**
+ * The referral commission ledger of `referrer`, read from its canonical PDA
+ * (`["referral", referrer]`). `null` when no ledger exists yet. The account
+ * must be owned by the program; anything else is refused rather than shown.
+ */
+export async function fetchReferralLedger(
+  referrer: Address,
+  client: RigsRpc = rpc(),
+): Promise<ReferralLedger | null> {
+  const key = await referralPda(referrer);
+  const { value } = await client.getAccountInfo(key, { encoding: 'base64' }).send();
+  if (!value) return null;
+  if (value.owner !== PROGRAM_ID) {
+    throw new Error(`referral ledger ${key} is not owned by the program`);
+  }
+  return decodeReferralLedger(decodeBase64(value.data[0]));
 }

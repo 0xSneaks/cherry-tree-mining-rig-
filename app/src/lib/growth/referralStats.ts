@@ -6,9 +6,11 @@
  * and `createdAt` is its binding time. So every figure here is recomputable
  * from chain state alone; there is no referral database to drift.
  *
- * What a referral earns the REFERRER: status only (count, badge tier,
- * leaderboard rank). No payout, no weight, no levels — the program has no
- * such path, and this module adds none. Separately funded season prizes may
+ * What this module computes for the REFERRER: status only (count, badge
+ * tier, leaderboard rank). The on-chain referral commission (architecture
+ * §7a item 4: up to 20% of eligible fees, 8% treasury margin, one level) is
+ * a separate program path read from the referrer's ledger PDA; this module
+ * neither computes nor adds to it. Separately funded season prizes may
  * reference these standings; they never come from a protocol vault.
  *
  * Qualification (anti-farming): raw wallet creation never counts. A referral

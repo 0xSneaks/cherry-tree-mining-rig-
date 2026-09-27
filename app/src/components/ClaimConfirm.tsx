@@ -16,11 +16,14 @@ import { Readout } from './Readout';
 
 export function ClaimConfirm({
   quote,
+  compoundFeeBps,
   busy,
   onConfirm,
   onCancel,
 }: {
   quote: ClaimQuote;
+  /** The current compound (replant) fee, shown so it is never mistaken for free. */
+  compoundFeeBps: number;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -61,7 +64,9 @@ export function ClaimConfirm({
         The early-claim fee applies within 72 hours of your most recent seed
         purchase: 30% under 24h, 20% to 48h, 10% to 72h, then 0%. 60% of it goes
         to the Protocol Treasury and 40% is redistributed to the other planters.
-        Replanting is never charged and grows your grove instead.
+        Replanting does not pay the early-claim fee and does not restart the
+        timer, but the {compoundFeeBps / 100}% replant (compound) fee applies to the seeds it
+        plants.
       </p>
       <div className="actions">
         <button type="button" onClick={onCancel} disabled={busy}>

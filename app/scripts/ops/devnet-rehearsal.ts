@@ -76,7 +76,7 @@ import {
 import { minerPda, programAddresses, referralPda } from '../../src/lib/program/pdas';
 import { PROGRAM_ID } from '../../src/lib/program/constants';
 import { projectedClaimable } from '../../src/lib/program/accrual';
-import { quotePurchase } from '../../src/lib/program/pricing';
+import { compoundQuote } from './fee-math';
 import { claimPenaltyBps, earlyClaimFeeSplit } from '../../src/lib/program/penalty';
 import { activateResumeMismatches } from './rehearsal-resume';
 import type { Config } from '../../src/lib/program/accounts';
@@ -235,11 +235,8 @@ async function waitUntilReplantable(chain: Chain, pdas: Pdas, who: Address, maxS
       },
       now,
     );
-    const seed = quotePurchase(
-      1n,
-      config.rigPriceLamports,
-      BigInt(config.purchaseFeeBps),
-    ).totalLamports;
+    // A replant is a compound: it charges compound_fee_bps (§7a).
+    const seed = compoundQuote(1n, config).totalLamports;
     if (owed >= seed) return;
     if (Date.now() > deadline) {
       fail(

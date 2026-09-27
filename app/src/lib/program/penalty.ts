@@ -7,7 +7,8 @@
  * purchase (`Miner.lastPlantedAt`): 30% under 24h, 20% under 48h, 10% under
  * 72h, then 0%, on the whole claimed amount. Claims and replants never move
  * that anchor; a fresh purchase moves it for the whole position. A clock
- * behind the anchor counts as age 0. Replant is never charged.
+ * behind the anchor counts as age 0. A replant never pays the early-claim
+ * fee; it pays the separate compound fee (`compound_fee_bps`) instead.
  *
  * Destination: 60% of the fee (`floor(0.60 x)`) is Protocol Treasury revenue
  * (moved from the reward vault to the fee vault); the other 40% stays in the
@@ -97,5 +98,6 @@ export const EARLY_CLAIM_DISCLOSURE =
   'seed purchase: 30% under 24h, 20% from 24h to 48h, 10% from 48h to 72h, ' +
   '0% after. It applies to the whole claimed amount. 60% of the fee goes to ' +
   'the Protocol Treasury and 40% is redistributed to the other planters. ' +
-  'Replanting (compounding) is never charged and does not restart the timer; ' +
-  'buying more seeds does.';
+  'Replanting (compounding) does not pay the early-claim fee and does not ' +
+  'restart the timer, but the displayed replant (compound) fee applies to ' +
+  'the seeds it plants. Buying more seeds restarts the timer.';

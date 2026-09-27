@@ -52,7 +52,7 @@ import {
 } from '../../src/lib/program/instructions';
 import { minerPda, programAddresses } from '../../src/lib/program/pdas';
 import { PRECISION, PROGRAM_ID } from '../../src/lib/program/constants';
-import { quotePurchase } from '../../src/lib/program/pricing';
+import { compoundQuote, purchaseQuote } from './fee-math';
 
 const DEFAULT_RIGS_A = 5n;
 const DEFAULT_RIGS_B = 5n;
@@ -110,12 +110,13 @@ async function main(): Promise<void> {
   row('B balance', `${sol(await lamportsOf(chain, walletB.address))} SOL`);
   row('rig price', `${config0.rigPriceLamports} lamports`);
   row('purchase fee', `${config0.purchaseFeeBps} bps`);
+  row('compound fee', `${config0.compoundFeeBps} bps`);
   row('total rigs', config0.totalRigs);
   row('reward rate', `${config0.rewardRate} lamports/s`);
   row('period finish', `${config0.rewardPeriodFinish} (chain now ${now0})`);
 
-  const quoteA = quotePurchase(rigsA, config0.rigPriceLamports, BigInt(config0.purchaseFeeBps));
-  const quoteB = quotePurchase(rigsB, config0.rigPriceLamports, BigInt(config0.purchaseFeeBps));
+  const quoteA = purchaseQuote(rigsA, config0);
+  const quoteB = purchaseQuote(rigsB, config0);
   for (const [name, w, q] of [
     ['A', walletA, quoteA],
     ['B', walletB, quoteB],
@@ -316,10 +317,8 @@ async function main(): Promise<void> {
 
   assert(
     'compound minted whole rigs and preserved the exact remainder',
-    mintedB > 0n &&
-      compoundedB ===
-        quotePurchase(mintedB, config.rigPriceLamports, BigInt(config.purchaseFeeBps))
-          .totalLamports,
+    // compound charges compound_fee_bps, never purchase_fee_bps (§7a).
+    mintedB > 0n && compoundedB === compoundQuote(mintedB, config).totalLamports,
     `minted ${mintedB} rigs for exactly ${compoundedB} lamports; ` +
       `${minerB.pendingRewards} lamports left in the ore bin`,
   );

@@ -7,7 +7,7 @@
  * real decoding of real layouts — only the transport is faked.
  */
 import type { Page, Route } from '@playwright/test';
-import { address, getAddressEncoder } from '@solana/kit';
+import { address, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit';
 
 export const WALLET = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
 
@@ -106,7 +106,36 @@ export type StubOptions = {
   founder?: string;
   /** Personal event history response served by the RPC stub. */
   activity?: 'populated' | 'empty' | 'failure';
+  /**
+   * The wallet's referral commission ledger (`["referral", WALLET]`). Absent:
+   * no ledger account exists. `claimSettles`: once a signature is confirmed,
+   * the ledger reads back fully claimed, as `claim_commission` leaves it.
+   */
+  referralLedger?: { accrued: bigint; claimed: bigint; claimSettles?: boolean };
 };
+
+const PROGRAM = 'C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt';
+
+/** Canonical referral ledger PDA of `referrer`. */
+export async function referralLedgerAddress(referrer: string): Promise<string> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: address(PROGRAM),
+    seeds: [new TextEncoder().encode('referral'), getAddressEncoder().encode(address(referrer))],
+  });
+  return pda;
+}
+
+/** Borsh bytes of a ReferralLedger account (57 bytes). */
+export function referralLedgerBytes(referrer: string, accrued: bigint, claimed: bigint): Uint8Array {
+  const out = new Uint8Array(57);
+  out.set(hexToBytes('a30861cf910b5b80'), 0);
+  out.set(getAddressEncoder().encode(address(referrer)), 8);
+  const view = new DataView(out.buffer);
+  view.setBigUint64(40, accrued, true);
+  view.setBigUint64(48, claimed, true);
+  out[56] = 255;
+  return out;
+}
 
 function setAddress(bytes: Uint8Array, offset: number, b58: string): Uint8Array {
   const copy = bytes.slice();
@@ -143,6 +172,8 @@ export function minerBytes(): Uint8Array {
 export async function stubRpc(page: Page, opts: StubOptions = {}): Promise<void> {
   const now = opts.now ?? 1_780_000_000n;
   const withMiner = opts.withMiner ?? true;
+  const ledgerKey = await referralLedgerAddress(WALLET);
+  let ledgerClaimed = opts.referralLedger?.claimed ?? 0n;
 
   const account = (data: Uint8Array, lamports: string) => ({
     data: [toBase64(data), 'base64'],
@@ -248,7 +279,21 @@ export async function stubRpc(page: Page, opts: StubOptions = {}): Promise<void>
               },
             },
           };
+        case 'getAccountInfo': {
+          const key = (req as { params?: unknown[] }).params?.[0];
+          if (key !== ledgerKey) return { jsonrpc: '2.0', id: req.id, result: null };
+          const l = opts.referralLedger;
+          return {
+            jsonrpc: '2.0',
+            id: req.id,
+            result: {
+              ...ctx,
+              value: l ? account(referralLedgerBytes(WALLET, l.accrued, ledgerClaimed), '1287600') : null,
+            },
+          };
+        }
         case 'getSignatureStatuses':
+          if (opts.referralLedger?.claimSettles) ledgerClaimed = opts.referralLedger.accrued;
           return {
             jsonrpc: '2.0',
             id: req.id,

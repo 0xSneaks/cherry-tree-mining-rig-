@@ -1,8 +1,9 @@
 //! Referral V1: a 1.05× reward weight for a validly referred planter.
 //!
 //! * The weight redistributes the same funded emission; it never adds any.
-//! * No referrer payout, no levels, no stacking: the weight is either
-//!   [`WEIGHT_BASE`] or [`WEIGHT_REFERRED`], decided once.
+//! * No emission payout to the referrer, no levels, no stacking: the weight
+//!   is either [`WEIGHT_BASE`] or [`WEIGHT_REFERRED`], decided once. The
+//!   referrer's fee commission is separate (`fees.rs`, architecture §7a).
 //! * One wallet, one immutable referrer, bound at its first purchase only.
 //! * The referrer must already be a planter. Because a referrer must exist
 //!   before the referred position does, and binding happens only at creation,

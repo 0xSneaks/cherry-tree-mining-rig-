@@ -82,6 +82,11 @@ impl Sim {
         Ok(self.pools.len() - 1)
     }
 
+    /// Establish a lock pool's `sum A_i` (what lock registration will write).
+    fn allocate(&mut self, i: usize, sum_a: u64) {
+        self.pools[i].0.lock_allocated = sum_a;
+    }
+
     fn post(
         &mut self,
         i: usize,
@@ -185,6 +190,10 @@ impl Sim {
         );
         self.check();
         Ok(d)
+    }
+
+    fn clone_pool(&self, i: usize) -> FruitPool {
+        self.pools[i].0
     }
 
     fn pool(&self, i: usize) -> &FruitPool {
@@ -731,8 +740,8 @@ proptest! {
 /// Test 89: at lock-pool close `floor(0.80 forfeited)` leaves `Z` to the
 /// Protocol Treasury and the remainder stays in `Z`; unallocated and
 /// safety-cancelled capacity go 100% to `Z`; `L` and `U` are untouched by
-/// the release; a root claiming more forfeiture than it releases is
-/// rejected.
+/// the release; a root claiming `forfeited > sum A_i - final_total` is
+/// rejected, even when it is inside `E - total`.
 #[test]
 fn lock_forfeit_releases_eighty_percent_to_treasury() {
     let (t0, t1) = (1_000, 1_000 + 5 * 86_400);
@@ -742,10 +751,31 @@ fn lock_forfeit_releases_eighty_percent_to_treasury() {
     let e = 10 * SOL;
     let total = 6 * SOL; // established, vested
     let released = e - total; // 4 SOL: unallocated + forfeited + other
+    let sum_a = 8 * SOL; // unallocated = E - sum A_i = 2 SOL
+    let bound = sum_a - total; // 2 SOL: forfeited + other
 
-    // forfeited above the released capacity: rejected at post.
+    // No allocation established: any forfeiture is rejected.
     assert_eq!(
-        sim.post_forfeit(i, 1, t1, total, true, released + 1, t1),
+        sim.post_forfeit(i, 1, t1, total, true, 1, t1),
+        Err(EngineError::InvalidForfeited)
+    );
+    // An allocation above E is corrupt: rejected.
+    sim.allocate(i, e + 1);
+    assert_eq!(
+        sim.post_forfeit(i, 1, t1, total, true, 1, t1),
+        Err(EngineError::InvalidForfeited)
+    );
+    sim.allocate(i, sum_a);
+
+    // forfeited above sum A_i - total but within E - total: rejected, so
+    // unallocated capacity can never be relabelled as forfeiture.
+    assert!(bound < released);
+    assert_eq!(
+        sim.post_forfeit(i, 1, t1, total, true, bound + 1, t1),
+        Err(EngineError::InvalidForfeited)
+    );
+    assert_eq!(
+        sim.post_forfeit(i, 1, t1, total, true, released, t1),
         Err(EngineError::InvalidForfeited)
     );
     // forfeited on an incomplete root: rejected.
@@ -778,6 +808,41 @@ fn lock_forfeit_releases_eighty_percent_to_treasury() {
     assert_eq!(sim.close(i, t1 + WINDOW), Err(EngineError::FruitPoolClosed));
 }
 
+/// forfeited exactly at `sum A_i - total` is accepted; a Final root whose
+/// carried `forfeited` exceeds the bound (corrupted state) cannot close.
+#[test]
+fn lock_forfeit_bound_is_tight_and_rechecked_at_close() {
+    let (t0, t1) = (1_000, 1_000 + 5 * 86_400);
+    let mut sim = Sim::new(1);
+    sim.fund(10 * SOL).unwrap();
+    let i = sim.commit(10 * SOL, t0, t1, 0).unwrap();
+    sim.allocate(i, 7 * SOL);
+    sim.post_forfeit(i, 1, t1, 3 * SOL, true, 4 * SOL, t1)
+        .unwrap();
+    sim.finalize(i, t1 + WINDOW).unwrap();
+
+    // Tamper: overstate the carried forfeiture past sum A_i - final_total.
+    let mut tampered = sim.clone_pool(i);
+    tampered.final_forfeited = 4 * SOL + 1;
+    let mut ledger = sim.ledger;
+    assert_eq!(
+        close_pool(&mut ledger, &mut tampered, t1 + WINDOW),
+        Err(EngineError::InvalidForfeited)
+    );
+    // Tamper: the allocation is withdrawn (no lock registration): no release.
+    let mut tampered = sim.clone_pool(i);
+    tampered.lock_allocated = 0;
+    let mut ledger = sim.ledger;
+    assert_eq!(
+        close_pool(&mut ledger, &mut tampered, t1 + WINDOW),
+        Err(EngineError::InvalidForfeited)
+    );
+
+    let out = sim.close_full(i, t1 + WINDOW).unwrap();
+    assert_eq!(out.treasury_release, 4 * SOL * 8 / 10);
+    assert_eq!(sim.ledger.reserve, 7 * SOL - 4 * SOL * 8 / 10);
+}
+
 #[test]
 fn lock_forfeit_edge_cases() {
     let (t0, t1) = (1_000, 1_000 + 5 * 86_400);
@@ -785,6 +850,7 @@ fn lock_forfeit_edge_cases() {
     let mut sim = Sim::new(1);
     sim.fund(5 * SOL).unwrap();
     let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.allocate(i, 5 * SOL);
     sim.post_forfeit(i, 1, t1, 0, true, 5 * SOL, t1).unwrap();
     sim.finalize(i, t1 + WINDOW).unwrap();
     let out = sim.close_full(i, t1 + WINDOW).unwrap();
@@ -795,6 +861,7 @@ fn lock_forfeit_edge_cases() {
     let mut sim = Sim::new(1);
     sim.fund(5 * SOL).unwrap();
     let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.allocate(i, 5 * SOL);
     sim.post(i, 1, t1, SOL, true, t1).unwrap();
     sim.finalize(i, t1 + WINDOW).unwrap();
     let out = sim.close_full(i, t1 + WINDOW).unwrap();
@@ -806,6 +873,7 @@ fn lock_forfeit_edge_cases() {
     let mut sim = Sim::new(1);
     sim.fund(5 * SOL).unwrap();
     let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.allocate(i, 5 * SOL);
     sim.post_forfeit(i, 1, t1, SOL, true, 2 * SOL, t1).unwrap();
     assert!(sim.veto(i, 1, t1).unwrap());
     assert_eq!(sim.pools[i].0.pending_forfeited, 0);
@@ -817,6 +885,7 @@ fn lock_forfeit_edge_cases() {
     let mut sim = Sim::new(1);
     sim.fund(5 * SOL).unwrap();
     let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.allocate(i, 5 * SOL);
     sim.terminal(i, 1, t1, SOL, t1).unwrap();
     assert_eq!(sim.close_full(i, t1).unwrap().treasury_release, 0);
 
@@ -824,6 +893,7 @@ fn lock_forfeit_edge_cases() {
     let mut sim = Sim::new(1);
     sim.fund(5 * SOL).unwrap();
     let i = sim.commit(5 * SOL, t0, t1, 0).unwrap();
+    sim.allocate(i, 5 * SOL);
     sim.post_forfeit(i, 1, t1, SOL, true, 3 * SOL, t1).unwrap();
     sim.finalize(i, t1 + WINDOW).unwrap();
     sim.post_forfeit(i, 2, t1, 2 * SOL, true, SOL, t1 + WINDOW)

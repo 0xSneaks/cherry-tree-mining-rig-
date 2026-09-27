@@ -703,6 +703,69 @@ async fn t68_t91_withdraw_guard_and_commission_claims() {
     assert!(env.send(ix, &[&erin]).await.is_err());
 }
 
+/// OWNER POLICY (recorded, not decided here — architecture §7a does not
+/// specify either): (1) the first referred buyer or compounder whose fee
+/// earns a commission pays the rent to create the referrer's ledger; the
+/// referrer pays nothing and the ledger is never closed. (2) `claim_commission`
+/// is blocked while the program is paused (`ProgramPaused`); the reservation
+/// stays intact and `withdraw_fees` still cannot reach it.
+#[tokio::test]
+async fn owner_policy_referral_rent_and_pause_behaviour() {
+    let mut env = grove(1_000, 1_000).await;
+    let (alice, erin) = (env.alice.insecure_clone(), env.erin.insecure_clone());
+    let ledger_key = referral_pda(&alice.pubkey());
+    assert!(env.account_raw(ledger_key).await.is_none());
+
+    let alice0 = env.lamports(alice.pubkey()).await;
+    let erin0 = env.lamports(erin.pubkey()).await;
+    let n = 20;
+    let fee = buy(&mut env, &erin, n, Some(&alice)).await;
+    let ledger_acc = env.account_raw(ledger_key).await.expect("ledger created");
+    let ledger_rent = rent_of(&mut env, ledger_key).await;
+    assert_eq!(ledger_acc.lamports, ledger_rent, "exactly rent-exempt");
+    assert_eq!(ledger_acc.data.len(), 57);
+    assert_eq!(
+        env.lamports(alice.pubkey()).await,
+        alice0,
+        "referrer pays nothing"
+    );
+    let miner_rent = rent_of(&mut env, miner_pda(&erin.pubkey())).await;
+    let erin_paid = erin0 - env.lamports(erin.pubkey()).await;
+    // The buyer paid capital + fee + own miner rent + the referrer's ledger
+    // rent (+ the transaction fee).
+    let tx_fee = erin_paid - (n * RIG_PRICE + fee + miner_rent + ledger_rent);
+    assert!(tx_fee <= 10_000, "unexpected extra debit {tx_fee}");
+
+    // Pause: the claim is refused; the reservation and ledger are untouched,
+    // and a withdrawal still cannot touch the reserve.
+    let reserved = env.config().await.reserved_commissions;
+    assert!(reserved > 0);
+    env.set_paused(true).await.unwrap();
+    assert_rigs_error(
+        env.send(claim_commission_ix(&alice.pubkey()), &[&alice])
+            .await
+            .unwrap_err(),
+        RigsError::ProgramPaused,
+    );
+    assert_eq!(env.config().await.reserved_commissions, reserved);
+    assert_eq!(unpaid(&mut env, &alice.pubkey()).await, reserved);
+    let a = env.authority.insecure_clone();
+    let too_much = fee_distributable(&mut env).await - reserved + 1;
+    let ix = env.withdraw_fees_ix(&a.pubkey(), fee_vault_pda(), env.fee_recipient, too_much);
+    assert!(env.send(ix, &[&a]).await.is_err());
+    assert!(fee_distributable(&mut env).await >= reserved);
+
+    // Unpaused: the same claim pays exactly the reserved amount.
+    env.set_paused(false).await.unwrap();
+    env.warp(1).await;
+    let w0 = env.lamports(alice.pubkey()).await;
+    env.send(claim_commission_ix(&alice.pubkey()), &[&alice])
+        .await
+        .unwrap();
+    assert_eq!(env.lamports(alice.pubkey()).await - w0, reserved);
+    check_books(&mut env, &[alice.pubkey()]).await;
+}
+
 /// The referral ledger is mandatory for a referred position and must be the
 /// canonical PDA of the bound referrer.
 #[tokio::test]

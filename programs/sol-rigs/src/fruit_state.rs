@@ -175,6 +175,10 @@ impl Pool {
             pending_forfeited: self.pending_forfeited,
             final_forfeited: self.final_forfeited,
             forfeit_treasury_released: self.forfeit_treasury_released,
+            // No lock registration exists in this program version, so no
+            // `sum A_i` is ever established: the engine then rejects any
+            // non-zero `forfeited` at post and at close (architecture §8).
+            lock_allocated: 0,
         })
     }
 

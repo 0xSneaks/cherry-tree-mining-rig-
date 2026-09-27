@@ -31,6 +31,7 @@ use solana_sdk::{
     rent::Rent,
     signature::{Keypair, Signer},
 };
+use std::str::FromStr;
 
 const CAP: u64 = GENESIS_CAP; // the only cap migrate_v2 accepts (250)
 
@@ -98,7 +99,8 @@ fn v1_fixture(authority: &Pubkey) -> V1Mirror {
         fee_vault_bump: 252,
         version: 1,
         bump: Pubkey::find_program_address(&[CONFIG_SEED], &sol_rigs::ID).1,
-        founder: fee_recipient(),
+        // The founder is a separate wallet from the fee recipient.
+        founder: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
         launch_t0: 1_790_293_911,
         total_shares: 1_300,
         total_claim_penalties: 245_048,
@@ -805,4 +807,97 @@ async fn migrate_v3_rejections_change_nothing() {
         let after = raw(&mut env, config_pda()).await;
         assert_eq!((after.0, after.1), (data, lamports), "nothing changed");
     }
+}
+
+// ------------------------------------- legacy pricing semantics (V1, V2)
+
+/// Legacy Configs whose pricing violates a current invariant: zero rig
+/// price, purchase fee above the 1,000 bps ceiling (so the migrated
+/// `compound_fee_bps = purchase_fee_bps` would also be out of range).
+fn malformed_pricing(m: &V1Mirror) -> Vec<V1Mirror> {
+    let mut out = Vec::new();
+    for (price, fee) in [
+        (0u64, FEE_BPS),
+        (RIG_PRICE, rigs_engine::MAX_PURCHASE_FEE_BPS + 1),
+        (RIG_PRICE, u16::MAX),
+        (0, u16::MAX),
+    ] {
+        let mut bad = m.clone();
+        bad.rig_price_lamports = price;
+        bad.purchase_fee_bps = fee;
+        out.push(bad);
+    }
+    out
+}
+
+#[tokio::test]
+async fn migrate_v2_rejects_malformed_legacy_pricing_unchanged() {
+    let authority = Keypair::new();
+    for bad in malformed_pricing(&v1_fixture(&authority.pubkey())) {
+        rejection_case(
+            v1_bytes(&bad),
+            rent_for(V1_CONFIG_SIZE),
+            sol_rigs::ID,
+            config_pda(),
+            CAP,
+            RigsError::MigrationRejected,
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn migrate_v3_rejects_malformed_legacy_pricing_unchanged() {
+    let authority = Keypair::new();
+    for bad in malformed_pricing(&v1_fixture(&authority.pubkey())) {
+        let data = v2_bytes(&bad, CAP);
+        let lamports = rent_for(V2_CONFIG_SIZE);
+        let mut env = v2_env(&authority, data.clone(), lamports).await;
+        let auth_before = env.lamports(authority.pubkey()).await;
+        let err = env
+            .send(
+                migrate_v3_ix(&authority.pubkey(), config_pda()),
+                &[&authority],
+            )
+            .await
+            .unwrap_err();
+        assert_rigs_error(err, RigsError::MigrationRejected);
+        let after = raw(&mut env, config_pda()).await;
+        assert_eq!((after.0, after.1), (data, lamports), "nothing changed");
+        // Only the fee for the failed transaction left the authority.
+        assert!(auth_before - env.lamports(authority.pubkey()).await < SOL / 100);
+    }
+}
+
+/// The ceiling itself is valid legacy pricing: a V1 and a V2 Config at
+/// exactly 1,000 bps migrate, with compound = purchase = 1,000.
+#[tokio::test]
+async fn legacy_pricing_at_the_ceiling_migrates() {
+    let authority = Keypair::new();
+    let mut m = v1_fixture(&authority.pubkey());
+    m.purchase_fee_bps = rigs_engine::MAX_PURCHASE_FEE_BPS;
+
+    let data = v1_bytes(&m);
+    let mut env = v2_env(&authority, data, rent_for(V1_CONFIG_SIZE)).await;
+    env.send(
+        migrate_ix(&authority.pubkey(), config_pda(), CAP),
+        &[&authority],
+    )
+    .await
+    .unwrap();
+    let cfg = env.config().await;
+    assert_eq!((cfg.purchase_fee_bps, cfg.compound_fee_bps), (1_000, 1_000));
+
+    let data = v2_bytes(&m, CAP);
+    let mut env = v2_env(&authority, data, rent_for(V2_CONFIG_SIZE)).await;
+    env.send(
+        migrate_v3_ix(&authority.pubkey(), config_pda()),
+        &[&authority],
+    )
+    .await
+    .unwrap();
+    let cfg = env.config().await;
+    assert_eq!((cfg.purchase_fee_bps, cfg.compound_fee_bps), (1_000, 1_000));
+    assert_eq!(cfg.fee_recipient, fee_recipient());
+    assert_ne!(cfg.founder, cfg.fee_recipient);
 }

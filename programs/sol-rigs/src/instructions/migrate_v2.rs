@@ -27,7 +27,7 @@
 use anchor_lang::prelude::*;
 use anchor_lang::{AccountSerialize, Discriminator};
 use borsh::BorshDeserialize;
-use rigs_engine::validate_genesis_cap;
+use rigs_engine::{validate_fee_pair, validate_genesis_cap, validate_pricing};
 
 use crate::constants::{CONFIG_SEED, STATE_VERSION};
 use crate::error::{IntoAnchor, RigsError};
@@ -143,6 +143,20 @@ fn read_legacy<T: BorshDeserialize>(
     Ok(legacy)
 }
 
+/// Semantic check shared by both migrations, before any mutation: the
+/// legacy pricing must satisfy every invariant the current Config relies on
+/// — a nonzero valid rig price, `purchase_fee_bps <= MAX_PURCHASE_FEE_BPS`,
+/// and the migrated pair (`compound_fee_bps = purchase_fee_bps`) passing
+/// `compound <= purchase`. The Genesis cap is validated by each handler.
+/// A malformed legacy account is refused, never carried forward.
+fn validate_legacy_pricing(v1: &ConfigV1) -> Result<()> {
+    validate_pricing(v1.rig_price_lamports, v1.purchase_fee_bps)
+        .map_err(|_| error!(RigsError::MigrationRejected))?;
+    validate_fee_pair(v1.purchase_fee_bps, v1.purchase_fee_bps)
+        .map_err(|_| error!(RigsError::MigrationRejected))?;
+    Ok(())
+}
+
 /// Mutation phase shared by both migrations: rent shortfall → realloc →
 /// full current-layout write. Only called after every check has passed.
 fn write_current<'info>(
@@ -230,9 +244,11 @@ pub fn handle_migrate_v2(ctx: Context<MigrateV2>, genesis_cap_rigs: u64) -> Resu
         |c: &ConfigV1| (c.authority, c.version, c.bump),
         1,
     )?;
+    validate_legacy_pricing(&v1)?;
     validate_genesis_cap(genesis_cap_rigs).anchor()?;
     let compound_fee_bps = v1.purchase_fee_bps;
     let current = upgrade(v1, genesis_cap_rigs);
+    debug_assert_eq!(current.compound_fee_bps, current.purchase_fee_bps);
 
     // ---- mutation phase ----
     write_current(
@@ -274,9 +290,11 @@ pub fn handle_migrate_v3(ctx: Context<MigrateV3>) -> Result<()> {
         |c: &ConfigV2| (c.v1.authority, c.v1.version, c.v1.bump),
         2,
     )?;
+    validate_legacy_pricing(&v2.v1)?;
     validate_genesis_cap(v2.genesis_cap_rigs).anchor()?;
     let compound_fee_bps = v2.v1.purchase_fee_bps;
     let current = upgrade(v2.v1, v2.genesis_cap_rigs);
+    debug_assert_eq!(current.compound_fee_bps, current.purchase_fee_bps);
 
     write_current(
         &ctx.accounts.config.to_account_info(),

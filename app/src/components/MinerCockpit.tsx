@@ -117,7 +117,8 @@ export function MinerCockpit({
           Claimable {formatSol(quote.gross, 6)} SOL gross · early-claim fee now{' '}
           {quote.penaltyBps / 100}% · you receive {formatSol(quote.net, 6)} SOL net
           {quote.secondsToNextStep !== null ? ` · drops in ${formatDuration(quote.secondsToNextStep)}` : ''}.
-          60% of the fee goes to the Protocol Treasury, 40% to the other planters. Replanting is never charged.
+          60% of the fee goes to the Protocol Treasury, 40% to the other planters. Replanting does not pay the
+          early-claim fee, but the {config.compoundFeeBps / 100}% replant (compound) fee applies.
         </p>
       ) : null}
       <div className="actions">

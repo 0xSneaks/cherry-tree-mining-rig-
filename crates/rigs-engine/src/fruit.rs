@@ -258,6 +258,12 @@ pub struct FruitPool {
     /// Lamports released from `Z` to the Protocol Treasury at close
     /// (`floor(0.80 final_forfeited)`), reported separately from fee revenue.
     pub forfeit_treasury_released: u64,
+    /// Lock pools only: the allocated `sum A_i` from the frozen `H_lock`
+    /// (architecture §8 / §10a Pool table), written once at lock
+    /// registration finalization. `0` means no allocation is established,
+    /// and then no root may carry forfeiture. The on-chain program has no
+    /// lock registration yet, so it always leaves this `0`.
+    pub lock_allocated: u64,
 }
 
 /// Accounting state of one posted root.
@@ -354,14 +360,26 @@ pub fn commit_pool(
     Ok(pool)
 }
 
+/// Largest `forfeited` a complete root with `total` may carry:
+/// `sum A_i - total` (architecture §8, test 89), `0` when no lock allocation
+/// is established or `total` already exceeds it. An allocation above the
+/// budget is corrupt state and is rejected.
+fn forfeit_bound(pool: &FruitPool, total: u64) -> EngineResult<u64> {
+    if pool.lock_allocated > pool.budget {
+        return Err(EngineError::InvalidForfeited);
+    }
+    Ok(pool.lock_allocated.saturating_sub(total))
+}
+
 /// POST ROOT (Pending). All §10a invariant-3 and invariant-4 checks.
 ///
 /// `forfeited` (lock ledgers only; the caller rejects it elsewhere) may be
-/// non-zero only on a root marked complete, and never above the capacity
-/// that root leaves unestablished: `forfeited <= E - total`. The lock
-/// engine's tighter `sum A_i - final_total` bound needs `H_lock`, which is
-/// not written in this version; `E - total` is the outer envelope the close
-/// can release, so the treasury release can never touch `L` or `U`.
+/// non-zero only on a root marked complete, and never above
+/// `sum A_i - total` (architecture §8, test 89), where `sum A_i` is the
+/// pool's established [`FruitPool::lock_allocated`]. With no allocation
+/// established, any non-zero `forfeited` is rejected. Since
+/// `sum A_i <= E`, this also keeps the release inside `E - total`, so the
+/// treasury release can never touch `L` or `U`.
 #[allow(clippy::too_many_arguments)]
 pub fn post_root(
     pool: &mut FruitPool,
@@ -392,14 +410,8 @@ pub fn post_root(
     if complete && checkpoint_time < pool.t_end {
         return Err(EngineError::IncompleteCheckpoint);
     }
-    if forfeited > 0 {
-        let released = pool
-            .budget
-            .checked_sub(total)
-            .ok_or(EngineError::MathOverflow)?;
-        if !complete || forfeited > released {
-            return Err(EngineError::InvalidForfeited);
-        }
+    if forfeited > 0 && (!complete || forfeited > forfeit_bound(pool, total)?) {
+        return Err(EngineError::InvalidForfeited);
     }
     if challenge_window <= 0 {
         return Err(EngineError::InvalidFruitGovernance);
@@ -605,9 +617,13 @@ pub fn close_pool(
         .budget
         .checked_sub(pool.final_total)
         .ok_or(EngineError::MathOverflow)?;
-    // Enforced at post time; re-checked so the release can never exceed the
-    // capacity this close returns to `Z`.
-    if pool.final_forfeited > release {
+    // Enforced at post time; re-checked against `sum A_i - final_total` (and
+    // so `E - final_total`) so the release can never exceed the capacity
+    // this close returns to `Z`, even from corrupted state.
+    if pool.final_forfeited > 0
+        && (pool.final_forfeited > forfeit_bound(pool, pool.final_total)?
+            || pool.final_forfeited > release)
+    {
         return Err(EngineError::InvalidForfeited);
     }
     let treasury_release = lock_forfeit_treasury_release(pool.final_forfeited);

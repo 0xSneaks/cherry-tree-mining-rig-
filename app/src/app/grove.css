@@ -1,0 +1,103 @@
+/* Grove miner card — tree stages, not the old shaft drawing. */
+
+.grove {
+  margin: 14px 0 0;
+  padding: 10px 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+}
+
+.grove-hero {
+  border-radius: 8px;
+  overflow: hidden;
+  background: #080c16;
+}
+
+.grove-hero img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.grove-stages {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.grove-stages li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.38;
+}
+
+.grove-stages li.is-reached {
+  opacity: 0.72;
+}
+
+.grove-stages li.is-active {
+  opacity: 1;
+}
+
+.grove-stages img {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+  background: #080c16;
+}
+
+.grove-stages li.is-active img {
+  border-color: var(--blossom);
+  box-shadow: 0 0 0 1px rgba(255, 95, 162, 0.35);
+}
+
+.grove-stages span {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.grove-stages li.is-active span {
+  color: var(--blossom);
+}
+
+.grove-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.grove-live {
+  color: var(--live);
+}
+
+.grove-bar {
+  margin-top: 8px;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--rule);
+  overflow: hidden;
+}
+
+.grove-bar i {
+  display: block;
+  height: 100%;
+  background: var(--blossom);
+  box-shadow: 0 0 10px rgba(255, 95, 162, 0.6);
+}
+
+.grove-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}

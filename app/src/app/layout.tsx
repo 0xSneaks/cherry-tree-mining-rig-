@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next';
 import { PRODUCT_DESCRIPTION, PRODUCT_NAME } from '../lib/brand';
 
 import './globals.css';
+import './grove.css';
 
 export const metadata: Metadata = {
   title: PRODUCT_NAME,

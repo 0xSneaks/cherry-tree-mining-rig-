@@ -287,6 +287,16 @@ test.describe('miner cadence surfaces', () => {
     await expect(trust).toContainText('Reward backing');
     await expect(trust).not.toContainText(/audited|multisig \d|timelock active/i);
   });
+
+  /** Test 28: the borrowed-funds limitation is disclosed in the product. */
+  test('discloses that debt outside the registry is not detected', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    const note = page.getByTestId('debt-disclosure');
+    await expect(note).toContainText('cannot detect borrowing in other programs');
+    await expect(note).toContainText('does not prove that an asset was not bought with borrowed money');
+  });
 });
 
 test.describe('personal activity history', () => {

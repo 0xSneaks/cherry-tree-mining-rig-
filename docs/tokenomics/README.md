@@ -24,3 +24,15 @@ compound fee, 72-hour fee timelock, 30/20/10/0 early-claim fee split 60/40,
 and claimed by `claim_commission`, `withdraw_fees` reservation guard, 80/20
 lock-forfeit release at lock-pool close, Config V3 migration, TypeScript
 mirrors and disclosures; tests 6 (fee half), 68–72, 78–87, 89–91.
+
+Implementation pass #4: ownership, encumbrance and debt eligibility
+foundation (§5) in the off-chain `crates/eligibility-engine` — global
+finalized event timeline `(slot, tx, ix, inner)` with half-open intervals,
+unit-level encumbrance (delegation, freeze, owner change, Token-2022 risk
+extensions, collateral / vesting, pending unstake, duplicate receipts),
+fixed debt registry with wallet-level netting `X = max(0, G - D)`, PENDING
+on unreadable or unpinned state, whole-pool UNRESOLVED windows on missing
+history, SKR (wallet + verified stake) and xSOL (owned-token NAV) adapter
+foundations, and the non-registry-debt disclosure in the product; tests
+16–29. Production adapter / registry inputs remain gate 14.2-D
+configuration (see `crates/eligibility-engine/README.md`).

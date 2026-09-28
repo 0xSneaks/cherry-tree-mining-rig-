@@ -17,6 +17,7 @@ import {
 import { SECONDS_PER_DAY, fundedRunwaySeconds, minerShares } from '../lib/program/accrual';
 import type { Config, Miner } from '../lib/program/accounts';
 import { PROGRAM_ID, SYSTEM_PROGRAM_ID } from '../lib/program/constants';
+import { NON_REGISTRY_DEBT_DISCLOSURE } from '../lib/eligibility';
 import { runwayReport } from '../lib/growth/runway';
 import { Readout } from './Readout';
 
@@ -148,6 +149,9 @@ export function TransparencyPanel({
         from the program, not from this app. CAPITAL is locked and non-redeemable
         in this program version; FEE never feeds REWARD. Vault balances exclude
         rent reserve.
+      </p>
+      <p className="note" data-testid="debt-disclosure">
+        Fruit eligibility (not live yet). {NON_REGISTRY_DEBT_DISCLOSURE}
       </p>
     </section>
   );

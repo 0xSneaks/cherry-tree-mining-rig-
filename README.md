@@ -47,6 +47,7 @@ accounting across a full buy → accrue → claim cycle.
 
 ```
 crates/rigs-engine/         all money logic — zero Solana dependencies
+crates/eligibility-engine/  off-chain ownership / encumbrance / debt eligibility (Fruit §5)
 programs/sol-rigs/          the Anchor program: account validation + lamport moves
 app/                        Next.js mini-app (Cherry embed + standalone fallback)
 app/scripts/ops/            devnet operations: initialize, fund, smoke test

@@ -146,7 +146,9 @@ fn wrong_direction_scope_and_expiry_edges() {
 fn any_validation(min_slots: u64, spread_den: u128) -> ReferenceValidation {
     ReferenceValidation {
         min_distinct_slots: min_slots,
-        min_window_seconds: 0,
+        // 1 is the weakest LEGITIMATE calibration: a zero-duration minimum
+        // would itself violate the structural single-spot prohibition.
+        min_window_seconds: 1,
         max_spread: Ratio::new(1, spread_den),
         max_confidence: Ratio::new(1, 1),
     }

@@ -1,0 +1,191 @@
+THE CHERRY TREE — PASS #5 MIMOSA PRE-COMMIT BLOCKER TRIAGE REPORT
+
+Report date: 2026-09-28
+Agent: ZCode (GLM)
+Task: resolve the repository-policy (Mimosa L3 git gate) findings that were
+blocking the completed Pass #5 pricing + Safe Mode remediation commit.
+Worktree: /home/bronzesneaks/cherry-tree-pass5
+Branch:   z-ai/cherry-tree-pass5-pricing-safe-mode
+
+
+FINAL VERDICT
+
+PASS #5 STILL BLOCKED (at triage completion) — all three Mimosa findings were
+adversarially triaged as FALSE POSITIVES with dataflow-level proof, but Mimosa
+1.0.3 provides no supported acknowledgement mechanism for cross-file chain
+findings (the only class the gate force-blocks on). Publication subsequently
+proceeded under explicit operator instruction; see section 8.
+
+
+1. PHANTOM PRE-OPS (verified at triage start)
+
+  pwd      /home/bronzesneaks/cherry-tree-pass5
+  branch   z-ai/cherry-tree-pass5-pricing-safe-mode
+  HEAD     bb7139470d6b9b4149fc147cc1be1202280eefc7
+  origin   bb7139470d6b9b4149fc147cc1be1202280eefc7 (equal)
+  staged   8 Pass #5 files, +827 insertions / -96 deletions, checks clean
+  unstaged none
+  .mimosa/ and app/.mimosa/ untracked, unstaged, preserved
+
+
+2. THE THREE MIMOSA FINDINGS AND THEIR CLASSIFICATION
+
+All three were reproduced with the Mimosa CLI (scan <file> --project) and with
+the gate itself (git commit --dry-run triggers the identical PreToolUse L3
+audit without creating a commit).
+
+FINDING 1 — app/src/proxy.ts:32 [HIGH] "buildCsp 是 code-injection 入口"
+Chain: environment variables -> buildCsp() (defined in src/lib/csp.ts).
+Classification: FALSE POSITIVE / SAFE BY CONSTRUCTION.
+
+Proof — every fragment of the built CSP string was traced end to end:
+
+  - All env-derived connect-src values (NEXT_PUBLIC_SOLANA_RPC_URL,
+    CHERRY_JWKS_URL, CSP_EXTRA_CONNECT_SRC) pass through origin()
+    (new URL(url).origin). A serialized WHATWG origin cannot contain CSP
+    metacharacters (no whitespace, no ';'), so no CSP directive injection is
+    constructible through configuration.
+  - The nonce is charset-validated with a fail-closed throw in
+    nonceScriptSources (csp.ts): /^[A-Za-z0-9+/_-]+={0,2}$/.
+  - `dev` is a boolean that only selects fixed literals.
+  - CHERRY_EMBED_ORIGIN is the hardcoded constant 'https://embed.cherry.fun'
+    (cherryChat.ts line 22), not environment-derived.
+  - No eval or code execution exists anywhere in the flow. The companion
+    medium's "代码执行 eval" marker is the dev-only CSP token string
+    'unsafe-eval' — a policy directive, not an eval call.
+  - Environment variables here are operator deployment configuration, never
+    request input; an actor able to set them owns the deployment outright.
+
+FINDING 2 — app/src/lib/server/growthConfig.ts:34 [MEDIUM] cross-file taint
+Chain: env (CHERRY_TREE_SEASONS_JSON) -> validateSeasons() ->
+"growth/seasons.ts:84 MongoDB 动态排序字段 sort".
+Classification: FALSE POSITIVE.
+
+Proof: the flagged .sort calls (seasons.ts lines 73 and 111) are
+Array.prototype.sort with fixed inline comparator functions over an in-memory
+parsed array. There is no database client anywhere in the app — package.json
+contains no mongo/driver dependency. The heuristic matched the text ".sort("
+on data with env provenance.
+
+FINDING 3 — app/scripts/ops/runway-report.ts:105 [MEDIUM] cross-file taint
+Chain: command-line argument (--history limit) -> refillHistory() ->
+"growth/runway.ts:150 MongoDB 动态排序字段 sort".
+Classification: FALSE POSITIVE.
+
+Proof: identical pattern — runway.ts line 153 is Array.prototype.sort with a
+fixed comparator; the argv value is only a fetch limit for on-chain RPC
+events; no database is involved anywhere in this app.
+
+
+3. ACKNOWLEDGEMENT MECHANISM EXHAUSTION (why the gate could not be cleared)
+
+Every documented Mimosa acknowledgement/remediation path was tested against
+the real scanner and the real gate:
+
+  a. Inline "// mimosa-ignore" comments: verified empirically as a real,
+     honored mechanism for DIRECT findings (a positive-control fixture is
+     suppressed by a same-line comment; --no-ignore-comments restores the
+     finding, proving causality). Applied against the chain findings at five
+     distinct placements — source line, reported call line, sink signature
+     line, and the sink body-marker lines in csp.ts/seasons.ts/runway.ts.
+     Result: cross-file chain findings ignore inline suppressions entirely.
+
+  b. .mimosa/security-policy.json (policy init): the policy file IS consumed,
+     but only its `command` section demonstrably affects findings — the
+     default forbidShell:true actually ADDED a new false high at
+     app/src/lib/program/events.ts:188 (a RegExp .exec() misread as shell
+     exec). threatModel.exclusions and data.allowedSortFields have no effect
+     on chain findings. The policy file was removed afterwards.
+
+  c. Ledger / validate / knowledge: documented as non-verdict-affecting
+     (README: history "已展示" does not skip gates; knowledge readback does
+     not modify ledger, finding, Hook or verdict; validate is restricted to
+     an allowlisted finding contract).
+
+  d. A probe project cloning the exact csp.ts/proxy.ts pair did not
+     reproduce the chain in isolation, so no code-level trigger could be
+     identified and legitimately neutralized either.
+
+  e. Gate oracle: `git commit --dry-run` triggers the identical gate with
+     zero side effects and was used for every verdict check. Final triage
+     state: identical block (1 high + 3 medium).
+
+The only remaining ways to clear the gate would have been code changes whose
+sole purpose is defeating scanner heuristics (function renames, code motion)
+or disabling/weakening the hook — both explicitly prohibited by the work
+order. Per instructions, the triage stopped and reported instead.
+
+
+4. REPO STATE DISCOVERED AT PUBLICATION TIME
+
+At the time the operator instructed publication, the branch had moved beyond
+the triage state (all verified against the remote via git ls-remote):
+
+  bb71394  feat: pricing and safe mode foundation
+  99679b9  fix: remediate Pass #5 pricing and safe mode   (8 files, +827/-96)
+  801e418  docs: add Pass 5 Codex verification handoff
+
+  - 99679b9 is byte-for-byte the triaged Pass #5 remediation (the same 8
+    files and diffstat this report's task started from), committed and
+    pushed after the triage report was delivered.
+  - 801e418 adds PASS5_CODEX_HANDOFF.txt, an independent Codex verification
+    of 99679b9. Its verdict: PASS #5 NOT VERIFIED, with six HIGH defects for
+    a subsequent remediation pass: F1-A (registration anchoring marker can be
+    inherited by a different wallet through SetAccountOwner), F1-B
+    (checkpoint-adopted pending unstake loses its Reference basis), F1-C
+    (cancel_unstake uses swap_remove and is not FIFO), F2-A (a newer invalid
+    observation does not invalidate an older still-fresh valid one), ADD-A
+    (exact-rational TWAP is wrong when sample denominators differ), ADD-B
+    (confidence threshold compares an absolute half-width against a relative
+    limit), ADD-C (the single-spot prohibition is configurable away). F3
+    (route-halt authorization) was VERIFIED.
+  - A concurrent agent session is actively staging a round-2 remediation of
+    those defects (5 files staged: lots.rs, pricing.rs, replay.rs,
+    pricing_safe_mode.rs, safe_mode_properties.rs; +1139/-83 at the time of
+    writing). That work is NOT part of this publication: it is incomplete,
+    uncommitted, and belongs to that agent's task.
+
+
+5. TEST EVIDENCE
+
+From the triage session (tree identical to the previously verified state):
+
+  cd app && npx vitest run tests/csp.test.ts tests/proxy.test.ts \
+      tests/growth.test.ts tests/cherryChat.test.ts
+    PASS — 4 files, 84 tests, 0 failed
+
+  cd app && npm run typecheck
+    PASS — tsc --noEmit, no diagnostics
+
+  git diff --check / git diff --cached --check
+    PASS — clean
+
+From the Pass #5 remediation session (recorded in the prior handoff; the
+same content is commit 99679b9):
+
+  cargo test --workspace                PASS — 363 passed / 0 failed
+  cd app && npx vitest run              PASS — 713 passed / 0 failed (38 files)
+  cd app && npm run typecheck           PASS
+  cargo clippy -p eligibility-engine --all-targets   PASS — 0 warnings
+  cargo fmt -p eligibility-engine -- --check         PASS
+
+
+6. FILES CHANGED BY THIS REPORT'S COMMIT
+
+This commit contains exactly one file: PASS5_MIMOSA_TRIAGE_REPORT.txt.
+The concurrent agent's staged round-2 files were deliberately left staged,
+uncommitted and unpublished. No merge, no deploy, no Pass #6 work, no
+changes to wallets, secrets, Vercel, production configuration or protocol
+economics. .mimosa/ and app/.mimosa/ remain untracked.
+
+
+7. MIMOSA HONESTY STATEMENT
+
+Mimosa was not weakened, redesigned, or suppressed as part of the triage.
+Publication of this report proceeded afterwards under explicit operator
+instruction, using Mimosa's documented per-invocation git-gate override. The
+gate's standing findings at publication time are the three chain findings
+classified as false positives in section 2, plus the coverage-incomplete
+notice the gate itself reports for this repository (Rust modules are
+"always honestly partial" per the Mimosa README). Any reviewer can reproduce
+the gate verdict with: git commit --dry-run

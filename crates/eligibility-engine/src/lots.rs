@@ -9,9 +9,14 @@
 //!   the verified NAV, prospectively only (the replay applies it from its
 //!   event, test 36).
 //!
-//! Lots are FIFO. Consumption order cannot create value: under any order the
-//! total is the sum of the lots, and every lot's price is already capped by
-//! the min rule at its acquisition. `price == None` marks a unit whose
+//! Lots are FIFO **by acquisition age** (a monotone stamp on every lot,
+//! kept ordered across the active and the pending-unstake buckets).
+//! Consumption order cannot create value: under any order the total is
+//! the sum of the lots, and every lot's price is already capped by
+//! the min rule at its acquisition; age order additionally fixes WHICH
+//! capped price applies when units are partially consumed, so no
+//! unstake/cancel sequence can front-run an expensive lot with a cheap
+//! one. `price == None` marks a unit whose
 //! addition price could not be verified (no usable observation): its holder
 //! is PENDING (reserved), never silently reference-priced.
 //!
@@ -46,6 +51,11 @@ pub struct Lot {
     /// `None` = addition price unverified: fail closed (PENDING).
     pub price: Option<UnitPrice>,
     pub basis: LotBasis,
+    /// Acquisition-order stamp (monotone across the ledger): FIFO age is
+    /// totally ordered across the active and pending buckets, so lots
+    /// returning from the pending bucket re-enter at their age position
+    /// instead of a bucket end.
+    pub seq: u64,
 }
 
 /// Valuation of the first `n` units of a holder (FIFO).
@@ -66,12 +76,24 @@ pub struct LotLedger {
     /// `(mint, holder)` pairs whose registration pricing is already
     /// anchored: applied at their FIRST registration event (or at a
     /// verified reset). Later registration events never touch them again.
+    /// The anchor belongs to the owning wallet: an account-owner transfer
+    /// clears it ([`LotLedger::clear_registered`]) so the recipient's own
+    /// first registration applies.
     registered: BTreeSet<(Addr, Addr)>,
+    /// Next acquisition-order stamp (see [`Lot::seq`]).
+    next_seq: u64,
 }
 
 impl LotLedger {
     fn vec_mut(&mut self, key: (Addr, Addr)) -> &mut Vec<Lot> {
         self.lots.entry(key).or_default()
+    }
+
+    /// Fresh acquisition-order stamp.
+    fn fresh_seq(&mut self) -> u64 {
+        let s = self.next_seq;
+        self.next_seq += 1;
+        s
     }
 
     /// Append a lot, coalescing with the tail when identical.
@@ -84,6 +106,7 @@ impl LotLedger {
         basis: LotBasis,
     ) -> EligibilityResult<()> {
         let key = (mint, holder);
+        let seq = self.fresh_seq();
         let v = self.vec_mut(key);
         if let Some(last) = v.last_mut() {
             if last.basis == basis && last.price == price {
@@ -98,6 +121,7 @@ impl LotLedger {
             units,
             price,
             basis,
+            seq,
         });
         Ok(())
     }
@@ -173,6 +197,16 @@ impl LotLedger {
         }
     }
 
+    /// Remove a holder's registration anchor. The anchor belongs to the
+    /// owning wallet's first registration, so it must not survive an
+    /// account-owner transfer: `SetAccountOwner` moves the whole account
+    /// to a different wallet, and the recipient re-anchors only if it is
+    /// itself already registered (the replay's credit path); otherwise the
+    /// recipient's own first registration applies the boundary price.
+    pub fn clear_registered(&mut self, mint: Addr, holder: Addr) {
+        self.registered.remove(&(mint, holder));
+    }
+
     /// Registration after the reference timestamp (section 5): reference
     /// lots of these holders drop to `price`; addition lots keep their own
     /// event price; unpriced lots stay unpriced. `price == None` (no usable
@@ -215,37 +249,43 @@ impl LotLedger {
     /// authoritative from its event, so every touched holder is anchored: a
     /// later registration event never reprices reset-priced lots.
     pub fn rebase_mint(&mut self, mint: Addr, price: UnitPrice) -> EligibilityResult<()> {
-        let rebase = |v: &mut Vec<Lot>| -> EligibilityResult<()> {
-            let mut total = 0u64;
-            for l in v.iter() {
-                total = total
-                    .checked_add(l.units)
-                    .ok_or(EligibilityError::MathOverflow)?;
+        let keys: Vec<(Addr, Addr)> = self
+            .lots
+            .keys()
+            .chain(self.pending.keys())
+            .filter(|(m, _)| *m == mint)
+            .cloned()
+            .collect();
+        for key in keys {
+            let seq = self.fresh_seq();
+            let collapse = |v: &mut Vec<Lot>| -> EligibilityResult<()> {
+                let mut total = 0u64;
+                for l in v.iter() {
+                    total = total
+                        .checked_add(l.units)
+                        .ok_or(EligibilityError::MathOverflow)?;
+                }
+                *v = vec![Lot {
+                    units: total,
+                    price: Some(price),
+                    basis: LotBasis::Reference,
+                    seq,
+                }];
+                Ok(())
+            };
+            self.registered.insert(key);
+            if let Some(v) = self.lots.get_mut(&key) {
+                collapse(v)?;
             }
-            *v = vec![Lot {
-                units: total,
-                price: Some(price),
-                basis: LotBasis::Reference,
-            }];
-            Ok(())
-        };
-        for ((m, holder), v) in self.lots.iter_mut() {
-            if *m == mint {
-                self.registered.insert((*m, *holder));
-                rebase(v)?;
-            }
-        }
-        for ((m, holder), v) in self.pending.iter_mut() {
-            if *m == mint {
-                self.registered.insert((*m, *holder));
-                rebase(v)?;
+            if let Some(v) = self.pending.get_mut(&key) {
+                collapse(v)?;
             }
         }
         Ok(())
     }
 
     /// Stake: units move from the wallet account into the beneficiary's
-    /// active bucket, carrying their lots.
+    /// active bucket, carrying their lots (and their age).
     pub fn stake(
         &mut self,
         mint: Addr,
@@ -255,13 +295,15 @@ impl LotLedger {
     ) -> EligibilityResult<()> {
         let moved = self.split_off(mint, from_account, units)?;
         for lot in moved {
-            let v = self.vec_mut((mint, beneficiary));
-            v.push(lot);
+            insert_seq(self.vec_mut((mint, beneficiary)), lot);
         }
         Ok(())
     }
 
     /// RequestUnstake: active → pending bucket (excluded from valuation).
+    /// The moved lots keep their acquisition age and merge into the
+    /// pending bucket at that position, so pending stays age-ordered like
+    /// the active bucket.
     pub fn request_unstake(
         &mut self,
         mint: Addr,
@@ -269,14 +311,20 @@ impl LotLedger {
         units: u64,
     ) -> EligibilityResult<()> {
         let moved = self.split_off(mint, beneficiary, units)?;
-        self.pending
-            .entry((mint, beneficiary))
-            .or_default()
-            .extend(moved);
+        let v = self.pending.entry((mint, beneficiary)).or_default();
+        for lot in moved {
+            let idx = v.partition_point(|l| l.seq <= lot.seq);
+            v.insert(idx, lot);
+        }
         Ok(())
     }
 
-    /// CancelUnstake: pending → active (lots return).
+    /// CancelUnstake: pending → active. The pending bucket is consumed
+    /// FIFO (oldest lots first, never a reordered swap), and each returned
+    /// lot re-enters the active bucket at its acquisition-age position:
+    /// canonical FIFO holds across both buckets, so no cancellation
+    /// ordering can promote a newer cheap lot in front of an older
+    /// expensive one (or the reverse).
     pub fn cancel_unstake(
         &mut self,
         mint: Addr,
@@ -287,11 +335,12 @@ impl LotLedger {
         let mut left = units;
         let v = self.pending.entry(key).or_default();
         let mut taken = Vec::new();
-        let idx = 0;
+        let mut idx = 0;
         while left > 0 && idx < v.len() {
             if v[idx].units <= left {
                 left -= v[idx].units;
-                taken.push(v.swap_remove(idx)); // order within pending is irrelevant
+                taken.push(v[idx]);
+                idx += 1;
             } else {
                 v[idx].units -= left;
                 taken.push(Lot {
@@ -301,6 +350,7 @@ impl LotLedger {
                 left = 0;
             }
         }
+        v.drain(..idx);
         if v.is_empty() {
             self.pending.remove(&key);
         }
@@ -308,7 +358,7 @@ impl LotLedger {
             return Err(EligibilityError::InvariantViolation("cancel above pending"));
         }
         for lot in taken {
-            self.vec_mut(key).push(lot);
+            insert_seq(self.vec_mut(key), lot);
         }
         Ok(())
     }
@@ -356,17 +406,23 @@ impl LotLedger {
     }
 
     /// Credit units straight into the pending-unstake bucket (checkpoint
-    /// adoption of pending balances the replay did not observe).
+    /// adoption of pending balances the replay did not observe). The
+    /// acquisition basis travels with the lot: a pre-reference adoption is
+    /// a `Reference` lot that a late first registration reprices exactly
+    /// like an observed one; a post-reference adoption is an `Addition`
+    /// at the adoption's min-rule price (possibly unpriced: fail closed).
     pub fn credit_pending(
         &mut self,
         mint: Addr,
         holder: Addr,
         units: u64,
         price: Option<UnitPrice>,
+        basis: LotBasis,
     ) -> EligibilityResult<()> {
+        let seq = self.fresh_seq();
         let v = self.pending.entry((mint, holder)).or_default();
         if let Some(last) = v.last_mut() {
-            if last.price == price {
+            if last.basis == basis && last.price == price {
                 last.units = last
                     .units
                     .checked_add(units)
@@ -377,7 +433,8 @@ impl LotLedger {
         v.push(Lot {
             units,
             price,
-            basis: LotBasis::Addition,
+            basis,
+            seq,
         });
         Ok(())
     }
@@ -450,6 +507,15 @@ fn lot_value_add(sum: u128, p: UnitPrice, units: u64) -> EligibilityResult<u128>
         .ok_or(EligibilityError::MathOverflow)?
         / p.units_den;
     sum.checked_add(v).ok_or(EligibilityError::MathOverflow)
+}
+
+/// Insert `lot` into `v` keeping the vector ordered by acquisition `seq`
+/// (stable: equal stamps append after their equals). Both buckets stay
+/// age-ordered, so FIFO consumption and valuation are canonical across
+/// pending-unstake round trips.
+fn insert_seq(v: &mut Vec<Lot>, lot: Lot) {
+    let idx = v.partition_point(|l| l.seq <= lot.seq);
+    v.insert(idx, lot);
 }
 
 /// Merge adjacent identical lots so vectors stay small.
@@ -580,5 +646,69 @@ mod tests {
         l.stake(MINT, CUSTODY, W, 60).unwrap();
         assert_eq!(l.units(MINT, CUSTODY), 40);
         assert_eq!(l.head_value(MINT, W, 60).unwrap().lamports, 120);
+    }
+
+    // ------------------------------------- Pass #5 second remediation
+
+    /// F1-C: partial cancellation of differently priced pending lots
+    /// consumes them FIFO (oldest first) and re-seats the returned lots at
+    /// their age position in the active bucket.
+    #[test]
+    fn cancel_unstake_is_fifo_and_age_ordered() {
+        let mut l = LotLedger::default();
+        l.credit(MINT, W, 10, p(1), LotBasis::Reference).unwrap();
+        l.credit(MINT, W, 10, p(2), LotBasis::Addition).unwrap();
+        l.credit(MINT, W, 10, p(3), LotBasis::Addition).unwrap();
+        l.request_unstake(MINT, W, 30).unwrap();
+        assert_eq!(l.units(MINT, W), 0);
+        assert_eq!(l.pending_units(MINT, W), 30);
+        // Partial cancel of 15: the oldest lot (10@1) plus HALF of the
+        // second (5@2) — never a slice of the newest lot.
+        l.cancel_unstake(MINT, W, 15).unwrap();
+        assert_eq!(l.pending_units(MINT, W), 15);
+        assert_eq!(
+            l.head_value(MINT, W, 15).unwrap().lamports,
+            10 + 5 * 2,
+            "partial cancellation returns the oldest pending lots first"
+        );
+        // Full cancel returns the remainder in age order; consuming from
+        // the front still hits the oldest prices first.
+        l.cancel_unstake(MINT, W, 15).unwrap();
+        assert_eq!(l.pending_units(MINT, W), 0);
+        assert_eq!(l.head_value(MINT, W, 30).unwrap().lamports, 10 + 20 + 30);
+        l.consume(MINT, W, 15).unwrap();
+        assert_eq!(l.head_value(MINT, W, 15).unwrap().lamports, 5 * 2 + 10 * 3);
+    }
+
+    /// F1-C adversarial: cancellation ordering must not let a holder burn
+    /// newly-acquired cheap lots while old expensive lots stay recognized.
+    #[test]
+    fn cancel_returns_old_lots_in_front_of_new_acquisitions() {
+        let mut l = LotLedger::default();
+        l.credit(MINT, W, 100, p(2), LotBasis::Reference).unwrap();
+        l.request_unstake(MINT, W, 100).unwrap();
+        l.credit(MINT, W, 100, p(1), LotBasis::Addition).unwrap(); // cheap new acquisition
+        l.cancel_unstake(MINT, W, 100).unwrap();
+        // Consume removes the OLD expensive lot first: the remaining units
+        // are the cheap ones, never the other way around.
+        l.consume(MINT, W, 100).unwrap();
+        assert_eq!(l.head_value(MINT, W, 100).unwrap().lamports, 100);
+    }
+
+    /// F1-B: checkpoint-adopted pending lots carry their acquisition
+    /// BASIS: a pre-reference adoption is a Reference lot that a late
+    /// first registration reprices exactly like an observed one.
+    #[test]
+    fn adopted_pending_lots_carry_their_basis_into_registration() {
+        let mut l = LotLedger::default();
+        l.credit_pending(MINT, W, 100, p(2), LotBasis::Reference)
+            .unwrap();
+        l.rebase_registered(MINT, &[W], p(1)).unwrap();
+        l.cancel_unstake(MINT, W, 100).unwrap();
+        assert_eq!(
+            l.head_value(MINT, W, 100).unwrap().lamports,
+            100,
+            "the adopted pre-reference pending lot rebased at the late registration"
+        );
     }
 }

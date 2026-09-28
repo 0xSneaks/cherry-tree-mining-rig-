@@ -186,10 +186,8 @@ fn t31_manipulated_one_block_reference_sample_is_rejected() {
     ];
     let committed = commit_reference(&honest, 200, &validation_fixture(), PriceBasis::Reference)
         .expect("validated window commits");
-    assert_eq!(
-        (committed.lamports_num, committed.units_den),
-        (20_250, 10_000)
-    );
+    // Exact TWAP 2.025 in canonical reduced form (81/40).
+    assert_eq!((committed.lamports_num, committed.units_den), (81, 40));
     let refs = EpochReferences::new()
         .with(ReferenceCommit::new(PriceKey::Mint(SKR_MINT), committed, 250, 300).unwrap());
     let mut t = Tl::new();
@@ -201,7 +199,7 @@ fn t31_manipulated_one_block_reference_sample_is_rejected() {
         .no_debt(A, &[LENDER_A]);
     t.slot(2, 400).close();
     let r = run_with(&skr_epoch().0, &refs, &t, 400);
-    // 1000 units x 20250/10000 = 2025 lamports.
+    // 1000 units x 81/40 = 2025 lamports.
     assert_eq!(verified_x(x_at(&r, &A, 350)), 2_025);
 }
 
@@ -1364,6 +1362,631 @@ fn f3_route_halt_denies_entry_in_normal_and_warm_too() {
     assert_eq!(
         authorize(RiskZone::Unknown, &req, Some(&signed(&req, 7)), &halted),
         EntryDecision::Denied(EntryDenial::UnknownRiskData)
+    );
+}
+
+// ===================================================================
+// Pass #5 SECOND remediation regressions (F1-A / F1-B / F1-C / F2-A).
+// Every address, price and threshold below is a fixture.
+// ===================================================================
+
+/// F1-A: the registration anchor belongs to the owner wallet's FIRST
+/// registration event. A SetAccountOwner transfer changes WHO the holder
+/// is, so the prior owner's anchor must not survive the transfer — a
+/// recipient that was never registered gets its own first-registration
+/// pricing; a recipient already registered re-anchors legitimately at the
+/// credit and keeps its reference pricing.
+#[test]
+fn f1a_registration_anchor_does_not_survive_account_owner_transfer() {
+    let cfg = config(
+        vec![skr_adapter_max_age(StakeSupport::None, Some(10_000))],
+        &[LENDER_A],
+    );
+    let refs = EpochReferences::new().with(ref_commit_at(SKR_MINT, price(2, 1), 100));
+
+    // Codex adversarial path: A registers pre-reference (anchoring its
+    // account), the ACCOUNT moves to unregistered B pre-reference, the
+    // market drops, B registers for the FIRST time afterwards. B's units
+    // must price at min(2, 1) = 1 — a stale `(mint, account)` marker from
+    // A must not skip B's registration-boundary rebase.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .mint(A, SKR_MINT, 800)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT),
+        new_owner: B,
+    });
+    t.slot(3, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(4, 200)
+        .register(B, AssetKind::Skr)
+        .no_debt(B, &[LENDER_A]);
+    t.slot(5, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &B, 250)),
+        800,
+        "B's first registration must apply the registration-boundary price; \
+         A's stale marker must not skip it"
+    );
+
+    // Control: the recipient is ALREADY registered when it receives the
+    // account pre-reference — the credit re-anchors legitimately, so the
+    // reference pricing stands and a later re-registration never reprices.
+    let mut t = Tl::new();
+    t.slot(1, 40).init(A, SKR_MINT).init(B, SKR_MINT);
+    t.slot(2, 50)
+        .mint(A, SKR_MINT, 800)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .register(B, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A])
+        .no_debt(B, &[LENDER_A]);
+    t.slot(3, 60).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT),
+        new_owner: B,
+    });
+    t.slot(4, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(5, 200)
+        .register(B, AssetKind::Skr) // re-registration: never reprices
+        .no_debt(B, &[LENDER_A]);
+    t.slot(6, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &B, 250)),
+        800 * 2,
+        "an already-registered recipient holds at the epoch boundary under \
+         its registration: reference pricing is permanent"
+    );
+
+    // The marker also survives a fully DRAINED account in the registered
+    // set, so an empty account transferred to an unregistered wallet and
+    // refilled pre-reference must lose the prior owner's anchor too.
+    let mut t = Tl::new();
+    t.slot(1, 40)
+        .init(A, SKR_MINT)
+        .init(B, SKR_MINT)
+        .init(C, SKR_MINT);
+    t.slot(2, 50)
+        .mint(A, SKR_MINT, 800)
+        .send(A, C, SKR_MINT, 800) // drain ta(A) to empty
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr) // anchors the (empty) account key
+        .no_debt(A, &[LENDER_A]);
+    t.slot(3, 60).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT), // empty account moves to B
+        new_owner: B,
+    });
+    t.slot(4, 70).ev(EventKind::Transfer {
+        source: ta(C, SKR_MINT),
+        destination: ta(A, SKR_MINT), // refill the account, now B's
+        amount: 800,
+        authority: Authority::Owner,
+    });
+    t.slot(5, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(6, 200)
+        .register(B, AssetKind::Skr)
+        .no_debt(B, &[LENDER_A]);
+    t.slot(7, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &B, 250)),
+        800,
+        "a refilled account inherited by an unregistered wallet must not \
+         keep the prior owner's drained-account anchor"
+    );
+
+    // Round trip: the account comes BACK to registered A after the drop.
+    // The return is an acquisition at the event: min(2, 1) = 1, and A's
+    // old anchor (correctly cleared at the first transfer) is re-anchored
+    // by the credit under A's active registration.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .mint(A, SKR_MINT, 800)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT),
+        new_owner: B,
+    });
+    t.slot(3, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(4, 250).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT),
+        new_owner: A,
+    });
+    t.slot(5, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &A, 275)),
+        800,
+        "the returning account is a post-reference acquisition by A: the \
+         event min rule applies, never the pre-drop reference price"
+    );
+
+    // Sibling (checkpoint path): the ownership change happened INSIDE a
+    // declared gap, so the replay sees it only through the adopted
+    // checkpoint. The prior owner's anchor must not survive the adoption
+    // either — B's first registration still applies the boundary price.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .mint(A, SKR_MINT, 800)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::DeclaredGap);
+    t.slot(3, 70).checkpoint(
+        vec![AccountSnapshot {
+            account: ta(A, SKR_MINT),
+            mint: SKR_MINT,
+            owner: B, // transferred to B inside the gap
+            amount: 800,
+            delegate: None,
+            delegated_amount: 0,
+            frozen: false,
+        }],
+        vec![],
+        vec![supply(SKR_MINT, 800)],
+    );
+    t.slot(4, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(5, 200)
+        .register(B, AssetKind::Skr)
+        .no_debt(B, &[LENDER_A]);
+    t.slot(6, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &B, 250)),
+        800,
+        "an ownership change adopted from a checkpoint must not carry the \
+         prior owner's registration anchor into the new owner's first \
+         registration"
+    );
+}
+
+/// Fixture stake world for the F1-B / F1-C timelines: verified stake
+/// support with a custody account, reference 2 committed at 0, epoch
+/// starting at 100.
+fn stake_world() -> (EligibilityConfig, EpochReferences) {
+    (
+        config(
+            vec![skr_adapter_max_age(verified_stake(), Some(10_000))],
+            &[LENDER_A],
+        ),
+        EpochReferences::new().with(ref_commit_at(SKR_MINT, price(2, 1), 100)),
+    )
+}
+
+/// A pending-unstake balance ADOPTED by a checkpoint (the replay missed
+/// its events behind a declared gap) is subject to the same registration
+/// anchoring as an observed one: a wallet whose FIRST registration is
+/// late gets the registration-boundary price on those units, and
+/// CancelUnstake can never resurrect pre-registration reference pricing.
+#[test]
+fn f1b_checkpoint_adopted_pending_unstake_cannot_bypass_registration() {
+    let (cfg, refs) = stake_world();
+
+    // (a) The adoption: gap at 60, checkpoint at 70 observes the units
+    // already staked AND pending-unstaked (pre-reference). B... A's first
+    // registration is late (200), after the drop at 150. Canceling the
+    // unstake afterwards must yield min(2, 1) = 1 per unit.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .mint(A, SKR_MINT, 1_000)
+        .pinned(&[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::DeclaredGap);
+    t.slot(3, 70).checkpoint(
+        vec![
+            snap(A, SKR_MINT, 0),
+            AccountSnapshot {
+                account: CUSTODY,
+                mint: SKR_MINT,
+                owner: STAKE_CUSTODY_OWNER,
+                amount: 1_000,
+                delegate: None,
+                delegated_amount: 0,
+                frozen: false,
+            },
+        ],
+        vec![StakeSnapshot {
+            mint: SKR_MINT,
+            beneficiary: A,
+            active: 0,
+            pending_unstake: 1_000,
+        }],
+        vec![supply(SKR_MINT, 1_000)],
+    );
+    t.slot(4, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(5, 200)
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(6, 300).ev(EventKind::CancelUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 1_000,
+    });
+    t.slot(7, 400).close();
+    let r = run_with(&cfg, &refs, &t, 400);
+    match x_at(&r, &A, 350) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (1_000, 1_000),
+            "adopted pre-reference pending units rebase at the late first \
+             registration: min(2, 1) = 1 per unit"
+        ),
+        o => panic!("{o:?}"),
+    }
+
+    // (b) Same adoption, but the late registration has NO usable
+    // observation: the adopted pending lots rebase to unpriced and the
+    // canceled units are PENDING (fail closed), never reference-priced.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .mint(A, SKR_MINT, 1_000)
+        .pinned(&[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::DeclaredGap);
+    t.slot(3, 70).checkpoint(
+        vec![
+            snap(A, SKR_MINT, 0),
+            AccountSnapshot {
+                account: CUSTODY,
+                mint: SKR_MINT,
+                owner: STAKE_CUSTODY_OWNER,
+                amount: 1_000,
+                delegate: None,
+                delegated_amount: 0,
+                frozen: false,
+            },
+        ],
+        vec![StakeSnapshot {
+            mint: SKR_MINT,
+            beneficiary: A,
+            active: 0,
+            pending_unstake: 1_000,
+        }],
+        vec![supply(SKR_MINT, 1_000)],
+    );
+    t.slot(4, 200)
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(5, 300).ev(EventKind::CancelUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 1_000,
+    });
+    t.slot(6, 400).close();
+    let r = run_with(&cfg, &refs, &t, 400);
+    assert_eq!(
+        x_at(&r, &A, 350),
+        Some(Eligibility::Pending(PendingReason::AdditionUnpriced)),
+        "registration without a usable observation taints the adopted \
+         pending reference lots: PENDING, never silently priced"
+    );
+
+    // (c) Settle path: WithdrawUnstaked reprices the withdrawn units at
+    // their OWN event (a fresh acquisition), so neither the adoption nor
+    // the registration anchor can smuggle the pre-drop reference price.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .mint(A, SKR_MINT, 1_000)
+        .pinned(&[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::DeclaredGap);
+    t.slot(3, 70).checkpoint(
+        vec![
+            snap(A, SKR_MINT, 0),
+            AccountSnapshot {
+                account: CUSTODY,
+                mint: SKR_MINT,
+                owner: STAKE_CUSTODY_OWNER,
+                amount: 1_000,
+                delegate: None,
+                delegated_amount: 0,
+                frozen: false,
+            },
+        ],
+        vec![StakeSnapshot {
+            mint: SKR_MINT,
+            beneficiary: A,
+            active: 0,
+            pending_unstake: 1_000,
+        }],
+        vec![supply(SKR_MINT, 1_000)],
+    );
+    t.slot(4, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(5, 200)
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(6, 300).ev(EventKind::WithdrawUnstaked {
+        custody: CUSTODY,
+        destination: ta(A, SKR_MINT),
+        beneficiary: A,
+        amount: 1_000,
+    });
+    t.slot(7, 400).close();
+    let r = run_with(&cfg, &refs, &t, 400);
+    match x_at(&r, &A, 350) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (1_000, 1_000),
+            "withdrawn units price at their withdrawal event: min(2, 1)"
+        ),
+        o => panic!("{o:?}"),
+    }
+
+    // (d) Control: the wallet registered BEFORE the adoption (during the
+    // gap, pre-reference). The adopted pending balance is legitimately
+    // reference-priced and a later re-registration never reprices it.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .mint(A, SKR_MINT, 1_000)
+        .pinned(&[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::DeclaredGap);
+    t.slot(3, 65)
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(4, 70).checkpoint(
+        vec![
+            snap(A, SKR_MINT, 0),
+            AccountSnapshot {
+                account: CUSTODY,
+                mint: SKR_MINT,
+                owner: STAKE_CUSTODY_OWNER,
+                amount: 1_000,
+                delegate: None,
+                delegated_amount: 0,
+                frozen: false,
+            },
+        ],
+        vec![StakeSnapshot {
+            mint: SKR_MINT,
+            beneficiary: A,
+            active: 0,
+            pending_unstake: 1_000,
+        }],
+        vec![supply(SKR_MINT, 1_000)],
+    );
+    t.slot(5, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(6, 200)
+        .register(A, AssetKind::Skr) // re-registration: never reprices
+        .no_debt(A, &[LENDER_A]);
+    t.slot(7, 300).ev(EventKind::CancelUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 1_000,
+    });
+    t.slot(8, 400).close();
+    let r = run_with(&cfg, &refs, &t, 400);
+    match x_at(&r, &A, 350) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (1_000, 2_000),
+            "an adoption under an active pre-reference registration keeps \
+             reference pricing"
+        ),
+        o => panic!("{o:?}"),
+    }
+}
+
+/// F1-C: pending-unstake cancellation is FIFO. A partial cancellation
+/// consumes the OLDEST pending lots first, and the returned lots re-enter
+/// the active bucket at their age position — so later consumption values
+/// units oldest-first and no ordering can promote a cheap lot in front of
+/// an expensive one.
+#[test]
+fn f1c_pending_cancellation_is_fifo_and_age_ordered() {
+    let (cfg, refs) = stake_world();
+
+    // Three differently priced lots reach the pending bucket in a known
+    // age order: 100 units reference-priced 2 (pre-epoch), 100 units at
+    // the drop price 1, 100 units at 1.5.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .mint(A, SKR_MINT, 100)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(3, 160).mint(A, SKR_MINT, 100);
+    t.slot(4, 200).observe(SKR_MINT, price(3, 2)); // 1.5
+    t.slot(5, 210).mint(A, SKR_MINT, 100);
+    t.slot(6, 250).ev(EventKind::Stake {
+        source: ta(A, SKR_MINT),
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 300,
+    });
+    t.slot(7, 300).ev(EventKind::RequestUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 300,
+    });
+    // Partial cancel of 150: FIFO takes the 100@2 lot and HALF of the
+    // 100@1 lot — never a slice of the newest 1.5-priced lot.
+    t.slot(8, 320).ev(EventKind::CancelUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 150,
+    });
+    t.slot(9, 330).close();
+    let r = run_with(&cfg, &refs, &t, 330);
+    match x_at(&r, &A, 325) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (150, 100 * 2 + 50),
+            "partial cancellation returns the oldest lots: 100@2 + 50@1"
+        ),
+        o => panic!("{o:?}"),
+    }
+
+    // Full cancel of the remaining 150, then a partial unstake that
+    // consumes the oldest 150 units: the remaining recognized units are
+    // the newest ones (50@1 + 100@1.5) — age order across the buckets.
+    let mut t2 = t;
+    t2.slot(10, 350).ev(EventKind::CancelUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 150,
+    });
+    t2.slot(11, 400).ev(EventKind::RequestUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 150, // takes the oldest 150: 100@2 + 50@1
+    });
+    t2.slot(12, 500).close();
+    let r = run_with(&cfg, &refs, &t2, 500);
+    match x_at(&r, &A, 450) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (150, 50 + 100 * 3 / 2),
+            "after returning and re-consuming oldest-first, the remaining \
+             units are the newest lots: 50@1 + 100@1.5"
+        ),
+        o => panic!("{o:?}"),
+    }
+}
+
+/// F2-A: an INVALID newer observation (wrong basis or zero denominator)
+/// must poison the mint's cached observation — the engine must not fall
+/// back to an older still-fresh valid reading as if nothing happened.
+/// Additions and late registrations price from nothing (PENDING) until a
+/// fresh valid observation arrives.
+#[test]
+fn f2a_invalid_newer_observation_poisons_the_cached_price() {
+    let cfg = config(
+        vec![skr_adapter_max_age(StakeSupport::None, Some(10_000))],
+        &[LENDER_A],
+    );
+    let refs = EpochReferences::new().with(ref_commit_at(SKR_MINT, price(2, 1), 100));
+
+    let base = |obs200: UnitPrice| {
+        let mut t = Tl::new();
+        t.slot(1, 50)
+            .init(A, SKR_MINT)
+            .mint(A, SKR_MINT, 1_000)
+            .pinned(&[LENDER_A])
+            .register(A, AssetKind::Skr)
+            .no_debt(A, &[LENDER_A]);
+        t.slot(2, 150).observe(SKR_MINT, price(1, 1)); // valid
+        t.slot(3, 200).observe(SKR_MINT, obs200); // INVALID newer reading
+        t.slot(4, 250).mint(A, SKR_MINT, 500); // 100s after the valid one
+        t.slot(5, 300).close();
+        t
+    };
+
+    // Wrong basis: the invalid reading at 200 must invalidate the valid
+    // reading from 150 — the addition at 250 is unpriced, PENDING.
+    let wrong_basis = UnitPrice {
+        lamports_num: 1,
+        units_den: 1,
+        basis: PriceBasis::OwnedTokenNav, // SKR requires Reference
+    };
+    let r = run_with(&cfg, &refs, &base(wrong_basis), 300);
+    assert_eq!(
+        x_at(&r, &A, 260),
+        Some(Eligibility::Pending(PendingReason::AdditionUnpriced)),
+        "a newer invalid observation must not leave the older valid one usable"
+    );
+    // Settled prefix unchanged: the poison never rewinds settled state.
+    assert_eq!(r.wallet(&A).equity_seconds, 2_000 * 200);
+
+    // Zero denominator: same poison.
+    let zero_den = UnitPrice {
+        lamports_num: 1,
+        units_den: 0,
+        basis: PriceBasis::Reference,
+    };
+    let r = run_with(&cfg, &refs, &base(zero_den), 300);
+    assert_eq!(
+        x_at(&r, &A, 260),
+        Some(Eligibility::Pending(PendingReason::AdditionUnpriced))
+    );
+
+    // Replay determinism: a truncated replay settling only the prefix
+    // (through the invalid observation) produces exactly the prefix's
+    // settled numbers.
+    let mut short = base(wrong_basis);
+    short.events.truncate(short.events.len() - 2); // drop mint + close
+    short.slot(6, 210).close();
+    let rs = run_with(&cfg, &refs, &short, 210);
+    assert_eq!(
+        rs.wallet(&A).equity_seconds,
+        2_000 * 160,
+        "settled prefix [50, 210) identical in the truncated replay"
+    );
+
+    // Recovery: after the poison, a FRESH valid observation re-enables
+    // pricing (the poisoned state is not sticky).
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .mint(A, SKR_MINT, 1_000)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(3, 200).observe(SKR_MINT, wrong_basis);
+    t.slot(4, 400).observe(SKR_MINT, price(1, 1)); // fresh valid
+    t.slot(5, 450).mint(A, SKR_MINT, 500);
+    t.slot(6, 500).close();
+    let r = run_with(&cfg, &refs, &t, 500);
+    assert_eq!(
+        verified_x(x_at(&r, &A, 475)),
+        1_000 * 2 + 500,
+        "a fresh valid observation after the poison prices the next addition"
     );
 }
 

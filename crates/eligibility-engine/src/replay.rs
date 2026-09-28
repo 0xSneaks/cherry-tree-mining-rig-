@@ -522,12 +522,17 @@ impl State<'_> {
                 // consume the lots FIFO and re-credit them at the event's
                 // acquisition price (min rule), exactly like a token
                 // transfer — the recipient never inherits the previous
-                // holder's pre-drop reference pricing.
+                // holder's pre-drop reference pricing. The prior owner's
+                // registration anchor dies with the transfer (F1-A):
+                // `credit_anchored` re-anchors only if the RECIPIENT
+                // wallet is itself already registered, so a recipient's
+                // own first registration always applies.
                 let mint = self
                     .mint_of_account(account)
                     .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
                 let units = self.lots.units(mint, *account);
                 self.lots.consume(mint, *account, units)?;
+                self.lots.clear_registered(mint, *account);
                 let (price, basis) = self.acquisition(&mint, ts)?;
                 self.credit_anchored(mint, *account, units, price, basis)
             }
@@ -648,9 +653,14 @@ impl State<'_> {
             }
             let cur_pending = self.lots.pending_units(*mint, *beneficiary);
             if *pending > cur_pending {
-                let (price, _basis) = self.acquisition(mint, ts)?;
-                self.lots
-                    .credit_pending(*mint, *beneficiary, *pending - cur_pending, price)?;
+                let (price, basis) = self.acquisition(mint, ts)?;
+                self.lots.credit_pending(
+                    *mint,
+                    *beneficiary,
+                    *pending - cur_pending,
+                    price,
+                    basis,
+                )?;
             } else if cur_pending > *pending {
                 self.lots
                     .consume_pending(*mint, *beneficiary, cur_pending - *pending)?;
@@ -707,14 +717,21 @@ impl State<'_> {
                 }
             }
             EventKind::PriceObserved { mint, price } => {
-                // Only basis-correct observations are recorded (with the
-                // finalized time they were observed at); others leave
-                // additions unpriced (fail closed). Freshness is enforced
-                // at use: an observation outside the adapter's calibrated
-                // window is stale and unusable.
+                // Only basis-correct, well-formed observations are
+                // recorded (with the finalized time they were observed
+                // at). An INVALID newer observation (wrong basis, zero
+                // denominator) does not leave an older valid reading
+                // usable: it poisons the mint's cached entry, so
+                // additions and late registrations price from nothing
+                // (PENDING) until a fresh valid observation arrives (F2-A,
+                // fail closed). Freshness is enforced at use: an
+                // observation outside the adapter's calibrated window is
+                // stale and unusable.
                 if let Some(adapter) = self.config.adapter_of_mint(mint) {
                     if price.basis == adapter.asset.required_basis() && price.units_den != 0 {
                         self.observations.insert(*mint, (*price, ts));
+                    } else {
+                        self.observations.remove(mint);
                     }
                 }
             }
@@ -852,6 +869,16 @@ pub fn replay(
                 IntervalStatus::Unresolved
             };
             commit(&mut report, std::mem::take(&mut window), status)?;
+            // Ownership before adoption: an account whose observed owner
+            // differs was transferred inside the gap, and the prior
+            // owner's registration anchor must not survive the adoption
+            // (F1-A, checkpoint path).
+            let prev_owners: BTreeMap<Addr, Addr> = st
+                .ledger
+                .accounts
+                .iter()
+                .map(|(a, acc)| (*a, acc.owner))
+                .collect();
             st.ledger = observed;
             // Observed state is trusted only if it is itself coherent.
             st.in_sync = st.ledger.conserved() && st.stakes_backed();
@@ -866,6 +893,23 @@ pub fn replay(
                 .map(|s| (s.mint, s.beneficiary, s.active, s.pending_unstake))
                 .collect();
             st.reconcile_lots(&account_triples, &stake_quads, ts)?;
+            // Re-anchor every account whose owner changed in the gap: the
+            // anchor survives only if the OBSERVED owner is itself
+            // registered for the asset (mirroring the SetAccountOwner
+            // credit path); otherwise the recipient's own first
+            // registration applies.
+            for a in accounts {
+                if let Some(prev) = prev_owners.get(&a.account) {
+                    if *prev != a.owner {
+                        if let Some(adapter) = st.config.adapter_of_mint(&a.mint) {
+                            st.lots.clear_registered(a.mint, a.account);
+                            if st.registrations.get(&a.owner) == Some(&adapter.asset) {
+                                st.lots.mark_registered(a.mint, &[a.account]);
+                            }
+                        }
+                    }
+                }
+            }
         } else {
             st.apply(ev)?;
         }

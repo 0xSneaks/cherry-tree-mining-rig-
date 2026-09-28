@@ -88,7 +88,8 @@ export function topUpWarning(pendingLamports: bigint, formattedSol: string): str
   return (
     'Buying more seeds restarts your early-claim timer. Your unclaimed rewards ' +
     `(${formattedSol} SOL) would then carry the 30% early-claim fee for the next ` +
-    '24 hours. Claim them first to keep the full amount.'
+    '24 hours. Claiming first avoids that reset, but a claim now still pays the ' +
+    'early-claim fee that currently applies.'
   );
 }
 

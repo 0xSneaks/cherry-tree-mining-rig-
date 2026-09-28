@@ -9,7 +9,9 @@ transferred and no multisig deployed.** Execution is a founder action on mainnet
 |---|---|---|---|
 | BPF upgrade | upgrade authority (ProgramData) | Replace program code — the most powerful key | — |
 | `set_paused` | config authority | Stop buy, claim, compound | Move any lamport |
-| `set_pricing` | config authority | Change future price / fee (≤ 10%) | Touch accrued balances |
+| `set_pricing` | config authority | Change the future rig price (the purchase fee must be passed unchanged) | Change either protocol fee; touch accrued balances |
+| `schedule_fee_change`, `cancel_fee_change` | config authority | Schedule (or cancel) a purchase + compound fee change, `compound ≤ purchase ≤ 10%`, effective only after 72 h | Shorten or bypass the 72 h delay |
+| `apply_fee_change` | anyone | Apply a scheduled fee change at or after its `effective_at` | Apply it early |
 | `set_reward_funder`, `set_fee_recipient` | config authority | Rotate funder / fee destination | Redirect a withdrawal elsewhere |
 | `transfer_authority` → `accept_authority` | config authority → new | Two-step handover | — |
 | `withdraw_fees` | config authority | Move FEE vault → `config.fee_recipient` only | Touch REWARD or CAPITAL |
@@ -29,8 +31,16 @@ hostage indefinitely. This is why config authority must be a multisig with indep
 | Fee recipient | Cold address or multisig vault (destination only, never signs) | n/a | ≠ reward funder (fees must never become reward funding) |
 | Founder activation | Founder's Seeker Seed Vault wallet | single | Holds **no** operational authority |
 
-`app/src/lib/launch/expected.ts` currently expects the fee recipient to equal the founder wallet.
-`authority-audit` flags that as WARN: acceptable only as a disclosed interim.
+Canonical public addresses (three separate wallets):
+
+| Role | Address |
+|---|---|
+| Founder activation (`config.founder`) | `FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp` |
+| Fee / treasury (`config.fee_recipient`) | `4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF` |
+| Reward / funding (`config.reward_funder`) | `Eu866FnHkUHmB6HYiPNz7vNVWbegPmFvmtQRdD9GNBsz` |
+
+`app/src/lib/launch/expected.ts` expects the fee recipient `4FsY…` and the founder `Ftuid…`
+separately; the founder is never the fee recipient.
 
 ## 3. Signer requirements
 
@@ -57,10 +67,13 @@ hostage indefinitely. This is why config authority must be a multisig with indep
 
 - Squads v4 supports a per-multisig **time lock** between approval and execution. Target:
   - upgrade authority: **≥ 48 h at launch**, **≥ 7 days** after the stability period;
-  - config authority: **no timelock**. In V2 pause and pricing share one authority, so a
-    timelock on pricing would also delay an emergency pause. Pricing / funder / fee-recipient
-    changes are public events (`PricingUpdated`, `RewardFunderUpdated`, `FeeRecipientUpdated`)
-    and are announced before proposal. Splitting pause from config is Category C.
+  - config authority: **no multisig timelock**. Pause and pricing share one authority, so a
+    multisig timelock would also delay an emergency pause. Protocol fees are timelocked in the
+    program instead: purchase and compound fees are separate and change only through
+    `schedule_fee_change` → 72 h → `apply_fee_change` (or `cancel_fee_change`); `set_pricing`
+    changes the rig price only. Price / funder / fee-recipient changes are public events
+    (`PricingUpdated`, `RewardFunderUpdated`, `FeeRecipientUpdated`) and are announced before
+    proposal. Splitting pause from config is Category C.
 - Every upgrade is announced when proposed, not when executed.
 
 ## 6. Upgrade process
@@ -109,4 +122,4 @@ wider multisig at that point.
 - It never transfers, proposes or accepts anything.
 
 **Founder decisions remaining:** multisig membership (names/devices), thresholds, timelock
-lengths, fee-recipient destination, audit timing, revocation date.
+lengths, audit timing, revocation date. (Wallet addresses are set: see section 2.)

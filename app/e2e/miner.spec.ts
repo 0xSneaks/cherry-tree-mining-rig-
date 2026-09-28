@@ -205,7 +205,7 @@ test.describe('miner cadence surfaces', () => {
     const warning = page.getByTestId('buy-reset-warning');
     // §7a item 6: pending rewards > 0, so the mandated top-up warning shows.
     await expect(warning.getByTestId('top-up-warning')).toContainText(
-      /Buying more seeds restarts your early-claim timer\. Your unclaimed rewards \(0\.\d+ SOL\) would then carry the 30% early-claim fee for the next 24 hours\. Claim them first to keep the full amount\./,
+      /Buying more seeds restarts your early-claim timer\. Your unclaimed rewards \(0\.\d+ SOL\) would then carry the 30% early-claim fee for the next 24 hours\. Claiming first avoids that reset, but a claim now still pays the early-claim fee that currently applies\./,
     );
     // §7a item 5: schedule and 60/40 destination disclosed before purchase.
     await expect(warning.getByTestId('early-claim-disclosure')).toContainText(

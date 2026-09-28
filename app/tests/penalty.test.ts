@@ -54,11 +54,11 @@ describe('early-claim fee matches the Rust engine', () => {
 });
 
 describe('top-up warning (§7a item 6)', () => {
-  it('is the exact mandated text with the gross pending amount', () => {
+  it('is the §7a warning with the gross pending amount', () => {
     expect(topUpWarning(1_234_000n, '0.001234')).toBe(
       'Buying more seeds restarts your early-claim timer. Your unclaimed rewards ' +
         '(0.001234 SOL) would then carry the 30% early-claim fee for the next 24 hours. ' +
-        'Claim them first to keep the full amount.',
+        'Claiming first avoids that reset, but a claim now still pays the early-claim fee that currently applies.',
     );
   });
 

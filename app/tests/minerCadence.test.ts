@@ -75,7 +75,7 @@ describe('fresh-buy reset disclosure', () => {
     expect(copy).toBe(
       'Buying more seeds restarts your early-claim timer. Your unclaimed rewards ' +
         '(0.001500 SOL) would then carry the 30% early-claim fee for the next 24 hours. ' +
-        'Claim them first to keep the full amount.',
+        'Claiming first avoids that reset, but a claim now still pays the early-claim fee that currently applies.',
     );
     expect(copy).not.toMatch(/should|profit|guarantee|ROI|return per day/i);
   });

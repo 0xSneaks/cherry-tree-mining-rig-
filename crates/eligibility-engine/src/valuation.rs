@@ -1,9 +1,10 @@
-//! SOL-equivalent valuation interface (the clean seam Pass #5 fills).
+//! SOL-equivalent valuation primitives.
 //!
-//! Pass #4 does not produce prices: reference-price commitment, oracle
-//! confidence and TWAP windows are Pass #5. It only defines how a supplied,
-//! already-verified per-unit price is applied, identically to holdings and
-//! to debt (section 5: debt is "valued in SOL at the same reference prices").
+//! A supplied price is a ratio `lamports_num / units_den` applied with floor
+//! rounding. Which prices are in force for a settlement window is Pass #5's
+//! reference-commitment layer ([`crate::pricing`]: committed epoch
+//! references, in-epoch observations, verified resets); lot-level
+//! application of the min rule lives in [`crate::lots`].
 
 use crate::error::{EligibilityError, EligibilityResult};
 use crate::types::Addr;
@@ -46,34 +47,5 @@ impl UnitPrice {
             .checked_mul(self.lamports_num)
             .map(|v| v / self.units_den)
             .ok_or(EligibilityError::MathOverflow)
-    }
-}
-
-/// The prices in force for one settlement window.
-#[derive(Clone, Debug, Default)]
-pub struct PriceTable {
-    prices: std::collections::BTreeMap<PriceKey, UnitPrice>,
-}
-
-impl PriceTable {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with(mut self, key: PriceKey, price: UnitPrice) -> Self {
-        self.prices.insert(key, price);
-        self
-    }
-
-    /// `None` when no price is committed. SOL is always 1 lamport per lamport.
-    pub fn get(&self, key: PriceKey) -> Option<UnitPrice> {
-        match key {
-            PriceKey::Sol => Some(UnitPrice {
-                lamports_num: 1,
-                units_den: 1,
-                basis: PriceBasis::Reference,
-            }),
-            k => self.prices.get(&k).copied(),
-        }
     }
 }

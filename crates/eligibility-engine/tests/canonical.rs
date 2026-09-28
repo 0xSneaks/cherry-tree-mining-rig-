@@ -100,7 +100,7 @@ fn t18_different_slots_sharing_a_timestamp_have_zero_overlap() {
     bad.slot(1, 100).init(A, SKR_MINT);
     bad.slot(1, 101).tx().init(B, SKR_MINT);
     assert_eq!(
-        replay(&skr_cfg(), &prices(), bad.events.clone(), END).unwrap_err(),
+        replay(&skr_cfg(), &refs(), bad.events.clone(), END).unwrap_err(),
         EligibilityError::SlotTimestampMismatch
     );
 }
@@ -637,7 +637,7 @@ fn t29_owned_xsol_valued_at_owned_token_nav_never_notional() {
         t.slot(2, END).close();
         t
     };
-    let r = replay(&cfg, &prices(), world(0).events, END).unwrap();
+    let r = replay(&cfg, &refs(), world(0).events, END).unwrap();
     match x_at(&r, &A, 500) {
         Some(Eligibility::Verified {
             units,
@@ -647,13 +647,18 @@ fn t29_owned_xsol_valued_at_owned_token_nav_never_notional() {
         o => panic!("{o:?}"),
     }
     // Feeding the leveraged notional (say 3x) is refused, never used.
-    let notional = PriceTable::new().with(
-        PriceKey::Mint(XSOL_MINT),
-        UnitPrice {
-            lamports_num: 9,
-            units_den: 1,
-            basis: PriceBasis::UnderlyingNotional,
-        },
+    let notional = EpochReferences::new().with(
+        ReferenceCommit::new(
+            PriceKey::Mint(XSOL_MINT),
+            UnitPrice {
+                lamports_num: 9,
+                units_den: 1,
+                basis: PriceBasis::UnderlyingNotional,
+            },
+            0,
+            PRE_REFERENCE_EPOCH_START,
+        )
+        .unwrap(),
     );
     let r = replay(&cfg, &notional, world(0).events, END).unwrap();
     assert_eq!(
@@ -662,14 +667,14 @@ fn t29_owned_xsol_valued_at_owned_token_nav_never_notional() {
     );
     assert_eq!(r.wallet(&A).equity_seconds, 0);
     // A plain reference price is not an owned-token NAV either.
-    let reference = PriceTable::new().with(PriceKey::Mint(XSOL_MINT), price(3, 1));
+    let reference = EpochReferences::new().with(ref_commit(XSOL_MINT, price(3, 1)));
     let r = replay(&cfg, &reference, world(0).events, END).unwrap();
     assert_eq!(
         x_at(&r, &A, 500),
         Some(Eligibility::Ineligible(IneligibleReason::InvalidPriceBasis))
     );
     // Borrowing to buy it is wallet debt, netted if in the registry.
-    let r = replay(&cfg, &prices(), world(1_000).events, END).unwrap();
+    let r = replay(&cfg, &refs(), world(1_000).events, END).unwrap();
     assert_eq!(verified_x(x_at(&r, &A, 500)), 2_000);
     // An unobserved pin is UNKNOWN from the start (fail closed).
     let mut t = Tl::new();
@@ -680,7 +685,7 @@ fn t29_owned_xsol_valued_at_owned_token_nav_never_notional() {
         .register(A, AssetKind::XSol)
         .debt(A, LENDER_A, 0);
     t.slot(2, END).close();
-    let r = replay(&cfg, &prices(), t.events, END).unwrap();
+    let r = replay(&cfg, &refs(), t.events, END).unwrap();
     assert_eq!(
         x_at(&r, &A, 500),
         Some(Eligibility::Pending(PendingReason::AdapterProgramUnknown))
@@ -691,7 +696,7 @@ fn t29_owned_xsol_valued_at_owned_token_nav_never_notional() {
         program: XSOL_PROGRAM,
         version: V2,
     });
-    let r = replay(&cfg, &prices(), t.events, 2_000).unwrap();
+    let r = replay(&cfg, &refs(), t.events, 2_000).unwrap();
     assert_eq!(
         x_at(&r, &A, 1_700),
         Some(Eligibility::Pending(PendingReason::NotReconciled))
@@ -703,7 +708,7 @@ fn t29_owned_xsol_valued_at_owned_token_nav_never_notional() {
         version: V2,
     });
     t.slot(4, 2_000).close();
-    let r = replay(&cfg, &prices(), t.events, 2_000).unwrap();
+    let r = replay(&cfg, &refs(), t.events, 2_000).unwrap();
     assert_eq!(
         x_at(&r, &A, 1_700),
         Some(Eligibility::Pending(PendingReason::AdapterProgramUnknown))
@@ -741,7 +746,7 @@ fn only_skr_and_xsol_can_be_activated() {
     // No committed price: inactive (known weight 0), not pending.
     let mut t = world(&[LENDER_A]);
     t.slot(2, END).close();
-    let r = replay(&skr_cfg(), &PriceTable::new(), t.events, END).unwrap();
+    let r = replay(&skr_cfg(), &EpochReferences::new(), t.events, END).unwrap();
     assert_eq!(
         x_at(&r, &A, 500),
         Some(Eligibility::Ineligible(

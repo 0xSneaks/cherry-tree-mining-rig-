@@ -1,5 +1,6 @@
 //! Global ownership timeline replay and equity integration (section 5,
-//! tests 16–29).
+//! tests 16–29; Pass #5 adds reference pricing, Safe Mode resets and route
+//! halts, tests 30–39).
 //!
 //! * Events are totally ordered by `(slot, tx, ix, inner)`; each slot has
 //!   one `unix_timestamp`. State between two consecutive events holds for
@@ -15,6 +16,13 @@
 //!   Intervals after the last checkpoint are PENDING (not yet reconciled).
 //! * Per wallet: `X = max(0, sum A*G - D)`, with `G` from recognized units
 //!   of the selected asset and `D` netted once across the debt registry.
+//! * Valuation (Pass #5): units are carried as FIFO lots. Units held at the
+//!   reference timestamp use the committed reference price; units added or
+//!   registered after it use `min(reference, verified price at the event)`
+//!   (test 30). An `EmergencyNav` event re-bases every lot of the mint from
+//!   its event — prospective only, settled segments untouched (test 36). A
+//!   `RouteHalt` pauses recognition (reserved, PENDING) until
+//!   `RouteResumed` publishes a fresh reference segment.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,8 +30,10 @@ use crate::adapter::{AdapterConfig, AssetKind, MintRole, RiskExtension, StakeSup
 use crate::debt::{DebtBook, DebtPending, DebtReading, DebtRegistry, WalletDebt};
 use crate::error::{EligibilityError, EligibilityResult};
 use crate::ledger::Ledger;
+use crate::lots::{LotBasis, LotLedger};
+use crate::pricing::{min_price, EpochReferences};
 use crate::types::{Addr, Event, EventKind};
-use crate::valuation::{PriceKey, PriceTable};
+use crate::valuation::{PriceKey, UnitPrice};
 
 /// Configuration for one replay: the enabled adapters and the fixed debt
 /// registry. Validated on construction.
@@ -61,6 +71,12 @@ impl EligibilityConfig {
     pub fn registry(&self) -> &DebtRegistry {
         &self.registry
     }
+
+    fn adapter_of_mint(&self, mint: &Addr) -> Option<&AdapterConfig> {
+        self.adapters
+            .values()
+            .find(|a| a.role_of(mint) == Some(MintRole::Underlying))
+    }
 }
 
 /// Why a wallet is PENDING (reserved, never zero, never admitted).
@@ -77,6 +93,16 @@ pub enum PendingReason {
     AdapterProgramUnknown,
     /// A stake position exists but the stake adapter is not verified.
     StakeUnverified,
+    /// Units acquired after the reference timestamp whose addition price
+    /// could not be verified (no usable observation). Fail closed: the
+    /// wallet is reserved, never silently reference-priced (test 30).
+    AdditionUnpriced,
+    /// Verified loss of the required operational eligibility route:
+    /// recognition pauses (reserve) until a published recovery (tests 35–36).
+    RouteHalted,
+    /// A NAV/reset datum for the asset is unusable (wrong basis): valuation
+    /// cannot be verified, so recognition pauses.
+    NavUnverified,
 }
 
 /// Why a wallet is INELIGIBLE (known before the fact; weight 0).
@@ -85,7 +111,7 @@ pub enum IneligibleReason {
     AssetNotConfigured,
     /// Token-2022 risk extension the adapter has not cleared.
     Token2022Extension(RiskExtension),
-    /// No committed reference price: inactive, not UNKNOWN.
+    /// No committed reference price: inactive, not UNKNOWN (test 32).
     InactiveNoReference,
     /// The supplied price basis is not admissible for this asset.
     InvalidPriceBasis,
@@ -173,7 +199,7 @@ pub fn order_events(mut events: Vec<Event>) -> EligibilityResult<Vec<Event>> {
 
 struct State<'a> {
     config: &'a EligibilityConfig,
-    prices: &'a PriceTable,
+    references: &'a EpochReferences,
     ledger: Ledger,
     /// Whether `ledger` is the chain's state (false after divergence until a
     /// consistent checkpoint).
@@ -183,9 +209,58 @@ struct State<'a> {
     unknown_assets: BTreeSet<AssetKind>,
     /// Latest observed version of every pinned program.
     observed_versions: BTreeMap<Addr, [u8; 32]>,
+    /// Reference overrides from verified reset/recovery events
+    /// (`EmergencyNav`, `RouteResumed`); the epoch commit backs the rest.
+    active: BTreeMap<PriceKey, UnitPrice>,
+    /// Latest verified in-epoch observation per mint (basis-checked).
+    observations: BTreeMap<Addr, UnitPrice>,
+    /// Mints whose required route is halted (recognition paused).
+    halted_mints: BTreeSet<Addr>,
+    /// Mints with an unusable NAV/reset datum (wrong basis).
+    nav_invalid: BTreeSet<Addr>,
+    lots: LotLedger,
 }
 
 impl State<'_> {
+    /// The price in force for `key`: a verified reset override, else the
+    /// committed epoch reference. `None` when nothing is committed.
+    fn price(&self, key: &PriceKey) -> Option<UnitPrice> {
+        self.active
+            .get(key)
+            .copied()
+            .or_else(|| self.references.get(key).map(|c| c.price))
+    }
+
+    /// Basis-checked latest observation for a mint, if usable.
+    fn observation_for(&self, mint: &Addr) -> Option<UnitPrice> {
+        let required = self.config.adapter_of_mint(mint)?.asset.required_basis();
+        let obs = *self.observations.get(mint)?;
+        (obs.basis == required).then_some(obs)
+    }
+
+    /// Acquisition price for units credited at `ts` (test 30): reference
+    /// basis at or before the epoch start; afterwards
+    /// `min(active reference, verified observation)`, or unpriced when no
+    /// usable observation exists.
+    fn acquisition(
+        &self,
+        mint: &Addr,
+        ts: i64,
+    ) -> EligibilityResult<(Option<UnitPrice>, LotBasis)> {
+        let key = PriceKey::Mint(*mint);
+        let Some(commit) = self.references.get(&key) else {
+            return Ok((None, LotBasis::Reference));
+        };
+        if ts <= commit.epoch_start {
+            return Ok((Some(commit.price), LotBasis::Reference));
+        }
+        let reference = self.price(&key).unwrap_or(commit.price);
+        match self.observation_for(mint) {
+            None => Ok((None, LotBasis::Addition)),
+            Some(obs) => Ok((Some(min_price(&reference, &obs)?), LotBasis::Addition)),
+        }
+    }
+
     fn evaluate(&self, wallet: &Addr, asset: AssetKind) -> EligibilityResult<Eligibility> {
         let Some(adapter) = self.config.adapter(asset) else {
             return Ok(Eligibility::Ineligible(
@@ -198,7 +273,13 @@ impl State<'_> {
             ));
         }
         let underlying = adapter.underlying_mint();
-        let Some(price) = self.prices.get(PriceKey::Mint(underlying)) else {
+        let key = PriceKey::Mint(underlying);
+        if self.references.get(&key).is_none() {
+            return Ok(Eligibility::Ineligible(
+                IneligibleReason::InactiveNoReference,
+            ));
+        }
+        let Some(price) = self.price(&key) else {
             return Ok(Eligibility::Ineligible(
                 IneligibleReason::InactiveNoReference,
             ));
@@ -209,16 +290,30 @@ impl State<'_> {
         if self.unknown_assets.contains(&asset) {
             return Ok(Eligibility::Pending(PendingReason::AdapterProgramUnknown));
         }
+        if self.nav_invalid.contains(&underlying) {
+            return Ok(Eligibility::Pending(PendingReason::NavUnverified));
+        }
+        if self.halted_mints.contains(&underlying) {
+            return Ok(Eligibility::Pending(PendingReason::RouteHalted));
+        }
 
         let mut units: u64 = 0;
-        for acc in self.ledger.accounts.values() {
+        let mut gross: u128 = 0;
+        let mut unpriced = false;
+        for (account, acc) in &self.ledger.accounts {
             if &acc.owner != wallet || adapter.is_custody(&acc.owner) {
                 continue;
             }
             if adapter.role_of(&acc.mint) == Some(MintRole::Underlying) {
+                let recognized = acc.recognized();
                 units = units
-                    .checked_add(acc.recognized())
+                    .checked_add(recognized)
                     .ok_or(EligibilityError::MathOverflow)?;
+                let head = self.lots.head_value(acc.mint, *account, recognized)?;
+                gross = gross
+                    .checked_add(head.lamports)
+                    .ok_or(EligibilityError::MathOverflow)?;
+                unpriced |= head.unpriced;
             }
         }
         if let Some(p) = self.ledger.stakes.get(&(underlying, *wallet)) {
@@ -228,6 +323,11 @@ impl State<'_> {
                     units = units
                         .checked_add(p.active)
                         .ok_or(EligibilityError::MathOverflow)?;
+                    let head = self.lots.head_value(underlying, *wallet, p.active)?;
+                    gross = gross
+                        .checked_add(head.lamports)
+                        .ok_or(EligibilityError::MathOverflow)?;
+                    unpriced |= head.unpriced;
                 }
                 StakeSupport::Unverified | StakeSupport::None => {
                     if p.active != 0 || p.pending_unstake != 0 {
@@ -236,7 +336,9 @@ impl State<'_> {
                 }
             }
         }
-        let gross = price.value(units)?;
+        if unpriced {
+            return Ok(Eligibility::Pending(PendingReason::AdditionUnpriced));
+        }
 
         let debt = match self.debt.wallet_state(self.config.registry(), wallet) {
             WalletDebt::Pending(r) => return Ok(Eligibility::Pending(PendingReason::Debt(r))),
@@ -244,7 +346,7 @@ impl State<'_> {
                 let mut d: u128 = 0;
                 for entry in entries {
                     for amount in entry {
-                        let Some(p) = self.prices.get(amount.price_key) else {
+                        let Some(p) = self.price(&amount.price_key) else {
                             return Ok(Eligibility::Pending(PendingReason::DebtUnpriced));
                         };
                         d = d
@@ -333,10 +435,166 @@ impl State<'_> {
         })
     }
 
-    fn apply(&mut self, kind: &EventKind) -> EligibilityResult<()> {
+    fn mint_of_account(&self, account: &Addr) -> Option<Addr> {
+        self.ledger.accounts.get(account).map(|a| a.mint)
+    }
+
+    /// Keep lots in step with a token event that the ledger just applied.
+    fn apply_lots(&mut self, kind: &EventKind, ts: i64) -> EligibilityResult<()> {
         match kind {
+            EventKind::MintTo { account, amount } => {
+                let mint = self
+                    .mint_of_account(account)
+                    .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
+                let (price, basis) = self.acquisition(&mint, ts)?;
+                self.lots.credit(mint, *account, *amount, price, basis)
+            }
+            EventKind::Burn {
+                account, amount, ..
+            } => {
+                let mint = self
+                    .mint_of_account(account)
+                    .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
+                self.lots.consume(mint, *account, *amount)
+            }
+            EventKind::Transfer {
+                source,
+                destination,
+                amount,
+                ..
+            } => {
+                let mint = self
+                    .mint_of_account(source)
+                    .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
+                self.lots.consume(mint, *source, *amount)?;
+                let (price, basis) = self.acquisition(&mint, ts)?;
+                self.lots.credit(mint, *destination, *amount, price, basis)
+            }
+            EventKind::Stake {
+                source,
+                beneficiary,
+                amount,
+                ..
+            } => {
+                let mint = self
+                    .mint_of_account(source)
+                    .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
+                self.lots.stake(mint, *source, *beneficiary, *amount)
+            }
+            EventKind::RequestUnstake {
+                mint,
+                beneficiary,
+                amount,
+            } => self.lots.request_unstake(*mint, *beneficiary, *amount),
+            EventKind::CancelUnstake {
+                mint,
+                beneficiary,
+                amount,
+            } => self.lots.cancel_unstake(*mint, *beneficiary, *amount),
+            EventKind::WithdrawUnstaked {
+                custody,
+                destination,
+                beneficiary,
+                amount,
+            } => {
+                let mint = self
+                    .mint_of_account(custody)
+                    .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
+                self.lots.withdraw_unstaked(mint, *beneficiary, *amount)?;
+                let (price, basis) = self.acquisition(&mint, ts)?;
+                self.lots.credit(mint, *destination, *amount, price, basis)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Registration after the reference timestamp: the wallet's reference
+    /// lots of the asset re-base to `min(reference, verified at the event)`
+    /// (section 5: "added **or registered** after it"); unpriced when no
+    /// usable observation exists (test 30).
+    fn registration_rebase(
+        &mut self,
+        wallet: &Addr,
+        asset: AssetKind,
+        ts: i64,
+    ) -> EligibilityResult<()> {
+        let Some(adapter) = self.config.adapter(asset) else {
+            return Ok(());
+        };
+        let underlying = adapter.underlying_mint();
+        let Some(commit) = self.references.get(&PriceKey::Mint(underlying)) else {
+            return Ok(());
+        };
+        if ts <= commit.epoch_start {
+            return Ok(());
+        }
+        let reference = self
+            .price(&PriceKey::Mint(underlying))
+            .unwrap_or(commit.price);
+        let reg_price = match self.observation_for(&underlying) {
+            None => None,
+            Some(obs) => Some(min_price(&reference, &obs)?),
+        };
+        let mut holders: Vec<Addr> = self
+            .ledger
+            .accounts
+            .iter()
+            .filter(|(_, acc)| {
+                &acc.owner == wallet && acc.mint == underlying && !adapter.is_custody(&acc.owner)
+            })
+            .map(|(a, _)| *a)
+            .collect();
+        holders.push(*wallet); // stake beneficiary bucket
+        self.lots.rebase_registered(underlying, &holders, reg_price)
+    }
+
+    /// Align lots with an adopted checkpoint: observed amounts replace the
+    /// replayed ones; unexplained post-reference balances become unpriced
+    /// additions (fail closed), pre-reference ones reference-priced.
+    fn reconcile_lots(
+        &mut self,
+        accounts: &[(Addr, u64, Addr)],    // (account, amount, mint)
+        stakes: &[(Addr, Addr, u64, u64)], // (mint, beneficiary, active, pending)
+        ts: i64,
+    ) -> EligibilityResult<()> {
+        for (account, amount, mint) in accounts {
+            let cur = self.lots.units(*mint, *account);
+            if *amount > cur {
+                let (price, basis) = self.acquisition(mint, ts)?;
+                self.lots
+                    .credit(*mint, *account, *amount - cur, price, basis)?;
+            } else if cur > *amount {
+                self.lots.consume(*mint, *account, cur - *amount)?;
+            }
+        }
+        for (mint, beneficiary, active, pending) in stakes {
+            let cur = self.lots.units(*mint, *beneficiary);
+            if *active > cur {
+                let (price, basis) = self.acquisition(mint, ts)?;
+                self.lots
+                    .credit(*mint, *beneficiary, *active - cur, price, basis)?;
+            } else if cur > *active {
+                self.lots.consume(*mint, *beneficiary, cur - *active)?;
+            }
+            let cur_pending = self.lots.pending_units(*mint, *beneficiary);
+            if *pending > cur_pending {
+                let (price, _basis) = self.acquisition(mint, ts)?;
+                self.lots
+                    .credit_pending(*mint, *beneficiary, *pending - cur_pending, price)?;
+            } else if cur_pending > *pending {
+                self.lots
+                    .consume_pending(*mint, *beneficiary, cur_pending - *pending)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn apply(&mut self, ev: &Event) -> EligibilityResult<()> {
+        let ts = ev.unix_timestamp;
+        match &ev.kind {
             EventKind::Register { wallet, asset } => {
                 self.registrations.insert(*wallet, *asset);
+                self.registration_rebase(wallet, *asset, ts)?;
             }
             EventKind::Exit { wallet } => {
                 self.registrations.remove(wallet);
@@ -378,21 +636,71 @@ impl State<'_> {
                     }
                 }
             }
+            EventKind::PriceObserved { mint, price } => {
+                // Only basis-correct observations are usable; others leave
+                // additions unpriced (fail closed).
+                if let Some(adapter) = self.config.adapter_of_mint(mint) {
+                    if price.basis == adapter.asset.required_basis() && price.units_den != 0 {
+                        self.observations.insert(*mint, *price);
+                    }
+                }
+            }
+            EventKind::EmergencyNav { mint, price } => {
+                self.apply_reset(*mint, *price)?;
+            }
+            EventKind::RouteHalt { mint } => {
+                if self.config.adapter_of_mint(mint).is_some() {
+                    self.halted_mints.insert(*mint);
+                }
+            }
+            EventKind::RouteResumed { mint, price } => {
+                if self.config.adapter_of_mint(mint).is_some() {
+                    self.halted_mints.remove(mint);
+                    self.apply_reset(*mint, *price)?;
+                }
+            }
             EventKind::DeclaredGap => self.in_sync = false,
             EventKind::Checkpoint { .. } => unreachable!("handled by replay"),
             token => {
                 if self.in_sync {
-                    let before = self.ledger.clone();
-                    if self.ledger.apply(token).is_err() || !self.stakes_backed() {
-                        self.ledger = before;
-                        self.in_sync = false;
-                    } else {
+                    let before_ledger = self.ledger.clone();
+                    let before_lots = self.lots.clone();
+                    let ok = self.ledger.apply(token).is_ok()
+                        && self.apply_lots(token, ts).is_ok()
+                        && self.stakes_backed();
+                    if ok {
                         self.ledger.check_invariants()?;
+                    } else {
+                        self.ledger = before_ledger;
+                        self.lots = before_lots;
+                        self.in_sync = false;
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    /// A verified reset (emergency NAV or published recovery reference):
+    /// from this event the mint prices at `price`, prospectively only
+    /// (settled segments were already committed). Wrong basis = unusable
+    /// datum: recognition pauses (fail closed).
+    fn apply_reset(&mut self, mint: Addr, price: UnitPrice) -> EligibilityResult<()> {
+        if price.units_den == 0 {
+            self.nav_invalid.insert(mint);
+            return Ok(());
+        }
+        match self.config.adapter_of_mint(&mint) {
+            Some(adapter) if price.basis == adapter.asset.required_basis() => {
+                self.nav_invalid.remove(&mint);
+                self.active.insert(PriceKey::Mint(mint), price);
+                self.lots.rebase_mint(mint, price)
+            }
+            _ => {
+                self.nav_invalid.insert(mint);
+                Ok(())
+            }
+        }
     }
 }
 
@@ -401,9 +709,10 @@ fn dt(start: i64, end: i64) -> EligibilityResult<u64> {
 }
 
 /// Replay `events` and integrate eligibility up to `end` (exclusive).
+/// `references` are the committed epoch reference prices (section 5).
 pub fn replay(
     config: &EligibilityConfig,
-    prices: &PriceTable,
+    references: &EpochReferences,
     events: Vec<Event>,
     end: i64,
 ) -> EligibilityResult<ReplayReport> {
@@ -422,13 +731,18 @@ pub fn replay(
         .collect();
     let mut st = State {
         config,
-        prices,
+        references,
         ledger: Ledger::default(),
         in_sync: true,
         registrations: BTreeMap::new(),
         debt,
         unknown_assets,
         observed_versions: BTreeMap::new(),
+        active: BTreeMap::new(),
+        observations: BTreeMap::new(),
+        halted_mints: BTreeSet::new(),
+        nav_invalid: BTreeSet::new(),
+        lots: LotLedger::default(),
     };
     let mut report = ReplayReport::default();
     // Segments since the last checkpoint, classified when it closes.
@@ -468,8 +782,19 @@ pub fn replay(
             st.ledger = observed;
             // Observed state is trusted only if it is itself coherent.
             st.in_sync = st.ledger.conserved() && st.stakes_backed();
+            // Lots follow the adopted state; unexplained post-reference
+            // balances become unpriced additions (reserved, never free).
+            let account_triples: Vec<(Addr, u64, Addr)> = accounts
+                .iter()
+                .map(|a| (a.account, a.amount, a.mint))
+                .collect();
+            let stake_quads: Vec<(Addr, Addr, u64, u64)> = stakes
+                .iter()
+                .map(|s| (s.mint, s.beneficiary, s.active, s.pending_unstake))
+                .collect();
+            st.reconcile_lots(&account_triples, &stake_quads, ts)?;
         } else {
-            st.apply(&ev.kind)?;
+            st.apply(ev)?;
         }
         current = st.evaluate_all()?;
     }

@@ -24,6 +24,14 @@ pub enum EligibilityError {
     InvalidAdapter,
     /// Checked arithmetic overflowed.
     MathOverflow,
+    /// A reference-price sample window failed validation (single-block
+    /// manipulation, short window, wide spread or wide oracle confidence).
+    InvalidPriceWindow(&'static str),
+    /// A reference price was committed at or after the epoch it claims to
+    /// price; it is not a reference (the asset is inactive instead).
+    LateReferenceCommit,
+    /// A risk consent was rejected (details in `consent::ConsentError`).
+    ConsentRejected,
     /// An internal accounting invariant failed. Always a bug.
     InvariantViolation(&'static str),
 }

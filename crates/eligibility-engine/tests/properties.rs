@@ -277,7 +277,7 @@ fn arithmetic_overflow_is_an_error_never_a_wrap() {
         .register(A, AssetKind::Skr)
         .no_debt(A, &[LENDER_A]);
     t.slot(2, 10).close();
-    let huge = PriceTable::new().with(PriceKey::Mint(SKR_MINT), price(u128::MAX, 1));
+    let huge = EpochReferences::new().with(ref_commit(SKR_MINT, price(u128::MAX, 1)));
     assert_eq!(
         replay(&cfg(), &huge, t.events.clone(), 10).unwrap_err(),
         EligibilityError::MathOverflow
@@ -285,7 +285,7 @@ fn arithmetic_overflow_is_an_error_never_a_wrap() {
     // Minting past u64::MAX is impossible on chain: divergence, not a wrap.
     t.slot(3, 20).mint(A, SKR_MINT, 1);
     t.slot(4, 30).close();
-    let r = replay(&cfg(), &prices(), t.events, 30).unwrap();
+    let r = replay(&cfg(), &refs(), t.events, 30).unwrap();
     assert!(r
         .pool
         .iter()
@@ -295,7 +295,7 @@ fn arithmetic_overflow_is_an_error_never_a_wrap() {
     bad.slot(1, 100).init(A, SKR_MINT);
     bad.slot(2, 99).init(B, SKR_MINT);
     assert_eq!(
-        replay(&cfg(), &prices(), bad.events, 200).unwrap_err(),
+        replay(&cfg(), &refs(), bad.events, 200).unwrap_err(),
         EligibilityError::NonMonotonicTimestamp
     );
 }

@@ -205,6 +205,35 @@ pub enum EventKind {
         version: [u8; 32],
     },
 
+    // ---- pricing / Safe Mode (Pass #5) ----
+    /// A verified manipulation-resistant observation of `mint`'s price at
+    /// this timeline position (it already passed the reference-validation
+    /// interface, section 5 / test 31). Post-reference additions are valued
+    /// at `min(reference, this)` (test 30).
+    PriceObserved {
+        mint: Addr,
+        price: crate::valuation::UnitPrice,
+    },
+    /// A verified NAV collapse / depeg reset (section 9, test 36): from this
+    /// event every lot of `mint` re-bases to `price`, prospectively only —
+    /// settled R and Q never change. Also carries the published prospective
+    /// reference of a recovery.
+    EmergencyNav {
+        mint: Addr,
+        price: crate::valuation::UnitPrice,
+    },
+    /// Verified loss of the required operational eligibility route: future
+    /// recognition of `mint` pauses (reserved, PENDING) until recovery.
+    RouteHalt {
+        mint: Addr,
+    },
+    /// Route recovery: fresh route/data checks done and a published
+    /// prospective reference segment (`price`) in force from this event.
+    RouteResumed {
+        mint: Addr,
+        price: crate::valuation::UnitPrice,
+    },
+
     // ---- indexer continuity ----
     /// Full observed finalized state of every tracked account, stake
     /// position and mint supply. Closes a reconciliation window.

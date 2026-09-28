@@ -41,18 +41,57 @@ pub fn price(num: u128, den: u128) -> UnitPrice {
     }
 }
 
+/// Fixture epoch boundary for Pass #4-style worlds: every timeline in those
+/// tests runs entirely *before* the epoch start, so all units are
+/// reference-priced and no in-epoch observations are needed. Pass #5 tests
+/// build explicit references with real epoch starts.
+pub const PRE_REFERENCE_EPOCH_START: i64 = i64::MAX / 2;
+
 /// 1 SKR unit = 2 lamports, xSOL NAV 3 lamports per unit.
-pub fn prices() -> PriceTable {
-    PriceTable::new()
-        .with(PriceKey::Mint(SKR_MINT), price(2, 1))
-        .with(
-            PriceKey::Mint(XSOL_MINT),
+pub fn refs() -> EpochReferences {
+    EpochReferences::new()
+        .with(ref_commit(SKR_MINT, price(2, 1)))
+        .with(ref_commit(
+            XSOL_MINT,
             UnitPrice {
                 lamports_num: 3,
                 units_den: 1,
                 basis: PriceBasis::OwnedTokenNav,
             },
-        )
+        ))
+}
+
+/// Reference committed at time 0 for a fixture epoch starting at
+/// `PRE_REFERENCE_EPOCH_START`.
+pub fn ref_commit(mint: Addr, price: UnitPrice) -> ReferenceCommit {
+    ReferenceCommit::new(PriceKey::Mint(mint), price, 0, PRE_REFERENCE_EPOCH_START).unwrap()
+}
+
+/// Reference committed at time 0 for a fixture epoch starting at
+/// `epoch_start` (Pass #5 in-epoch timelines).
+pub fn ref_commit_at(mint: Addr, price: UnitPrice, epoch_start: i64) -> ReferenceCommit {
+    ReferenceCommit::new(PriceKey::Mint(mint), price, 0, epoch_start).unwrap()
+}
+
+/// Owned-token NAV unit price (xSOL basis).
+pub fn nav(num: u128, den: u128) -> UnitPrice {
+    UnitPrice {
+        lamports_num: num,
+        units_den: den,
+        basis: PriceBasis::OwnedTokenNav,
+    }
+}
+
+/// xSOL adapter pinned to `XSOL_PROGRAM` at `V1`.
+pub fn xsol_adapter() -> AdapterConfig {
+    AdapterConfig::xsol(
+        XSOL_MINT,
+        TokenProgram::SplToken,
+        vec![ProgramPin {
+            program: XSOL_PROGRAM,
+            version: V1,
+        }],
+    )
 }
 
 pub fn skr_adapter(stake: StakeSupport) -> AdapterConfig {
@@ -204,6 +243,26 @@ impl Tl {
             supplies,
         })
     }
+
+    /// Verified in-epoch price observation (already validated upstream).
+    pub fn observe(&mut self, mint: Addr, price: UnitPrice) -> &mut Self {
+        self.ev(EventKind::PriceObserved { mint, price })
+    }
+
+    /// Verified NAV collapse / depeg reset from this event.
+    pub fn emergency_nav(&mut self, mint: Addr, price: UnitPrice) -> &mut Self {
+        self.ev(EventKind::EmergencyNav { mint, price })
+    }
+
+    /// Verified loss of the required operational route.
+    pub fn route_halt(&mut self, mint: Addr) -> &mut Self {
+        self.ev(EventKind::RouteHalt { mint })
+    }
+
+    /// Route recovery with a published prospective reference segment.
+    pub fn route_resumed(&mut self, mint: Addr, price: UnitPrice) -> &mut Self {
+        self.ev(EventKind::RouteResumed { mint, price })
+    }
 }
 
 /// Plain (undelegated, unfrozen) account snapshot.
@@ -282,7 +341,17 @@ impl Tl {
 }
 
 pub fn run(cfg: &EligibilityConfig, tl: &Tl, end: i64) -> ReplayReport {
-    replay(cfg, &prices(), tl.events.clone(), end).unwrap()
+    replay(cfg, &refs(), tl.events.clone(), end).unwrap()
+}
+
+/// Run with explicit epoch references (Pass #5 in-epoch timelines).
+pub fn run_with(
+    cfg: &EligibilityConfig,
+    refs: &EpochReferences,
+    tl: &Tl,
+    end: i64,
+) -> ReplayReport {
+    replay(cfg, refs, tl.events.clone(), end).unwrap()
 }
 
 pub fn x_at(r: &ReplayReport, wallet: &Addr, t: i64) -> Option<Eligibility> {

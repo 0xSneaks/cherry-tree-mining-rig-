@@ -82,20 +82,36 @@ pub fn nav(num: u128, den: u128) -> UnitPrice {
     }
 }
 
+/// Fixture observation-freshness bound (seconds) for the shared adapters —
+/// NOT a production calibration (gate 14.2-D). Large enough that the shared
+/// fixture timelines' observation-to-event gaps are always fresh; tests about
+/// staleness itself construct tighter bounds via [`skr_adapter_max_age`].
+pub const FIXTURE_OBSERVATION_MAX_AGE: i64 = 10_000;
+
 /// xSOL adapter pinned to `XSOL_PROGRAM` at `V1`.
 pub fn xsol_adapter() -> AdapterConfig {
-    AdapterConfig::xsol(
+    let mut a = AdapterConfig::xsol(
         XSOL_MINT,
         TokenProgram::SplToken,
         vec![ProgramPin {
             program: XSOL_PROGRAM,
             version: V1,
         }],
-    )
+    );
+    a.observation_max_age = Some(FIXTURE_OBSERVATION_MAX_AGE);
+    a
 }
 
 pub fn skr_adapter(stake: StakeSupport) -> AdapterConfig {
-    AdapterConfig::skr(SKR_MINT, TokenProgram::SplToken, stake, vec![])
+    skr_adapter_max_age(stake, Some(FIXTURE_OBSERVATION_MAX_AGE))
+}
+
+/// SKR adapter with an explicit observation-freshness bound (`None` =
+/// uncalibrated: every observation is stale, fail closed).
+pub fn skr_adapter_max_age(stake: StakeSupport, max_age: Option<i64>) -> AdapterConfig {
+    let mut a = AdapterConfig::skr(SKR_MINT, TokenProgram::SplToken, stake, vec![]);
+    a.observation_max_age = max_age;
+    a
 }
 
 pub fn verified_stake() -> StakeSupport {

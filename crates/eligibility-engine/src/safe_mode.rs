@@ -10,8 +10,9 @@
 //!   not production constants.
 //! * Risk severity and technical availability are separate concepts: a
 //!   label alone does not block HOT entry; an unavailable operation cannot
-//!   be bypassed with a signature (tests 34–35). DEX quote failure or thin
-//!   pool depth alone is NOT route unavailability (test 39).
+//!   be submitted in ANY zone — NORMAL and WARM included — and a signature
+//!   never bypasses one (tests 34–35). DEX quote failure or thin pool
+//!   depth alone is NOT route unavailability (test 39).
 //! * Stale or missing data is UNKNOWN — never EXTREME and never zero NAV:
 //!   new recognition pauses and existing unsettled capacity is reserved.
 //! * Hysteresis: leaving EXTREME and re-entering it requires the condition
@@ -166,16 +167,19 @@ pub enum EntryDecision {
     /// NORMAL: permitted when admission checks pass; no consent needed.
     Permitted,
     /// WARM/HOT (and EXTREME where the operation genuinely remains
-    /// available): permitted with valid risk consent and, for HOT and
-    /// EXTREME, an operational requested route.
+    /// available): permitted with valid risk consent over an operational
+    /// requested route.
     PermittedWithConsent,
     Denied(EntryDenial),
 }
 
-/// Authorize a zone entry/increase. HOT is not automatically blocked: it
-/// needs valid consent *and* an operational requested route (tests 34–35).
-/// EXTREME follows the section 9 table — acknowledge risk if an operation
-/// remains genuinely available; never submit an unavailable operation.
+/// Authorize a zone entry/increase. Route availability gates **every**
+/// zone: an unavailable requested operation is never submitable, whatever
+/// the severity label — NORMAL and WARM obey the same rule as HOT/EXTREME,
+/// and neither a low zone nor a signature repairs a halted route (section
+/// 9, tests 34–35). Within an operational route, NORMAL needs no consent;
+/// WARM/HOT/EXTREME need valid risk consent. UNKNOWN (stale/missing risk
+/// data) pauses.
 #[allow(clippy::too_many_arguments)]
 pub fn authorize_entry(
     zone: RiskZone,
@@ -188,21 +192,16 @@ pub fn authorize_entry(
 ) -> EligibilityResult<EntryDecision> {
     boundaries.validate()?;
     Ok(match zone {
-        RiskZone::Normal => EntryDecision::Permitted,
         RiskZone::Unknown => EntryDecision::Denied(EntryDenial::UnknownRiskData),
-        RiskZone::Warm => match ledger.validate(request, consent, verifier) {
-            Ok(()) => EntryDecision::PermittedWithConsent,
-            Err(e) => EntryDecision::Denied(EntryDenial::Consent(e)),
-        },
-        RiskZone::Hot | RiskZone::Extreme => {
-            if !route.available() {
-                // A signature cannot bypass an unavailable route.
-                EntryDecision::Denied(EntryDenial::RouteUnavailable)
-            } else {
-                match ledger.validate(request, consent, verifier) {
-                    Ok(()) => EntryDecision::PermittedWithConsent,
-                    Err(e) => EntryDecision::Denied(EntryDenial::Consent(e)),
-                }
+        // Severity and availability are separate axes: being below EXTREME
+        // (even NORMAL) never authorizes a halted route, and a signature
+        // cannot bypass an unavailable operation.
+        _ if !route.available() => EntryDecision::Denied(EntryDenial::RouteUnavailable),
+        RiskZone::Normal => EntryDecision::Permitted,
+        RiskZone::Warm | RiskZone::Hot | RiskZone::Extreme => {
+            match ledger.validate(request, consent, verifier) {
+                Ok(()) => EntryDecision::PermittedWithConsent,
+                Err(e) => EntryDecision::Denied(EntryDenial::Consent(e)),
             }
         }
     })

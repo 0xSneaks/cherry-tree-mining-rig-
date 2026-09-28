@@ -222,6 +222,32 @@ describe('entry decision (tests 34, 35)', () => {
     ).toEqual({ kind: 'denied', reason: 'route-unavailable' });
   });
 
+  it('a halted route denies entry in EVERY zone, not only HOT/EXTREME (F3)', () => {
+    // Severity and availability are separate axes: a low zone never
+    // authorizes an unavailable operation, and a signature repairs it
+    // nowhere (section 9).
+    expect(
+      authorizeEntry('normal', request, null, haltedRoute, new ConsentLedger(), verify),
+    ).toEqual({ kind: 'denied', reason: 'route-unavailable' });
+    expect(
+      authorizeEntry('normal', request, consent, haltedRoute, new ConsentLedger(), verify),
+    ).toEqual({ kind: 'denied', reason: 'route-unavailable' });
+    expect(
+      authorizeEntry('warm', request, consent, haltedRoute, new ConsentLedger(), verify),
+    ).toEqual({ kind: 'denied', reason: 'route-unavailable' });
+    expect(
+      authorizeEntry('warm', request, null, haltedRoute, new ConsentLedger(), verify),
+    ).toEqual({ kind: 'denied', reason: 'route-unavailable' });
+    // With the route operational the zone rules stand unchanged: NORMAL
+    // needs no consent, WARM does.
+    expect(authorizeEntry('normal', request, null, okRoute, new ConsentLedger(), verify)).toEqual({
+      kind: 'permitted',
+    });
+    expect(authorizeEntry('warm', request, consent, okRoute, new ConsentLedger(), verify)).toEqual({
+      kind: 'permitted-with-consent',
+    });
+  });
+
   it('dex quote failure with a healthy protocol route does not block hot entry', () => {
     expect(
       authorizeEntry('hot', request, consent, quoteFailedRoute, new ConsentLedger(), verify),

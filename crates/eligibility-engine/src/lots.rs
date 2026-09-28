@@ -15,11 +15,18 @@
 //! addition price could not be verified (no usable observation): its holder
 //! is PENDING (reserved), never silently reference-priced.
 //!
+//! Registration pricing applies **exactly once**, at the holder's first
+//! registration event (or at a verified reset, whose published price is
+//! authoritative from its event). A later registration event never reprices
+//! or caps already-established lots — in either direction and never
+//! retroactively: each lot's price is fixed by the event that acquired or
+//! registered it.
+//!
 //! Pending unstake units sit in a parallel bucket per beneficiary and are
 //! excluded from valuation exactly like the ledger excludes them from
 //! recognition.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::{EligibilityError, EligibilityResult};
 use crate::types::Addr;
@@ -56,6 +63,10 @@ pub struct LotLedger {
     lots: BTreeMap<(Addr, Addr), Vec<Lot>>,
     /// `(mint, beneficiary)` → pending-unstake lots (never valued).
     pending: BTreeMap<(Addr, Addr), Vec<Lot>>,
+    /// `(mint, holder)` pairs whose registration pricing is already
+    /// anchored: applied at their FIRST registration event (or at a
+    /// verified reset). Later registration events never touch them again.
+    registered: BTreeSet<(Addr, Addr)>,
 }
 
 impl LotLedger {
@@ -147,10 +158,32 @@ impl LotLedger {
             .fold(0u64, |a, b| a.saturating_add(b))
     }
 
+    /// Whether the holder's registration pricing is already anchored.
+    pub fn is_registered(&self, mint: Addr, holder: Addr) -> bool {
+        self.registered.contains(&(mint, holder))
+    }
+
+    /// Anchor `holders` of `mint` as registration-priced without rebasing:
+    /// used when the first registration lands at or before the reference
+    /// timestamp (their reference pricing is legitimate) so that no LATER
+    /// registration event can reprice them.
+    pub fn mark_registered(&mut self, mint: Addr, holders: &[Addr]) {
+        for h in holders {
+            self.registered.insert((mint, *h));
+        }
+    }
+
     /// Registration after the reference timestamp (section 5): reference
     /// lots of these holders drop to `price`; addition lots keep their own
     /// event price; unpriced lots stay unpriced. `price == None` (no usable
     /// observation at registration) taints reference lots too.
+    ///
+    /// Applied **once per holder**: a holder already anchored at an earlier
+    /// registration event (or a verified reset) is skipped — a later
+    /// registration event never reprices or caps established lots.
+    /// Reference lots sitting in the holder's pending-unstake bucket rebase
+    /// equally, so units that later return via `CancelUnstake` carry the
+    /// registration pricing instead of the pre-registration one.
     pub fn rebase_registered(
         &mut self,
         mint: Addr,
@@ -159,13 +192,18 @@ impl LotLedger {
     ) -> EligibilityResult<()> {
         for h in holders {
             let key = (mint, *h);
-            if let Some(v) = self.lots.get_mut(&key) {
-                for lot in v.iter_mut() {
-                    if lot.basis == LotBasis::Reference {
-                        lot.price = price;
+            if !self.registered.insert(key) {
+                continue; // priced at its first registration event already
+            }
+            for bucket in [&mut self.lots, &mut self.pending] {
+                if let Some(v) = bucket.get_mut(&key) {
+                    for lot in v.iter_mut() {
+                        if lot.basis == LotBasis::Reference {
+                            lot.price = price;
+                        }
                     }
+                    coalesce(v);
                 }
-                coalesce(v);
             }
         }
         Ok(())
@@ -173,7 +211,9 @@ impl LotLedger {
 
     /// Verified emergency NAV / published recovery reference: every lot of
     /// the mint re-bases to `price` (settled intervals are untouched because
-    /// the replay applies this only from its event).
+    /// the replay applies this only from its event). The reset price is
+    /// authoritative from its event, so every touched holder is anchored: a
+    /// later registration event never reprices reset-priced lots.
     pub fn rebase_mint(&mut self, mint: Addr, price: UnitPrice) -> EligibilityResult<()> {
         let rebase = |v: &mut Vec<Lot>| -> EligibilityResult<()> {
             let mut total = 0u64;
@@ -189,13 +229,15 @@ impl LotLedger {
             }];
             Ok(())
         };
-        for ((m, _), v) in self.lots.iter_mut() {
+        for ((m, holder), v) in self.lots.iter_mut() {
             if *m == mint {
+                self.registered.insert((*m, *holder));
                 rebase(v)?;
             }
         }
-        for ((m, _), v) in self.pending.iter_mut() {
+        for ((m, holder), v) in self.pending.iter_mut() {
             if *m == mint {
+                self.registered.insert((*m, *holder));
                 rebase(v)?;
             }
         }
@@ -489,10 +531,44 @@ mod tests {
         l.credit(MINT, W, 100, p(1), LotBasis::Addition).unwrap();
         l.rebase_registered(MINT, &[W], p(1)).unwrap();
         assert_eq!(l.head_value(MINT, W, 200).unwrap().lamports, 200);
+        // A second registration event for the SAME holder is a no-op: the
+        // lots were priced at their first registration event and are never
+        // repriced (up, down or un-tainted) by a later one.
         l.rebase_registered(MINT, &[W], None).unwrap();
-        // Reference lot becomes unpriced; the addition lot keeps its price.
+        l.rebase_registered(MINT, &[W], p(9)).unwrap();
         let h = l.head_value(MINT, W, 200).unwrap();
-        assert!(h.unpriced);
+        assert!(!h.unpriced);
+        assert_eq!(h.lamports, 200);
+        // An unmarked holder still gets its own registration pricing.
+        l.credit(MINT, CUSTODY, 100, p(2), LotBasis::Reference)
+            .unwrap();
+        l.rebase_registered(MINT, &[CUSTODY], None).unwrap();
+        assert!(l.head_value(MINT, CUSTODY, 100).unwrap().unpriced);
+    }
+
+    #[test]
+    fn pre_reference_anchor_blocks_later_registration_rebase() {
+        let mut l = LotLedger::default();
+        l.credit(MINT, W, 100, p(2), LotBasis::Reference).unwrap();
+        // Registered at/before the reference timestamp: anchored, reference
+        // pricing stands.
+        l.mark_registered(MINT, &[W]);
+        l.rebase_registered(MINT, &[W], p(1)).unwrap();
+        assert_eq!(l.head_value(MINT, W, 100).unwrap().lamports, 200);
+    }
+
+    #[test]
+    fn reset_price_is_authoritative_and_anchors_holders() {
+        let mut l = LotLedger::default();
+        l.credit(MINT, W, 70, p(2), LotBasis::Reference).unwrap();
+        l.credit(MINT, W, 30, p(1), LotBasis::Addition).unwrap();
+        l.rebase_mint(MINT, p(1).unwrap()).unwrap();
+        assert_eq!(l.head_value(MINT, W, 100).unwrap().lamports, 100);
+        // A later registration event must not reprice reset-priced lots.
+        l.rebase_registered(MINT, &[W], p(0)).unwrap();
+        l.rebase_registered(MINT, &[W], None).unwrap();
+        let h = l.head_value(MINT, W, 100).unwrap();
+        assert!(!h.unpriced);
         assert_eq!(h.lamports, 100);
     }
 

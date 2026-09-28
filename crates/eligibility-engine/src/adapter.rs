@@ -102,6 +102,15 @@ pub struct AdapterConfig {
     pub cleared_extensions: BTreeSet<RiskExtension>,
     pub stake: StakeSupport,
     pub pins: Vec<ProgramPin>,
+    /// How long (unix seconds) a verified in-epoch price observation stays
+    /// usable as the "verified price at the addition event" for the
+    /// section-5 min rule. A per-adapter calibrated input (gate 14.2-D,
+    /// unset in production): `None` means **uncalibrated — fail closed**,
+    /// no observation is ever usable and post-reference additions and late
+    /// registrations are PENDING until a fresh observation arrives inside a
+    /// calibrated window. A previously valid observation does not remain
+    /// usable indefinitely.
+    pub observation_max_age: Option<i64>,
 }
 
 impl AdapterConfig {
@@ -123,6 +132,7 @@ impl AdapterConfig {
             cleared_extensions: BTreeSet::new(),
             stake,
             pins,
+            observation_max_age: None,
         }
     }
 
@@ -138,6 +148,7 @@ impl AdapterConfig {
             cleared_extensions: BTreeSet::new(),
             stake: StakeSupport::None,
             pins,
+            observation_max_age: None,
         }
     }
 
@@ -147,6 +158,9 @@ impl AdapterConfig {
         }
         if !self.asset.launch_candidate() {
             return Err(EligibilityError::AssetNotEnabled);
+        }
+        if matches!(self.observation_max_age, Some(age) if age < 0) {
+            return Err(EligibilityError::InvalidAdapter);
         }
         if self.mints.is_empty() || !self.mints.iter().any(|m| m.role == MintRole::Underlying) {
             return Err(EligibilityError::InvalidAdapter);

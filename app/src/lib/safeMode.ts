@@ -232,10 +232,12 @@ export type EntryDecision =
   | { kind: 'denied'; reason: 'unknown-risk-data' | 'route-unavailable' | ConsentError };
 
 /**
- * Authorize a zone entry/increase. HOT is not automatically blocked: it
- * needs valid consent *and* an operational requested route (tests 34–35).
- * Severity (zone) and availability (route) are separate: WARM's requirement
- * is the acknowledgement alone.
+ * Authorize a zone entry/increase. Route availability gates EVERY zone: an
+ * unavailable requested operation is never submitable, whatever the
+ * severity label — NORMAL and WARM obey the same rule as HOT/EXTREME, and
+ * neither a low zone nor a signature repairs a halted route (section 9,
+ * tests 34–35). Within an operational route, NORMAL needs no consent;
+ * WARM/HOT/EXTREME need valid risk consent; UNKNOWN pauses.
  */
 export function authorizeEntry(
   zone: RiskZone,
@@ -245,24 +247,11 @@ export function authorizeEntry(
   ledger: ConsentLedger,
   verify: (wallet: string, payload: string, signature: string) => boolean,
 ): EntryDecision {
-  switch (zone) {
-    case 'normal':
-      return { kind: 'permitted' };
-    case 'unknown':
-      return { kind: 'denied', reason: 'unknown-risk-data' };
-    case 'warm': {
-      const err = ledger.validate(request, consent, verify);
-      return err === null
-        ? { kind: 'permitted-with-consent' }
-        : { kind: 'denied', reason: err };
-    }
-    case 'hot':
-    case 'extreme': {
-      if (!routeAvailable(route)) return { kind: 'denied', reason: 'route-unavailable' };
-      const err = ledger.validate(request, consent, verify);
-      return err === null
-        ? { kind: 'permitted-with-consent' }
-        : { kind: 'denied', reason: err };
-    }
-  }
+  if (zone === 'unknown') return { kind: 'denied', reason: 'unknown-risk-data' };
+  if (!routeAvailable(route)) return { kind: 'denied', reason: 'route-unavailable' };
+  if (zone === 'normal') return { kind: 'permitted' };
+  const err = ledger.validate(request, consent, verify);
+  return err === null
+    ? { kind: 'permitted-with-consent' }
+    : { kind: 'denied', reason: err };
 }

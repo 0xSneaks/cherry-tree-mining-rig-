@@ -19,7 +19,10 @@
 //! * Valuation (Pass #5): units are carried as FIFO lots. Units held at the
 //!   reference timestamp use the committed reference price; units added or
 //!   registered after it use `min(reference, verified price at the event)`
-//!   (test 30). An `EmergencyNav` event re-bases every lot of the mint from
+//!   (test 30) — where "verified at the event" includes a freshness bound
+//!   calibrated per adapter (uncalibrated = fail closed), and registration
+//!   pricing applies exactly once, at the holder's first registration
+//!   event. An `EmergencyNav` event re-bases every lot of the mint from
 //!   its event — prospective only, settled segments untouched (test 36). A
 //!   `RouteHalt` pauses recognition (reserved, PENDING) until
 //!   `RouteResumed` publishes a fresh reference segment.
@@ -212,8 +215,10 @@ struct State<'a> {
     /// Reference overrides from verified reset/recovery events
     /// (`EmergencyNav`, `RouteResumed`); the epoch commit backs the rest.
     active: BTreeMap<PriceKey, UnitPrice>,
-    /// Latest verified in-epoch observation per mint (basis-checked).
-    observations: BTreeMap<Addr, UnitPrice>,
+    /// Latest verified in-epoch observation per mint (basis-checked), with
+    /// the finalized time it was observed at: an observation is usable only
+    /// inside the adapter's calibrated freshness window (`None` = never).
+    observations: BTreeMap<Addr, (UnitPrice, i64)>,
     /// Mints whose required route is halted (recognition paused).
     halted_mints: BTreeSet<Addr>,
     /// Mints with an unusable NAV/reset datum (wrong basis).
@@ -231,17 +236,27 @@ impl State<'_> {
             .or_else(|| self.references.get(key).map(|c| c.price))
     }
 
-    /// Basis-checked latest observation for a mint, if usable.
-    fn observation_for(&self, mint: &Addr) -> Option<UnitPrice> {
-        let required = self.config.adapter_of_mint(mint)?.asset.required_basis();
-        let obs = *self.observations.get(mint)?;
-        (obs.basis == required).then_some(obs)
+    /// Basis- and freshness-checked latest observation for a mint, if
+    /// usable at `now`. A previously valid observation does not remain
+    /// usable indefinitely: outside the adapter's calibrated window it is
+    /// stale (and with no calibration, every observation is stale), so it
+    /// cannot act as the "verified price at the event" for an addition or
+    /// late registration — those units are unpriced and PENDING instead.
+    fn observation_for(&self, mint: &Addr, now: i64) -> Option<UnitPrice> {
+        let adapter = self.config.adapter_of_mint(mint)?;
+        let required = adapter.asset.required_basis();
+        let &(obs, observed_at) = self.observations.get(mint)?;
+        if obs.basis != required {
+            return None;
+        }
+        let max_age = adapter.observation_max_age?;
+        (now.saturating_sub(observed_at) <= max_age).then_some(obs)
     }
 
     /// Acquisition price for units credited at `ts` (test 30): reference
     /// basis at or before the epoch start; afterwards
     /// `min(active reference, verified observation)`, or unpriced when no
-    /// usable observation exists.
+    /// usable (basis-correct, fresh) observation exists.
     fn acquisition(
         &self,
         mint: &Addr,
@@ -255,7 +270,7 @@ impl State<'_> {
             return Ok((Some(commit.price), LotBasis::Reference));
         }
         let reference = self.price(&key).unwrap_or(commit.price);
-        match self.observation_for(mint) {
+        match self.observation_for(mint, ts) {
             None => Ok((None, LotBasis::Addition)),
             Some(obs) => Ok((Some(min_price(&reference, &obs)?), LotBasis::Addition)),
         }
@@ -439,6 +454,36 @@ impl State<'_> {
         self.ledger.accounts.get(account).map(|a| a.mint)
     }
 
+    /// Credit acquisition-priced units, anchoring pre-reference credits:
+    /// units credited while their holder's wallet is already registered for
+    /// the asset are held under a registration at the epoch-start boundary,
+    /// so their reference pricing is permanent and no later registration
+    /// event may reprice them (accounts acquired after the wallet's own
+    /// registration would otherwise escape the registration anchoring).
+    fn credit_anchored(
+        &mut self,
+        mint: Addr,
+        holder: Addr,
+        units: u64,
+        price: Option<UnitPrice>,
+        basis: LotBasis,
+    ) -> EligibilityResult<()> {
+        self.lots.credit(mint, holder, units, price, basis)?;
+        if basis == LotBasis::Reference {
+            if let Some(adapter) = self.config.adapter_of_mint(&mint) {
+                let registered = self
+                    .ledger
+                    .accounts
+                    .get(&holder)
+                    .and_then(|a| self.registrations.get(&a.owner));
+                if registered == Some(&adapter.asset) {
+                    self.lots.mark_registered(mint, &[holder]);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Keep lots in step with a token event that the ledger just applied.
     fn apply_lots(&mut self, kind: &EventKind, ts: i64) -> EligibilityResult<()> {
         match kind {
@@ -447,7 +492,7 @@ impl State<'_> {
                     .mint_of_account(account)
                     .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
                 let (price, basis) = self.acquisition(&mint, ts)?;
-                self.lots.credit(mint, *account, *amount, price, basis)
+                self.credit_anchored(mint, *account, *amount, price, basis)
             }
             EventKind::Burn {
                 account, amount, ..
@@ -468,7 +513,23 @@ impl State<'_> {
                     .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
                 self.lots.consume(mint, *source, *amount)?;
                 let (price, basis) = self.acquisition(&mint, ts)?;
-                self.lots.credit(mint, *destination, *amount, price, basis)
+                self.credit_anchored(mint, *destination, *amount, price, basis)
+            }
+            EventKind::SetAccountOwner { account, .. } => {
+                // Test 19: an account-owner change is a transfer of the
+                // whole account, so the recipient acquires every unit at
+                // this event. Source and destination share the account key:
+                // consume the lots FIFO and re-credit them at the event's
+                // acquisition price (min rule), exactly like a token
+                // transfer — the recipient never inherits the previous
+                // holder's pre-drop reference pricing.
+                let mint = self
+                    .mint_of_account(account)
+                    .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
+                let units = self.lots.units(mint, *account);
+                self.lots.consume(mint, *account, units)?;
+                let (price, basis) = self.acquisition(&mint, ts)?;
+                self.credit_anchored(mint, *account, units, price, basis)
             }
             EventKind::Stake {
                 source,
@@ -502,16 +563,25 @@ impl State<'_> {
                     .ok_or(EligibilityError::InvariantViolation("unknown account"))?;
                 self.lots.withdraw_unstaked(mint, *beneficiary, *amount)?;
                 let (price, basis) = self.acquisition(&mint, ts)?;
-                self.lots.credit(mint, *destination, *amount, price, basis)
+                self.credit_anchored(mint, *destination, *amount, price, basis)
             }
             _ => Ok(()),
         }
     }
 
-    /// Registration after the reference timestamp: the wallet's reference
-    /// lots of the asset re-base to `min(reference, verified at the event)`
-    /// (section 5: "added **or registered** after it"); unpriced when no
-    /// usable observation exists (test 30).
+    /// Registration pricing applies ONCE per holder, at the wallet's FIRST
+    /// registration event for the asset:
+    /// * at or before the epoch start the units are legitimately
+    ///   reference-priced — the holder is merely anchored, so a later
+    ///   registration can never reprice them;
+    /// * after the reference timestamp the wallet's reference lots re-base
+    ///   to `min(reference, verified at the event)` (section 5: "added
+    ///   **or registered** after it"); unpriced when no usable observation
+    ///   exists (test 30).
+    ///
+    /// Re-registrations (exit + register, duplicates) and registrations
+    /// after a verified reset are no-ops for already-anchored holders: a
+    /// later registration event never reprices established lots.
     fn registration_rebase(
         &mut self,
         wallet: &Addr,
@@ -525,16 +595,6 @@ impl State<'_> {
         let Some(commit) = self.references.get(&PriceKey::Mint(underlying)) else {
             return Ok(());
         };
-        if ts <= commit.epoch_start {
-            return Ok(());
-        }
-        let reference = self
-            .price(&PriceKey::Mint(underlying))
-            .unwrap_or(commit.price);
-        let reg_price = match self.observation_for(&underlying) {
-            None => None,
-            Some(obs) => Some(min_price(&reference, &obs)?),
-        };
         let mut holders: Vec<Addr> = self
             .ledger
             .accounts
@@ -545,6 +605,17 @@ impl State<'_> {
             .map(|(a, _)| *a)
             .collect();
         holders.push(*wallet); // stake beneficiary bucket
+        if ts <= commit.epoch_start {
+            self.lots.mark_registered(underlying, &holders);
+            return Ok(());
+        }
+        let reference = self
+            .price(&PriceKey::Mint(underlying))
+            .unwrap_or(commit.price);
+        let reg_price = match self.observation_for(&underlying, ts) {
+            None => None,
+            Some(obs) => Some(min_price(&reference, &obs)?),
+        };
         self.lots.rebase_registered(underlying, &holders, reg_price)
     }
 
@@ -561,8 +632,7 @@ impl State<'_> {
             let cur = self.lots.units(*mint, *account);
             if *amount > cur {
                 let (price, basis) = self.acquisition(mint, ts)?;
-                self.lots
-                    .credit(*mint, *account, *amount - cur, price, basis)?;
+                self.credit_anchored(*mint, *account, *amount - cur, price, basis)?;
             } else if cur > *amount {
                 self.lots.consume(*mint, *account, cur - *amount)?;
             }
@@ -637,11 +707,14 @@ impl State<'_> {
                 }
             }
             EventKind::PriceObserved { mint, price } => {
-                // Only basis-correct observations are usable; others leave
-                // additions unpriced (fail closed).
+                // Only basis-correct observations are recorded (with the
+                // finalized time they were observed at); others leave
+                // additions unpriced (fail closed). Freshness is enforced
+                // at use: an observation outside the adapter's calibrated
+                // window is stale and unusable.
                 if let Some(adapter) = self.config.adapter_of_mint(mint) {
                     if price.basis == adapter.asset.required_basis() && price.units_den != 0 {
-                        self.observations.insert(*mint, *price);
+                        self.observations.insert(*mint, (*price, ts));
                     }
                 }
             }

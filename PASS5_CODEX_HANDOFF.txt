@@ -1,0 +1,327 @@
+THE CHERRY TREE — PASS #5 FINAL INDEPENDENT VERIFICATION HANDOFF
+
+Verification date: 2026-09-28
+Verifier: Codex
+Verification scope: pushed Pass #5 pricing + Safe Mode remediation
+
+FINAL VERDICT
+
+PASS #5 NOT VERIFIED
+
+The pushed remediation is synchronized with GitHub and every required automated
+check passes. Independent source review nevertheless found protocol defects in
+late-registration anchoring, pending/FIFO lot handling, invalid-observation
+handling, and reference-price validation. Pass #5 is not ready for the next
+gate until those defects are remediated and independently re-verified.
+
+
+1. PHANTOM PRE-OPS
+
+Worktree:
+  /home/bronzesneaks/cherry-tree-pass5
+
+Branch:
+  z-ai/cherry-tree-pass5-pricing-safe-mode
+
+Previous pre-remediation HEAD:
+  bb7139470d6b9b4149fc147cc1be1202280eefc7
+
+Reviewed remediation HEAD:
+  99679b96ed6f34d56eddeb66238a259bd7269a68
+
+Origin branch SHA (tracking ref and direct git ls-remote):
+  99679b96ed6f34d56eddeb66238a259bd7269a68
+
+HEAD == origin:
+  YES
+
+Commit reviewed:
+  99679b9 fix: remediate Pass #5 pricing and safe mode
+
+Parent:
+  bb71394 feat: pricing and safe mode foundation
+
+No concurrent modifying agent or process was detected. Relevant Git worktrees
+were enumerated; the collaboration runtime contained only the verifier.
+
+
+2. EXACT FILES REVIEWED
+
+The range bb7139470d6b9b4149fc147cc1be1202280eefc7..HEAD contains exactly:
+
+  app/src/lib/safeMode.ts
+  app/tests/safeMode.test.ts
+  crates/eligibility-engine/src/adapter.rs
+  crates/eligibility-engine/src/lots.rs
+  crates/eligibility-engine/src/replay.rs
+  crates/eligibility-engine/src/safe_mode.rs
+  crates/eligibility-engine/tests/common/mod.rs
+  crates/eligibility-engine/tests/pricing_safe_mode.rs
+
+Diff stat:
+  8 files changed, 827 insertions(+), 96 deletions(-)
+
+The implementation was reviewed from the committed range, not from prior
+implementation reports. Relevant unchanged pricing, valuation, replay, consent,
+and architecture code was traced where required by the canonical scope.
+
+
+3. F1 — LATE-REGISTRATION LOT RECAPPING
+
+Result: NOT VERIFIED.
+
+Correctly implemented paths:
+
+  - Direct repeat registration does not recap an already anchored holder.
+  - The added tests cover direct mark-up, mark-down, and un-taint attempts.
+  - Ordinary pre-reference acquisitions made while already registered anchor.
+  - The ordinary event-driven pending-unstake path participates in rebasing.
+  - A post-reference SetAccountOwner event receives the event min-rule price.
+  - Replay and serialization use deterministic ordering and containers.
+
+F1-A — registration state can be inherited by a different wallet
+Severity: HIGH
+
+  LotLedger keys registration anchoring by `(mint, holder)`, where a holder may
+  be a token-account address. See lots.rs lines 59-69. `consume` removes units
+  but does not clear that marker. SetAccountOwner consumes and recreates lots
+  under the same account key at replay.rs lines 518-532. `credit_anchored` can
+  add a marker for a registered new owner but cannot remove the prior owner's
+  marker.
+
+Reproduction:
+
+  1. A owns an account and registers at or before the reference boundary.
+  2. Before the boundary, SetAccountOwner transfers the account to unregistered B.
+  3. After the boundary, the verified event price drops below the reference.
+  4. B registers for the first time.
+  5. The inherited account marker makes rebase_registered skip B's required
+     first-registration reprice.
+
+Result: B retains the higher reference valuation instead of
+`min(reference, registration-event price)`.
+
+F1-B — checkpoint-adopted pending unstake loses its reference basis
+Severity: HIGH
+
+  `reconcile_lots` computes the acquisition basis for newly observed pending
+  stake but discards it at replay.rs lines 649-653. `credit_pending` always
+  stores `LotBasis::Addition` at lots.rs lines 358-381.
+
+Reproduction:
+
+  1. Adopt an unregistered wallet's pending balance at a pre-reference checkpoint.
+  2. Acquisition returns Reference, but credit_pending stores Addition.
+  3. The wallet first registers after the boundary at a lower verified price.
+  4. Registration rebases only Reference lots, so this lot escapes anchoring.
+  5. CancelUnstake returns the incorrectly priced lot to active recognition.
+
+F1-C — CancelUnstake is not FIFO
+Severity: HIGH
+
+  `cancel_unstake` uses `swap_remove(0)` at lots.rs lines 279-312. Given pending
+  lots [A, B, C], removing A swaps C to the front. A cancellation spanning two
+  lots therefore returns A then C, leaving B. Since canceled lots return to the
+  valued active queue, pending order is valuation-relevant.
+
+
+4. F2 — STALE PRICE REUSE / FRESHNESS
+
+Result: NOT VERIFIED.
+
+Verified behavior:
+
+  - Freshness is evaluated at every acquisition/registration use.
+  - Missing and stale observations fail closed.
+  - The configured age boundary is inclusive (`age <= max_age`).
+  - Stale-to-fresh transitions work.
+  - `observation_max_age` remains an injected, per-adapter seam.
+  - Production constructors leave it as None, so no arbitrary production
+    threshold was invented.
+  - Unresolved section 14.2-D production calibration remains unresolved.
+
+F2-A — a newer invalid observation leaves an older valid observation reusable
+Severity: HIGH
+
+  PriceObserved events with the wrong basis or a zero denominator are ignored
+  at replay.rs lines 709-719. The old `(price, observed_at)` entry is not
+  cleared or invalidated.
+
+Reproduction:
+
+  1. Record a valid observation at t=100.
+  2. Record a wrong-basis or zero-denominator observation at t=105.
+  3. Acquire/register at t=106 while the t=100 observation remains within the
+     configured age.
+  4. The engine prices from the t=100 observation.
+
+The newer invalid event therefore does not fail closed as required.
+
+
+5. F3 — ROUTE-HALT AUTHORIZATION
+
+Result: VERIFIED.
+
+Rust and TypeScript have aligned decision precedence:
+
+  - UNKNOWN is denied.
+  - An unavailable route is denied in NORMAL, WARM, HOT, and EXTREME.
+  - NORMAL needs no consent only when the route is operational.
+  - WARM, HOT, and EXTREME need valid consent and an operational route.
+  - A signature cannot repair a halted route.
+  - INACTIVE/no-reference assets remain weight zero and do not freeze unrelated
+    settlement.
+  - DEX quote failure alone is not treated as protocol route unavailability.
+
+Relevant implementations:
+  crates/eligibility-engine/src/safe_mode.rs lines 176-207
+  app/src/lib/safeMode.ts lines 234-256
+
+
+6. ADDITIONAL DEFECTS
+
+ADD-A — incorrect exact-rational TWAP for differing denominators
+Severity: HIGH
+
+  pricing.rs lines 136-173 calculate:
+
+    sum(dt * numerator) / sum(dt * denominator)
+
+  That is not `sum(dt * price) / sum(dt)` when rational denominators differ.
+  For equal durations at prices 2/1 and 1/2, the correct TWAP is 5/4, while
+  the implementation returns 3/3 = 1. Existing tests use uniform denominators.
+
+ADD-B — confidence threshold compares incompatible quantities
+Severity: HIGH
+
+  PriceSample documents confidence as an absolute same-unit half-width, while
+  max_confidence is documented relative to the midpoint. pricing.rs lines 85-91
+  compare the absolute confidence ratio directly to the relative threshold
+  without dividing by the midpoint.
+
+ADD-C — the single-spot prohibition can be configured away
+Severity: HIGH
+
+  ReferenceValidation does not reject `min_distinct_slots = 1` combined with
+  `min_window_seconds = 0`. A single sample with positive tail duration can
+  therefore commit a reference despite the stated unconditional prohibition.
+
+
+7. CANONICAL PASS #5 SCOPE
+
+   1. Exact-ratio pricing: NOT VERIFIED (ADD-A).
+   2. FIFO pricing lots: NOT VERIFIED (F1-C).
+   3. Late registration: NOT VERIFIED (F1-A/F1-B).
+   4. Reference/TWAP validation: NOT VERIFIED (ADD-A/B/C).
+   5. Observation freshness: NOT VERIFIED (F2-A).
+   6. Consent enforcement: VERIFIED.
+   7. Safe Mode classification: VERIFIED.
+   8. Route authorization: VERIFIED in Rust and TypeScript.
+   9. Leverage restrictions: VERIFIED; CR <= 1 never shows finite leverage.
+  10. Hysteresis/state transitions: VERIFIED.
+  11. UNKNOWN handling: VERIFIED.
+  12. INACTIVE handling: VERIFIED.
+  13. xSOL/SKR behavior: canonical tests pass, but both share the pricing/lot
+      defects, so they are not unconditionally verified.
+  14. Replay determinism: VERIFIED mechanically; deterministic execution does
+      not cure the incorrect semantics above.
+  15. Valuation: NOT VERIFIED because the FIFO, anchoring, and TWAP defects
+      alter valuation.
+  16. Error handling: NOT VERIFIED because invalid observations can preserve
+      cached valid state.
+  17. Rust/TypeScript parity: VERIFIED for shared Safe Mode behavior.
+  18. Canonical tests 30-39: PASS, but miss the adversarial paths above.
+
+
+8. TESTS REPRODUCED
+
+Command:
+  cargo test --workspace
+
+Result:
+  PASS
+  34 test-result targets
+  363 passed, 0 failed, 0 ignored
+
+An additional quiet invocation was aggregated to obtain the exact total:
+  RUST_LOG=off cargo test --workspace --quiet
+  suites=34 passed=363 failed=0 ignored=0
+
+Command:
+  cargo test -p eligibility-engine --test pricing_safe_mode
+
+Result:
+  PASS
+  17 passed, 0 failed, 0 ignored
+
+Command:
+  cd app && npx vitest run
+
+Result outside the restricted sandbox:
+  PASS
+  38 test files passed
+  713 tests passed, 0 failed, 0 skipped
+
+The initial restricted-sandbox attempt reported `spawnSync bash EPERM` and
+`listen EPERM`. Repeating the exact required command with normal subprocess and
+localhost permissions passed 713/713; the initial failures were environmental.
+
+Command:
+  cd app && npx vitest run tests/safeMode.test.ts
+
+Result:
+  PASS
+  1 file, 33 passed, 0 failed
+
+Command:
+  cd app && npm run typecheck
+
+Result:
+  PASS; 0 TypeScript diagnostics
+
+Command:
+  cargo clippy -p eligibility-engine --all-targets
+
+Result:
+  PASS; 0 warnings/errors
+
+Command:
+  cargo fmt -p eligibility-engine -- --check
+
+Result:
+  PASS; no formatting differences
+
+
+9. DIFF CHECK AND GIT STATUS
+
+Command:
+  git diff --check bb7139470d6b9b4149fc147cc1be1202280eefc7..HEAD
+
+Result:
+  PASS; no output
+
+Status at completion of verification, before staging this handoff:
+
+  ?? .mimosa/
+  ?? PASS5_CODEX_HANDOFF.txt
+  ?? app/.mimosa/
+
+There were no staged or unstaged tracked changes. The Pass #5 implementation
+remained byte-for-byte at commit 99679b96ed6f34d56eddeb66238a259bd7269a68.
+
+
+10. MODIFICATION AND BLOCKER STATEMENT
+
+Codex did not modify any Pass #5 implementation file, protocol parameter,
+wallet, secret, production configuration, or Mimosa metadata. It did not merge,
+deploy, or begin Pass #6. The only intentional verification artifact is this
+handoff file.
+
+Mimosa was not bypassed, weakened, redesigned, or suppressed. The verification
+verdict is blocked by the protocol defects listed above, independently of any
+Mimosa findings.
+
+
+FINAL VERDICT
+
+PASS #5 NOT VERIFIED

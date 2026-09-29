@@ -1,4 +1,4 @@
-# Pass #7 — Lock decision amendment (P7-L1, P7-L2, rounding)
+# Pass #7 — Lock decision amendment (P7-L1, P7-L2, rounding, F7)
 
 Date: 2026-09-29. Founder decisions, frozen for Pass #7. Narrow amendment to
 `CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md` (§8, §10a, §12); it resolves
@@ -46,12 +46,60 @@ component. No path may release the same capacity twice.
 ## Rounding
 
 ```text
-u_i    = 5 ell_i                       (lamport-days)
-H_lock = max(sum u_i, 62.5 SOL-days)
-sum A  = floor(B * sum u_i / H_lock)   (computed by the engine, not poster input)
-A_i    = floor(B * u_i / H_lock)       (never rounded up)
-sum_i floor(A_i) <= sum A <= B
+u_i               = 5 ell_i                          (lamport-days)
+H_lock            = max(sum u_i, 62.5 SOL-days)
+gross_allocatable = floor(B * sum u_i / H_lock)      (computed by the engine, not poster input)
+A_i               = floor(B * u_i / H_lock)          (never rounded up)
+assigned_total    = sum_i A_i                        <= gross_allocatable <= B
 A_i <= floor(B/5)
 ```
 
 Checked arithmetic with u128 intermediates.
+
+## F7 — Rounding dust is unallocated, not forfeiture
+
+Date: 2026-09-29. Owner decision, frozen.
+
+Rounding dust was never assigned to a wallet, so it is unallocated capacity:
+
+```text
+gross_allocatable = floor(B * sum u_i / H_lock)
+assigned_total    = sum_i floor(B * u_i / H_lock)
+rounding_dust     = gross_allocatable - assigned_total
+unallocated       = B - assigned_total                (dust included)
+forfeited        <= assigned_total - final_total
+```
+
+- Rounding dust returns 100% to `Z` at close, with the rest of `unallocated`.
+- It is never eligible for the 80% treasury forfeiture transfer: the
+  forfeiture bound is `assigned_total - final_total`, which excludes dust.
+- `gross_allocatable` is never treated as the sum of wallet awards. The
+  engine sees only `sum ell`, so the poster commits `assigned_total` with the
+  allocation; it is bounded by `gross_allocatable` and goes through the same
+  challenge/veto window as `H_lock`. Lock root capacity (the cliff) is
+  `assigned_total`.
+
+## Allocation lifecycle (engine, pool-owned)
+
+The allocation lifecycle is stored on the lock pool itself, never inferred
+from a numeric total:
+
+```text
+Uninitialized --post--> Pending(generation g) --finalize--> Final (terminal)
+                           +--veto at threshold--> Uninitialized (g retired)
+```
+
+- Posting records the whole commitment (pool identity, generation, budget,
+  `sum ell`, requested total, `H_lock`, `gross_allocatable`,
+  `assigned_total`, window) on the pool.
+- Veto and finalize act only on the pool's own Pending commitment and must be
+  handed exactly that commitment, so a stale copy, a vetoed generation or an
+  allocation from another pool cannot finalize.
+- Finalize revalidates every committed field; Final is written explicitly and
+  is permanent, including a Final allocation of zero.
+- Lock pools are created only by `commit_lock_pool` (window derived from
+  `FRUIT_T0`). The generic `post_root` and `terminal_resolution` refuse lock
+  pools; roots, terminal resolution and close of a lock pool read only the
+  pool's Final allocation.
+
+This records engine behavior only; it changes no rule of the architecture.

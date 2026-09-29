@@ -23,6 +23,7 @@
 //! `Z`). Nothing in this module can mint a seed or reach a base vault.
 
 use crate::error::{EngineError, EngineResult};
+use crate::fruit_lock::{lock_final_allocation, LockState};
 
 /// Frozen Fruit seed-price reference, `P_ref` (lamports per seed). Never read
 /// from the base program's configurable price.
@@ -51,8 +52,9 @@ const _: () = assert!(QMAX_NUM == 1, "wallet_cap assumes qmax = 1/QMAX_DEN");
 
 /// The three independent Fruit ledgers.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum LedgerKind {
+    #[default]
     Core = 0,
     Loyalty = 1,
     Lock = 2,
@@ -258,12 +260,14 @@ pub struct FruitPool {
     /// Lamports released from `Z` to the Protocol Treasury at close
     /// (`floor(0.80 final_forfeited)`), reported separately from fee revenue.
     pub forfeit_treasury_released: u64,
-    /// Lock pools only: the allocated `sum A_i` from the frozen `H_lock`
-    /// (architecture §8 / §10a Pool table), written once at lock
-    /// registration finalization. `0` means no allocation is established,
-    /// and then no root may carry forfeiture. The on-chain program has no
-    /// lock registration yet, so it always leaves this `0`.
-    pub lock_allocated: u64,
+    /// Ledger this pool belongs to. [`commit_pool`] makes core/loyalty
+    /// pools; only [`crate::fruit_lock::commit_lock_pool`] makes a
+    /// [`LedgerKind::Lock`] pool, and the generic [`post_root`] and
+    /// [`terminal_resolution`] refuse it.
+    pub kind: LedgerKind,
+    /// Lock pools only: the pool-owned allocation lifecycle (Pass #7
+    /// P7-L1 / F7). Default (Uninitialized) on every other pool.
+    pub lock: LockState,
 }
 
 /// Accounting state of one posted root.
@@ -361,14 +365,19 @@ pub fn commit_pool(
 }
 
 /// Largest `forfeited` a complete root with `total` may carry:
-/// `sum A_i - total` (architecture §8, test 89), `0` when no lock allocation
-/// is established or `total` already exceeds it. An allocation above the
-/// budget is corrupt state and is rejected.
+/// `assigned_total - total` (architecture §8 test 89, Pass #7 F7), `0` on a
+/// non-lock pool, on a lock pool without a Final allocation, or when `total`
+/// already exceeds it. Rounding dust (`gross_allocatable - assigned_total`)
+/// and unallocated capacity are outside the bound, so they can never be
+/// labelled forfeiture.
 fn forfeit_bound(pool: &FruitPool, total: u64) -> EngineResult<u64> {
-    if pool.lock_allocated > pool.budget {
-        return Err(EngineError::InvalidForfeited);
+    if pool.kind != LedgerKind::Lock
+        || pool.lock.status != crate::fruit_lock::LockAllocationStatus::Final
+    {
+        return Ok(0);
     }
-    Ok(pool.lock_allocated.saturating_sub(total))
+    let alloc = lock_final_allocation(pool).map_err(|_| EngineError::InvalidForfeited)?;
+    Ok(alloc.assigned_total.saturating_sub(total))
 }
 
 /// POST ROOT (Pending). All §10a invariant-3 and invariant-4 checks.
@@ -376,12 +385,44 @@ fn forfeit_bound(pool: &FruitPool, total: u64) -> EngineResult<u64> {
 /// `forfeited` (lock ledgers only; the caller rejects it elsewhere) may be
 /// non-zero only on a root marked complete, and never above
 /// `sum A_i - total` (architecture §8, test 89), where `sum A_i` is the
-/// pool's established [`FruitPool::lock_allocated`]. With no allocation
-/// established, any non-zero `forfeited` is rejected. Since
-/// `sum A_i <= E`, this also keeps the release inside `E - total`, so the
-/// treasury release can never touch `L` or `U`.
+/// Final lock allocation's `assigned_total`. With no Final allocation (or on
+/// a non-lock pool) any non-zero `forfeited` is rejected. Since
+/// `assigned_total <= E`, this also keeps the release inside `E - total`, so
+/// the treasury release can never touch `L` or `U`.
+///
+/// Refuses [`LedgerKind::Lock`] pools: their capacity is the lock cliff, not
+/// the linear schedule, so they post only through
+/// [`crate::fruit_lock::post_lock_root`].
 #[allow(clippy::too_many_arguments)]
 pub fn post_root(
+    pool: &mut FruitPool,
+    version: u64,
+    checkpoint_time: i64,
+    total: u64,
+    complete: bool,
+    forfeited: u64,
+    now: i64,
+    challenge_window: i64,
+) -> EngineResult<FruitRoot> {
+    if pool.kind == LedgerKind::Lock {
+        return Err(EngineError::InvalidLedgerKind);
+    }
+    post_root_unchecked(
+        pool,
+        version,
+        checkpoint_time,
+        total,
+        complete,
+        forfeited,
+        now,
+        challenge_window,
+    )
+}
+
+/// [`post_root`] without the ledger-kind gate: the lock path calls it only
+/// after checking the lock cliff capacity.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn post_root_unchecked(
     pool: &mut FruitPool,
     version: u64,
     checkpoint_time: i64,
@@ -491,6 +532,11 @@ pub fn finalize_root(
     if now < root.final_after {
         return Err(EngineError::ChallengeWindowOpen);
     }
+    // A lock root can never establish more than the Final allocation's
+    // assigned awards, whatever root object the caller hands in.
+    if pool.kind == LedgerKind::Lock && root.total > lock_final_allocation(pool)?.assigned_total {
+        return Err(EngineError::RootExceedsCapacity);
+    }
     let delta = root
         .total
         .checked_sub(pool.final_total)
@@ -519,7 +565,27 @@ pub fn finalize_root(
 /// to the same capacity, version and monotone-finality rules as any root, so
 /// it can only add liabilities (and let close release excess to `Z`) — it can
 /// never reduce `L`. The caller verifies the quorum.
+///
+/// Refuses [`LedgerKind::Lock`] pools (whose generic cap would be `E`, above
+/// the assigned awards); they resolve only through
+/// [`crate::fruit_lock::terminal_lock_resolution`].
 pub fn terminal_resolution(
+    ledger: &mut FruitLedger,
+    pool: &mut FruitPool,
+    version: u64,
+    checkpoint_time: i64,
+    total: u64,
+    now: i64,
+) -> EngineResult<(FruitRoot, u64)> {
+    if pool.kind == LedgerKind::Lock {
+        return Err(EngineError::InvalidLedgerKind);
+    }
+    terminal_resolution_unchecked(ledger, pool, version, checkpoint_time, total, now)
+}
+
+/// [`terminal_resolution`] without the ledger-kind gate (lock path only,
+/// after its capacity check).
+pub(crate) fn terminal_resolution_unchecked(
     ledger: &mut FruitLedger,
     pool: &mut FruitPool,
     version: u64,
@@ -538,7 +604,7 @@ pub fn terminal_resolution(
     let mut l = *ledger;
     // Unknown history is never treated as voluntary exit (§8): a terminal
     // resolution carries no forfeiture, so nothing it releases leaves `Z`.
-    let mut root = post_root(&mut p, version, checkpoint_time, total, true, 0, now, 1)?;
+    let mut root = post_root_unchecked(&mut p, version, checkpoint_time, total, true, 0, now, 1)?;
     root.final_after = now;
     let delta = finalize_root(&mut l, &mut p, &mut root, now)?;
     *pool = p;
@@ -613,11 +679,15 @@ pub fn close_pool(
     if pool.final_version == 0 || !pool.final_complete {
         return Err(EngineError::FruitPoolNotReconciled);
     }
+    // A lock pool closes only against its pool-owned Final allocation.
+    if pool.kind == LedgerKind::Lock {
+        lock_final_allocation(pool)?;
+    }
     let release = pool
         .budget
         .checked_sub(pool.final_total)
         .ok_or(EngineError::MathOverflow)?;
-    // Enforced at post time; re-checked against `sum A_i - final_total` (and
+    // Enforced at post time; re-checked against `assigned_total - final_total` (and
     // so `E - final_total`) so the release can never exceed the capacity
     // this close returns to `Z`, even from corrupted state.
     if pool.final_forfeited > 0

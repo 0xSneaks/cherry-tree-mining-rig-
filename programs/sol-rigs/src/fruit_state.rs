@@ -7,7 +7,9 @@
 //! version.
 
 use anchor_lang::prelude::*;
-use rigs_engine::{FruitLedger, FruitPool, FruitRoot, PoolStatus, RootStatus};
+use rigs_engine::{
+    FruitLedger, FruitPool, FruitRoot, LedgerKind, LockState, PoolStatus, RootStatus,
+};
 
 use crate::constants::MAX_VETO_SIGNERS;
 use crate::error::{IntoAnchor, RigsError};
@@ -175,10 +177,12 @@ impl Pool {
             pending_forfeited: self.pending_forfeited,
             final_forfeited: self.final_forfeited,
             forfeit_treasury_released: self.forfeit_treasury_released,
+            kind: LedgerKind::from_u8(self.ledger_kind).anchor()?,
             // No lock registration exists in this program version, so no
-            // `sum A_i` is ever established: the engine then rejects any
-            // non-zero `forfeited` at post and at close (architecture §8).
-            lock_allocated: 0,
+            // lock allocation is ever established: the engine then rejects
+            // any non-zero `forfeited` at post and at close (architecture §8),
+            // and lock pools cannot be committed at all.
+            lock: LockState::default(),
         })
     }
 

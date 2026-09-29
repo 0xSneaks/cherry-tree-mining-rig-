@@ -1834,13 +1834,14 @@ impl Fx {
     }
 }
 
-/// Test 89 on-chain, fail-closed half. The tight bound
-/// `forfeited <= sum A_i - final_total` needs `sum A_i` from lock
-/// registration, which this program version does not have. So a lock root
-/// carrying any forfeiture — even one inside `E - total` — is refused, and a
-/// forfeiture-free lock pool closes with 100% of released capacity in `Z`
-/// and nothing to the treasury. The 80/20 split itself is covered by the
-/// engine (`crates/rigs-engine/tests/fruit_ledger.rs`).
+/// Test 89 on-chain, fail-closed half. This program version has no lock
+/// registration, so no lock allocation exists and lock pools cannot be
+/// committed. Even an injected lock pool fails closed: a lock root carrying
+/// any forfeiture is refused, the engine refuses every generic root on a
+/// lock pool (its capacity is the lock cliff, Pass #7 F3), so nothing is
+/// posted, the pool cannot reconcile or close, and no lamport moves. The
+/// 80/20 split itself is covered by the engine
+/// (`crates/rigs-engine/tests/fruit_ledger.rs`, `fruit_lock.rs`).
 #[tokio::test]
 async fn t89_lock_forfeiture_fails_closed_until_lock_allocation_exists() {
     let mut fx = Fx::with_lock_pool_slot(1).await;
@@ -1860,27 +1861,42 @@ async fn t89_lock_forfeiture_fails_closed_until_lock_allocation_exists() {
         );
         fx.env.warp(1).await;
     }
-    assert_eq!(fx.pool(LOCK, 1).await.pending_version, 0, "nothing posted");
-
-    fx.settle(LOCK, 1, 1, [5u8; 32], t1, total, true).await;
     let before = fx.ledger(LOCK).await;
     let v_before = fx.v(LOCK).await;
     let treasury_before = fx.env.lamports(fee_recipient()).await;
     let base_before = fx.base_lamports().await;
-    fx.close(LOCK, 1).await.unwrap();
+    // Forfeiture-free lock roots are refused too, whatever the total.
+    for t in [0, total, e] {
+        assert_rigs_error(
+            fx.post(LOCK, 1, 1, [5u8; 32], t1, t, true)
+                .await
+                .unwrap_err(),
+            RigsError::InvalidLedgerKind,
+        );
+        fx.env.warp(1).await;
+    }
+    assert_eq!(fx.pool(LOCK, 1).await.pending_version, 0, "nothing posted");
+    assert_eq!(fx.pool(LOCK, 1).await.final_version, 0, "nothing final");
+    assert_rigs_error(
+        fx.close(LOCK, 1).await.unwrap_err(),
+        RigsError::FruitPoolNotReconciled,
+    );
     let after = fx.ledger(LOCK).await;
-    assert_eq!(after.liabilities, before.liabilities, "L untouched");
-    assert_eq!(after.committed, before.committed - (e - total));
-    assert_eq!(after.reserve, before.reserve + (e - total), "100% to Z");
+    assert_eq!(
+        (after.liabilities, after.committed, after.reserve),
+        (before.liabilities, before.committed, before.reserve),
+        "L, U and Z untouched"
+    );
     assert_eq!(fx.v(LOCK).await, v_before);
     assert_eq!(fx.env.lamports(fee_recipient()).await, treasury_before);
     assert_eq!(fx.pool(LOCK, 1).await.forfeit_treasury_released, 0);
     assert_eq!(fx.base_lamports().await, base_before, "no base vault moved");
 }
 
-/// A Final lock root whose carried `forfeited` was injected (corrupted or
-/// pre-upgrade state) cannot release anything: close re-checks the bound,
-/// finds no established `sum A_i`, and refuses without moving lamports.
+/// A lock pool whose Final complete root and carried `forfeited` were
+/// injected (corrupted or pre-upgrade state) cannot release anything: close
+/// finds no pool-owned Final lock allocation and refuses without moving
+/// lamports.
 #[tokio::test]
 async fn t89_injected_forfeiture_cannot_close() {
     use anchor_lang::AccountSerialize;
@@ -1889,10 +1905,12 @@ async fn t89_injected_forfeiture_cannot_close() {
     let (t0, t1) = (now + 10, now + 10 + 86_400);
     fx.plant_lock_pool(1, 5 * SOL, t0, t1).await;
     fx.env.set_time(t1).await;
-    fx.settle(LOCK, 1, 1, [5u8; 32], t1, 0, true).await;
 
     let key = pool_pda(LOCK, 1);
     let mut pool = fx.pool(LOCK, 1).await;
+    pool.latest_version = 1;
+    pool.final_version = 1;
+    pool.final_complete = true;
     pool.final_forfeited = 5 * SOL;
     let mut data = Vec::new();
     pool.try_serialize(&mut data).unwrap();
@@ -1906,7 +1924,7 @@ async fn t89_injected_forfeiture_cannot_close() {
     fx.env.warp(1).await;
     assert_rigs_error(
         fx.close(LOCK, 1).await.unwrap_err(),
-        RigsError::InvalidForfeited,
+        RigsError::InvalidFruitState,
     );
     let after = fx.ledger(LOCK).await;
     assert_eq!(

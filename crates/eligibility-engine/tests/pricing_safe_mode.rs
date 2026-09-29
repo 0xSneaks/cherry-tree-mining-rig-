@@ -2400,6 +2400,308 @@ fn new3_registration_rebase_must_not_merge_across_pending_lots() {
     assert_eq!(r, run_with(&cfg, &refs, &t, 300));
 }
 
+// -------------------------------- Pass #5 fourth remediation (NEW-4)
+
+/// A second token account of wallet A for the same mint: the harness's
+/// `ta` derives exactly one deterministic account per (wallet, mint), so
+/// cross-account timelines build their second account explicitly.
+const ACC2: Addr = Addr::fixture(0x45);
+
+/// NEW-4 (F1-C class, cross-account merging): FIFO age is GLOBAL for a
+/// wallet's economically related lots. `credit`'s tail merge checked only
+/// the SAME key's pending bucket, so a same-price lot credited to one
+/// account inherited that account's older stamp while an
+/// intermediate-age lot sat under ANOTHER account of the same wallet.
+/// Staking both accounts co-locates the lots in the beneficiary bucket,
+/// and the corrupted age decides FIFO: the merged units of the NEWER lot
+/// leave ahead of the intermediate lot (1.5x overvaluation here).
+#[test]
+fn new4a_cross_account_merge_cannot_erase_global_fifo_age() {
+    let (cfg, refs) = stake_world();
+
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: ACC2,
+            mint: SKR_MINT,
+            owner: A, // a second account of the SAME wallet
+        })
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr) // pre-reference: anchors A's accounts
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(3, 160).mint(A, SKR_MINT, 100); // X at min(2,1) = 1 (ta(A))
+    t.slot(4, 170).observe(SKR_MINT, price(3, 2)); // 1.5
+    t.slot(5, 180).ev(EventKind::MintTo {
+        account: ACC2,
+        amount: 100, // Y at 1.5 — a DIFFERENT key, invisible to ta(A)'s tail
+    });
+    t.slot(6, 190).observe(SKR_MINT, price(1, 1));
+    t.slot(7, 200).mint(A, SKR_MINT, 100); // Z at 1 (ta(A)): must NOT merge into X
+    t.slot(8, 250).ev(EventKind::Stake {
+        source: ta(A, SKR_MINT),
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 200, // X and Z (one merged lot under the defective code)
+    });
+    t.slot(9, 255).ev(EventKind::Stake {
+        source: ACC2,
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 100, // Y re-enters at its own age, between X and Z
+    });
+    t.slot(10, 260).ev(EventKind::RequestUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 200,
+    });
+    t.slot(11, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+
+    // Control before consumption: 300 units — 200@1 + 100@1.5 = 350.
+    match x_at(&r, &A, 258) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (300, 350),
+            "control: the whole position values at 200@1 + 100@1.5"
+        ),
+        o => panic!("{o:?}"),
+    }
+
+    // Global-age FIFO consumes X (oldest) then Y; the remaining position
+    // is Z@1. Under the defective code Z inherited X's stamp, so the
+    // merged (X+Z) units left first and the remaining position was
+    // Y@1.5 = 150 instead of Z@1 = 100.
+    match x_at(&r, &A, 280) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (100, 100),
+            "the remaining position is the NEWEST lot Z@1: no merge may \
+             re-stamp a newer lot's units with an older lot's age while an \
+             intermediate-age lot lives under another key"
+        ),
+        o => panic!("{o:?}"),
+    }
+    // Determinism.
+    assert_eq!(r, run_with(&cfg, &refs, &t, 300));
+}
+
+/// NEW-4 through the checkpoint credit path: a stake balance adopted by a
+/// checkpoint (`reconcile_lots` credits the unexplained difference as a
+/// fresh acquisition at the checkpoint's min-rule price) must not merge
+/// into an existing same-price stake lot of a different age. Claude's
+/// sequence: X staked, Y minted to the wallet account, declared gap; the
+/// checkpoint adopts active 200 (observed X + 100 unexplained Z@1); Z
+/// folds into X's stamp under the defective code; staking Y afterwards
+/// seats it BETWEEN X and Z; the unstake then eats the merged (X+Z) units
+/// and leaves Y@1.5 instead of Z@1.
+#[test]
+fn new4b_checkpoint_reconcile_credit_cannot_inherit_stake_lot_age() {
+    let (cfg, refs) = stake_world();
+
+    let custody_snap = |amount: u64| AccountSnapshot {
+        account: CUSTODY,
+        mint: SKR_MINT,
+        owner: STAKE_CUSTODY_OWNER,
+        amount,
+        delegate: None,
+        delegated_amount: 0,
+        frozen: false,
+    };
+
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(3, 160).mint(A, SKR_MINT, 100); // X at 1
+    t.slot(4, 170).ev(EventKind::Stake {
+        source: ta(A, SKR_MINT),
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 100, // X moves into the stake key at its own age
+    });
+    t.slot(5, 175).observe(SKR_MINT, price(3, 2)); // 1.5
+    t.slot(6, 180).mint(A, SKR_MINT, 100); // Y at 1.5 stays in ta(A)
+    t.slot(7, 190).observe(SKR_MINT, price(1, 1));
+    t.slot(8, 200).ev(EventKind::DeclaredGap);
+    t.slot(9, 210).checkpoint(
+        vec![snap(A, SKR_MINT, 100), custody_snap(200)],
+        vec![StakeSnapshot {
+            mint: SKR_MINT,
+            beneficiary: A,
+            active: 200, // observed X + 100 staked inside the gap (Z@1)
+            pending_unstake: 0,
+        }],
+        vec![supply(SKR_MINT, 300)],
+    );
+    t.slot(10, 220).ev(EventKind::Stake {
+        source: ta(A, SKR_MINT),
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 100, // Y re-enters the stake key at its own age
+    });
+    t.slot(11, 230).ev(EventKind::RequestUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 200,
+    });
+    t.slot(12, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+
+    // Control after the second stake: 300 units — 200@1 + 100@1.5 = 350.
+    match x_at(&r, &A, 225) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (300, 350),
+            "control: the whole position values at 200@1 + 100@1.5"
+        ),
+        o => panic!("{o:?}"),
+    }
+
+    // The adopted difference (Z) is a NEW acquisition at the checkpoint;
+    // it must keep its own stamp. Global FIFO consumes X and Y, leaving
+    // Z@1 = 100 (defective code left Y@1.5 = 150).
+    match x_at(&r, &A, 280) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (100, 100),
+            "checkpoint-adopted stake units keep their own acquisition age"
+        ),
+        o => panic!("{o:?}"),
+    }
+    // Determinism.
+    assert_eq!(r, run_with(&cfg, &refs, &t, 300));
+}
+
+/// NEW-4 rebase variant (`rebase_registered` → the rebase coalesce): the
+/// same cross-account corruption through the registration merge surface
+/// alone. X@1 and Z@1 end up ADJACENT in the stake key (seq-preserving
+/// inserts never merge, so no credit-time merge ever fires in this
+/// timeline); the intermediate-age Y@1.5 lives in a second ACCOUNT of the
+/// same wallet. A's FIRST registration fires the rebase whose coalesce
+/// must not fold X and Z across that invisible intermediate lot.
+#[test]
+fn new4c_registration_rebase_cannot_merge_across_cross_account_lots() {
+    let (cfg, refs) = stake_world();
+
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .ev(EventKind::InitializeAccount {
+            account: ACC2,
+            mint: SKR_MINT,
+            owner: A,
+        })
+        .ev(EventKind::InitializeAccount {
+            account: CUSTODY,
+            mint: SKR_MINT,
+            owner: STAKE_CUSTODY_OWNER,
+        })
+        .pinned(&[LENDER_A])
+        .no_debt(A, &[LENDER_A]); // NOTE: A is not registered yet
+    t.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(3, 160).mint(A, SKR_MINT, 100); // X at 1 -> ta(A)
+    t.slot(4, 170).ev(EventKind::Stake {
+        source: ta(A, SKR_MINT),
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 100, // X moves into the stake key
+    });
+    t.slot(5, 175).observe(SKR_MINT, price(3, 2)); // 1.5
+    t.slot(6, 180).ev(EventKind::MintTo {
+        account: ACC2,
+        amount: 100, // Y at 1.5 in the SECOND account
+    });
+    t.slot(7, 195).observe(SKR_MINT, price(1, 1));
+    t.slot(8, 200).mint(A, SKR_MINT, 100); // Z at 1 -> ta(A)
+    t.slot(9, 210).ev(EventKind::Stake {
+        source: ta(A, SKR_MINT),
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 100, // Z seats AFTER X in the stake key: adjacent, same price
+    });
+    t.slot(10, 240)
+        .register(A, AssetKind::Skr) // FIRST registration: the rebase fires
+        .no_debt(A, &[LENDER_A]);
+    t.slot(11, 250).ev(EventKind::Stake {
+        source: ACC2,
+        custody: CUSTODY,
+        beneficiary: A,
+        amount: 100, // Y re-enters at its own age, between X and Z
+    });
+    t.slot(12, 260).ev(EventKind::RequestUnstake {
+        mint: SKR_MINT,
+        beneficiary: A,
+        amount: 200,
+    });
+    t.slot(13, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+
+    // Control before consumption: 300 units — 200@1 + 100@1.5 = 350.
+    match x_at(&r, &A, 255) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (300, 350),
+            "control: the whole position values at 200@1 + 100@1.5"
+        ),
+        o => panic!("{o:?}"),
+    }
+
+    // The registration rebase must not fold the adjacent X and Z across
+    // the intermediate-age Y held under another account: global FIFO
+    // consumes X and Y, leaving Z@1 = 100 (defective code left
+    // Y@1.5 = 150).
+    match x_at(&r, &A, 280) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (100, 100),
+            "the registration rebase must not merge same-price lots across \
+             an intermediate-age lot held under another account"
+        ),
+        o => panic!("{o:?}"),
+    }
+    // Determinism.
+    assert_eq!(r, run_with(&cfg, &refs, &t, 300));
+}
+
 /// INACTIVE (section 5: no committed reference at epoch start) composes
 /// with Safe Mode states: the asset is a KNOWN weight-0 ineligible from
 /// before the epoch starts, in any zone, and a route halt on the inactive

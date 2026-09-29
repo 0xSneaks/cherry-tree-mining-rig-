@@ -9,8 +9,16 @@
 //!   the verified NAV, prospectively only (the replay applies it from its
 //!   event, test 36).
 //!
-//! Lots are FIFO **by acquisition age** (a monotone stamp on every lot,
-//! kept ordered across the active and the pending-unstake buckets).
+//! Lots are FIFO **by acquisition age**: a monotone stamp on every lot,
+//! kept ordered across the active and the pending-unstake buckets — and
+//! across every key the units can later travel to (other accounts of the
+//! same wallet, stake beneficiaries, checkpoint adoptions). Age is
+//! therefore GLOBAL, and merging is allowed only between fragments of
+//! ONE acquisition (equal stamps): folding a younger lot into an older
+//! same-price lot would re-stamp its units with the older age, and any
+//! lot of intermediate age living under a different key would later be
+//! consumed behind them (NEW-4). Distinct acquisitions never merge; lot
+//! vectors grow one entry per acquisition instead.
 //! Consumption order cannot create value: under any order the total is
 //! the sum of the lots, and every lot's price is already capped by
 //! the min rule at its acquisition; age order additionally fixes WHICH
@@ -96,12 +104,14 @@ impl LotLedger {
         s
     }
 
-    /// Append a lot, coalescing with the tail when identical AND
-    /// age-safe: a merge stamps the new units with the tail's (older)
-    /// acquisition age, so it is allowed only when no lot of the pending
-    /// bucket sits between the two stamps — otherwise the merged units
-    /// would later be consumed ahead of that intermediate-age pending
-    /// lot when the buckets reconcile (F1-C, cross-bucket merging).
+    /// Append a lot as its own acquisition. Distinct acquisitions never
+    /// merge: the fresh stamp is unique, and folding the new units into
+    /// an older same-price lot would re-stamp them with that older age —
+    /// corrupting the GLOBAL FIFO order once lots later co-locate across
+    /// keys and buckets (another account of the same wallet, a stake
+    /// beneficiary, a checkpoint adoption; NEW-4). Vectors grow one entry
+    /// per acquisition; equal-stamp fragments may still recombine, but
+    /// only where stamps provably match (see [`coalesce_fragments`]).
     pub fn credit(
         &mut self,
         mint: Addr,
@@ -110,26 +120,8 @@ impl LotLedger {
         price: Option<UnitPrice>,
         basis: LotBasis,
     ) -> EligibilityResult<()> {
-        let key = (mint, holder);
         let seq = self.fresh_seq();
-        let merges = self
-            .lots
-            .get(&key)
-            .and_then(|v| v.last())
-            .is_some_and(|last| {
-                last.basis == basis
-                    && last.price == price
-                    && merge_safe(last.seq, seq, self.pending.get(&key).map(|v| v.as_slice()))
-            });
-        if merges {
-            let last = self.vec_mut(key).last_mut().expect("tail checked above");
-            last.units = last
-                .units
-                .checked_add(units)
-                .ok_or(EligibilityError::MathOverflow)?;
-            return Ok(());
-        }
-        self.vec_mut(key).push(Lot {
+        self.vec_mut((mint, holder)).push(Lot {
             units,
             price,
             basis,
@@ -262,16 +254,17 @@ impl LotLedger {
                     }
                 }
             }
-            // Merge adjacent identical lots only when age-safe: the
-            // sibling bucket's lots keep their own stamps, so a merge
-            // across an intermediate-age sibling lot would erase the age
-            // order that keeps the two buckets globally FIFO (F1-C,
-            // cross-bucket merging).
+            // Recombine adjacent fragments of ONE acquisition only
+            // (equal stamps): repricing can make neighbouring lots
+            // identical in basis and price, but merging across DISTINCT
+            // stamps would re-stamp the younger units with the older
+            // age — and an intermediate-age lot under any other key
+            // would later be consumed behind them (F1-C, NEW-4).
             if let Some(v) = self.lots.get_mut(&key) {
-                coalesce_seq_safe(v, self.pending.get(&key).map(|v| v.as_slice()));
+                coalesce_fragments(v);
             }
             if let Some(v) = self.pending.get_mut(&key) {
-                coalesce_seq_safe(v, self.lots.get(&key).map(|v| v.as_slice()));
+                coalesce_fragments(v);
             }
         }
         Ok(())
@@ -335,7 +328,7 @@ impl LotLedger {
     }
 
     /// RequestUnstake: active → pending bucket (excluded from valuation).
-    /// The moved lots keep their acquisition age and merge into the
+    /// The moved lots keep their acquisition age and insert into the
     /// pending bucket at that position, so pending stays age-ordered like
     /// the active bucket.
     pub fn request_unstake(
@@ -445,9 +438,8 @@ impl LotLedger {
     /// a `Reference` lot that a late first registration reprices exactly
     /// like an observed one; a post-reference adoption is an `Addition`
     /// at the adoption's min-rule price (possibly unpriced: fail closed).
-    /// The tail merge is guarded exactly like [`LotLedger::credit`]'s: the
-    /// merged units must not take an age older than an active lot of
-    /// intermediate age (F1-C, cross-bucket merging).
+    /// Like [`LotLedger::credit`], a fresh acquisition never merges: its
+    /// stamp is unique, and merging would destroy its age (NEW-4).
     pub fn credit_pending(
         &mut self,
         mint: Addr,
@@ -456,30 +448,8 @@ impl LotLedger {
         price: Option<UnitPrice>,
         basis: LotBasis,
     ) -> EligibilityResult<()> {
-        let key = (mint, holder);
         let seq = self.fresh_seq();
-        let merges = self
-            .pending
-            .get(&key)
-            .and_then(|v| v.last())
-            .is_some_and(|last| {
-                last.basis == basis
-                    && last.price == price
-                    && merge_safe(last.seq, seq, self.lots.get(&key).map(|v| v.as_slice()))
-            });
-        if merges {
-            let last = self
-                .pending
-                .get_mut(&key)
-                .and_then(|v| v.last_mut())
-                .expect("tail checked above");
-            last.units = last
-                .units
-                .checked_add(units)
-                .ok_or(EligibilityError::MathOverflow)?;
-            return Ok(());
-        }
-        self.pending.entry(key).or_default().push(Lot {
+        self.pending.entry((mint, holder)).or_default().push(Lot {
             units,
             price,
             basis,
@@ -567,34 +537,19 @@ fn insert_seq(v: &mut Vec<Lot>, lot: Lot) {
     v.insert(idx, lot);
 }
 
-/// Whether folding `younger` into `older` (keeping `older`'s stamp) is
-/// age-safe: no lot of the sibling bucket carries an acquisition stamp
-/// strictly between theirs. Both buckets are kept ordered by `seq`, so
-/// the first sibling lot newer than `older` decides — if it is still
-/// older than `younger`, nothing sits between the two stamps and the
-/// merged units can never be consumed ahead of a lot they follow (F1-C,
-/// cross-bucket merging).
-fn merge_safe(older: u64, younger: u64, sibling: Option<&[Lot]>) -> bool {
-    let Some(v) = sibling else {
-        return true;
-    };
-    match v.get(v.partition_point(|l| l.seq <= older)) {
-        None => true,
-        Some(next) => next.seq >= younger,
-    }
-}
-
-/// Merge adjacent identical lots so vectors stay small — but only
-/// age-safely: a pair merges when no lot of the sibling bucket lies
-/// strictly between their acquisition stamps (see [`merge_safe`]).
-fn coalesce_seq_safe(v: &mut Vec<Lot>, sibling: Option<&[Lot]>) {
+/// Recombine adjacent fragments of ONE acquisition: entries merge only
+/// when their stamps are EQUAL (splits of a single lot, e.g. the two
+/// halves of a partial unstake/cancel round trip), so no merge can ever
+/// re-stamp units with a different acquisition age — nothing can sit
+/// strictly between two equal stamps. Distinct acquisitions (different
+/// stamps) never merge, even when identical in basis and price: their
+/// age difference is globally FIFO-relevant because lots travel between
+/// keys and buckets (NEW-4).
+fn coalesce_fragments(v: &mut Vec<Lot>) {
     let mut out: Vec<Lot> = Vec::with_capacity(v.len());
     for lot in v.iter() {
         if let Some(last) = out.last_mut() {
-            if last.basis == lot.basis
-                && last.price == lot.price
-                && merge_safe(last.seq, lot.seq, sibling)
-            {
+            if last.seq == lot.seq && last.basis == lot.basis && last.price == lot.price {
                 last.units = last.units.saturating_add(lot.units);
                 continue;
             }
@@ -863,5 +818,465 @@ mod tests {
             100 * 3,
             "the next-oldest units are the active @3 lot, never a merged @2 tail"
         );
+    }
+
+    // ---------------------------------- Pass #5 fourth remediation (NEW-4)
+
+    /// Deterministic xorshift generator (test-only): every trial is
+    /// reproducible from its seed.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            x
+        }
+
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+    }
+
+    /// NEW-4 reference model: a merge-free lot book. Every acquisition
+    /// keeps its own stamp forever and nothing ever coalesces; every other
+    /// operation mirrors [`LotLedger`] exactly. Because FIFO age is global
+    /// (lots travel between keys: other accounts of the same wallet, stake
+    /// beneficiaries), the production ledger preserves the model's
+    /// structure bucket-for-bucket iff no operation ever re-stamps units
+    /// with a different acquisition age.
+    ///
+    /// Scope (LotLedger-level; the event-level paths that reduce to these
+    /// operations are covered by the `new4*` integration tests): fresh
+    /// credits (MintTo / Transfer destination / SetAccountOwner /
+    /// WithdrawUnstaked / checkpoint reconcile), pending credits
+    /// (checkpoint adoption), FIFO consumption (Burn / transfer source /
+    /// reconcile shrink), request/cancel unstake round trips, cross-key
+    /// stake moves, and first-registration rebases. `rebase_mint`'s
+    /// emergency collapse is out of scope by design: it first reprices
+    /// EVERY lot of the mint to one price, which makes age order
+    /// value-neutral for those units.
+    #[derive(Default)]
+    struct Model {
+        active: BTreeMap<(Addr, Addr), Vec<Lot>>,
+        pending: BTreeMap<(Addr, Addr), Vec<Lot>>,
+        registered: BTreeSet<(Addr, Addr)>,
+        next_seq: u64,
+    }
+
+    impl Model {
+        fn fresh_seq(&mut self) -> u64 {
+            let s = self.next_seq;
+            self.next_seq += 1;
+            s
+        }
+
+        fn insert_seq(v: &mut Vec<Lot>, lot: Lot) {
+            let idx = v.partition_point(|l| l.seq <= lot.seq);
+            v.insert(idx, lot);
+        }
+
+        fn split_off_active(&mut self, key: (Addr, Addr), units: u64) -> Vec<Lot> {
+            let v = self.active.entry(key).or_default();
+            let mut left = units;
+            let mut out = Vec::new();
+            while left > 0 {
+                let Some(front) = v.first_mut() else {
+                    break;
+                };
+                if front.units <= left {
+                    left -= front.units;
+                    out.push(v.remove(0));
+                } else {
+                    front.units -= left;
+                    out.push(Lot {
+                        units: left,
+                        ..*front
+                    });
+                    left = 0;
+                }
+            }
+            if v.is_empty() {
+                self.active.remove(&key);
+            }
+            out
+        }
+
+        fn credit(
+            &mut self,
+            key: (Addr, Addr),
+            units: u64,
+            price: Option<UnitPrice>,
+            basis: LotBasis,
+        ) {
+            let seq = self.fresh_seq();
+            self.active.entry(key).or_default().push(Lot {
+                units,
+                price,
+                basis,
+                seq,
+            });
+        }
+
+        fn credit_pending(
+            &mut self,
+            key: (Addr, Addr),
+            units: u64,
+            price: Option<UnitPrice>,
+            basis: LotBasis,
+        ) {
+            let seq = self.fresh_seq();
+            self.pending.entry(key).or_default().push(Lot {
+                units,
+                price,
+                basis,
+                seq,
+            });
+        }
+
+        fn consume(&mut self, key: (Addr, Addr), units: u64) {
+            let mut left = units;
+            let v = self.active.entry(key).or_default();
+            let mut idx = 0;
+            while left > 0 && idx < v.len() {
+                if v[idx].units <= left {
+                    left -= v[idx].units;
+                    idx += 1;
+                } else {
+                    v[idx].units -= left;
+                    left = 0;
+                }
+            }
+            v.drain(..idx);
+            if v.is_empty() {
+                self.active.remove(&key);
+            }
+        }
+
+        fn consume_pending(&mut self, key: (Addr, Addr), units: u64) {
+            let mut left = units;
+            let v = self.pending.entry(key).or_default();
+            let mut idx = 0;
+            while left > 0 && idx < v.len() {
+                if v[idx].units <= left {
+                    left -= v[idx].units;
+                    idx += 1;
+                } else {
+                    v[idx].units -= left;
+                    left = 0;
+                }
+            }
+            v.drain(..idx);
+            if v.is_empty() {
+                self.pending.remove(&key);
+            }
+        }
+
+        fn request(&mut self, key: (Addr, Addr), units: u64) {
+            let moved = self.split_off_active(key, units);
+            let v = self.pending.entry(key).or_default();
+            for lot in moved {
+                let idx = v.partition_point(|l| l.seq <= lot.seq);
+                v.insert(idx, lot);
+            }
+        }
+
+        fn cancel(&mut self, key: (Addr, Addr), units: u64) {
+            let mut left = units;
+            let v = self.pending.entry(key).or_default();
+            let mut taken = Vec::new();
+            let mut idx = 0;
+            while left > 0 && idx < v.len() {
+                if v[idx].units <= left {
+                    left -= v[idx].units;
+                    taken.push(v[idx]);
+                    idx += 1;
+                } else {
+                    v[idx].units -= left;
+                    taken.push(Lot {
+                        units: left,
+                        ..v[idx]
+                    });
+                    left = 0;
+                }
+            }
+            v.drain(..idx);
+            if v.is_empty() {
+                self.pending.remove(&key);
+            }
+            for lot in taken {
+                Self::insert_seq(self.active.entry(key).or_default(), lot);
+            }
+        }
+
+        fn move_lots(&mut self, src: (Addr, Addr), dst: (Addr, Addr), units: u64) {
+            let moved = self.split_off_active(src, units);
+            for lot in moved {
+                Self::insert_seq(self.active.entry(dst).or_default(), lot);
+            }
+        }
+
+        fn rebase(&mut self, key: (Addr, Addr), price: Option<UnitPrice>) {
+            if !self.registered.insert(key) {
+                return;
+            }
+            for bucket in [&mut self.active, &mut self.pending] {
+                if let Some(v) = bucket.get_mut(&key) {
+                    for lot in v.iter_mut() {
+                        if lot.basis == LotBasis::Reference {
+                            lot.price = price;
+                        }
+                    }
+                }
+            }
+        }
+
+        fn units(&self, key: &(Addr, Addr)) -> u64 {
+            self.active
+                .get(key)
+                .into_iter()
+                .flatten()
+                .map(|l| l.units)
+                .fold(0, u64::saturating_add)
+        }
+
+        fn pending_units(&self, key: &(Addr, Addr)) -> u64 {
+            self.pending
+                .get(key)
+                .into_iter()
+                .flatten()
+                .map(|l| l.units)
+                .fold(0, u64::saturating_add)
+        }
+    }
+
+    /// A bucket reduced to its age profile: entries in stamp order, with
+    /// only ADJACENT fragments of one acquisition (equal stamp AND equal
+    /// price/basis) folded. Equal stamps with different prices CAN
+    /// legitimately coexist: a registration rebase is per-key, so
+    /// fragments of one lot split across two keys can reprice
+    /// differently — they stay distinct entries, because folding them
+    /// would destroy that difference.
+    fn profile(v: &[Lot]) -> Vec<(u64, u64, Option<UnitPrice>, LotBasis)> {
+        let mut out: Vec<(u64, u64, Option<UnitPrice>, LotBasis)> = Vec::new();
+        for lot in v {
+            if let Some(last) = out.last_mut() {
+                if last.0 == lot.seq && last.2 == lot.price && last.3 == lot.basis {
+                    last.1 = last.1.saturating_add(lot.units);
+                    continue;
+                }
+            }
+            out.push((lot.seq, lot.units, lot.price, lot.basis));
+        }
+        out
+    }
+
+    /// The production ledger must hold EXACTLY the merge-free model's
+    /// acquisition-age structure — no re-stamping, anywhere, ever.
+    fn assert_same_as_model(prod: &LotLedger, model: &Model, ctx: &str) {
+        let mut keys: BTreeSet<(Addr, Addr)> = BTreeSet::new();
+        keys.extend(prod.lots.keys().cloned());
+        keys.extend(prod.pending.keys().cloned());
+        keys.extend(model.active.keys().cloned());
+        keys.extend(model.pending.keys().cloned());
+        for key in keys {
+            let pa = prod.lots.get(&key).map(|v| profile(v)).unwrap_or_default();
+            let ma = model
+                .active
+                .get(&key)
+                .map(|v| profile(v))
+                .unwrap_or_default();
+            assert_eq!(
+                pa, ma,
+                "{ctx}: active bucket of holder {:?} diverged from the \
+                 merge-free model (a merge re-stamped units with a foreign age)",
+                key.1
+            );
+            let pp = prod
+                .pending
+                .get(&key)
+                .map(|v| profile(v))
+                .unwrap_or_default();
+            let mp = model
+                .pending
+                .get(&key)
+                .map(|v| profile(v))
+                .unwrap_or_default();
+            assert_eq!(
+                pp, mp,
+                "{ctx}: pending bucket of holder {:?} diverged from the \
+                 merge-free model (a merge re-stamped units with a foreign age)",
+                key.1
+            );
+        }
+    }
+
+    /// Drain a production bucket unit-by-unit, recording WHICH priced lot
+    /// each consumed unit came from (per-unit lamports; None-marked lots
+    /// record the fail-closed flag).
+    fn prod_drain(prod: &mut LotLedger, key: Addr) -> Vec<(u128, bool)> {
+        let mut tape = Vec::new();
+        while prod.units(MINT, key) > 0 {
+            let h = prod.head_value(MINT, key, 1).unwrap();
+            tape.push((h.lamports, h.unpriced));
+            prod.consume(MINT, key, 1).unwrap();
+        }
+        tape
+    }
+
+    /// The same drain on the model (front lot = oldest by stamp).
+    fn model_drain(model: &mut Model, key: Addr) -> Vec<(u128, bool)> {
+        let mut tape = Vec::new();
+        while model.units(&(MINT, key)) > 0 {
+            let v = model.active.get_mut(&(MINT, key)).unwrap();
+            let front = v[0];
+            tape.push(match front.price {
+                None => (0, true),
+                Some(p) => (p.lamports_num / p.units_den, false),
+            });
+            if front.units == 1 {
+                v.remove(0);
+                if v.is_empty() {
+                    model.active.remove(&(MINT, key));
+                }
+            } else {
+                v[0].units -= 1;
+            }
+        }
+        tape
+    }
+
+    /// NEW-4: under arbitrary interleavings of the lot operations, the
+    /// production ledger must preserve EXACTLY the merge-free model's
+    /// acquisition-age structure (asserted after EVERY operation), and
+    /// FIFO consumption must draw the same economic lots in the same
+    /// order (asserted by draining every bucket unit-by-unit and
+    /// comparing the per-unit price tapes — not just the totals).
+    #[test]
+    fn global_fifo_matches_a_merge_free_reference_model() {
+        // Two token accounts of one wallet plus a stake-beneficiary-style
+        // key: lots travel between them (cross-key moves are NEW-4's core).
+        let accounts = [
+            Addr::fixture(0x71),
+            Addr::fixture(0x72),
+            Addr::fixture(0x73),
+        ];
+
+        for seed in 1..=64u64 {
+            let mut rng = Rng(0x9E3779B97F4A7C15 ^ seed);
+            let mut prod = LotLedger::default();
+            let mut model = Model::default();
+            for step in 0..300 {
+                let key = accounts[rng.below(3) as usize];
+                let src = accounts[rng.below(3) as usize];
+                let dst = accounts[rng.below(3) as usize];
+                let ctx = format!("seed {seed}, step {step}");
+                let draw_price = |rng: &mut Rng| match rng.below(6) {
+                    0 => None, // unpriced acquisition: fail-closed path
+                    n => p(u128::from(1 + n % 4)),
+                };
+                let draw_basis = |rng: &mut Rng| {
+                    if rng.below(2) == 0 {
+                        LotBasis::Reference
+                    } else {
+                        LotBasis::Addition
+                    }
+                };
+                match rng.below(8) {
+                    0 => {
+                        let (pr, b, u) = (
+                            draw_price(&mut rng),
+                            draw_basis(&mut rng),
+                            1 + rng.below(40),
+                        );
+                        prod.credit(MINT, key, u, pr, b).unwrap();
+                        model.credit((MINT, key), u, pr, b);
+                    }
+                    1 => {
+                        let (pr, b, u) = (
+                            draw_price(&mut rng),
+                            draw_basis(&mut rng),
+                            1 + rng.below(40),
+                        );
+                        prod.credit_pending(MINT, key, u, pr, b).unwrap();
+                        model.credit_pending((MINT, key), u, pr, b);
+                    }
+                    2 => {
+                        let avail = prod.units(MINT, key);
+                        if avail > 0 {
+                            let n = 1 + rng.below(avail);
+                            prod.consume(MINT, key, n).unwrap();
+                            model.consume((MINT, key), n);
+                        }
+                    }
+                    3 => {
+                        let avail = prod.pending_units(MINT, key);
+                        if avail > 0 {
+                            let n = 1 + rng.below(avail);
+                            prod.consume_pending(MINT, key, n).unwrap();
+                            model.consume_pending((MINT, key), n);
+                        }
+                    }
+                    4 => {
+                        let avail = prod.units(MINT, key);
+                        if avail > 0 {
+                            let n = 1 + rng.below(avail);
+                            prod.request_unstake(MINT, key, n).unwrap();
+                            model.request((MINT, key), n);
+                        }
+                    }
+                    5 => {
+                        let avail = prod.pending_units(MINT, key);
+                        if avail > 0 {
+                            let n = 1 + rng.below(avail);
+                            prod.cancel_unstake(MINT, key, n).unwrap();
+                            model.cancel((MINT, key), n);
+                        }
+                    }
+                    6 => {
+                        if src != dst {
+                            let avail = prod.units(MINT, src);
+                            if avail > 0 {
+                                let n = 1 + rng.below(avail);
+                                prod.stake(MINT, src, dst, n).unwrap();
+                                model.move_lots((MINT, src), (MINT, dst), n);
+                            }
+                        }
+                    }
+                    _ => {
+                        let pr = draw_price(&mut rng);
+                        prod.rebase_registered(MINT, &[key], pr).unwrap();
+                        model.rebase((MINT, key), pr);
+                    }
+                }
+                assert_same_as_model(&prod, &model, &ctx);
+            }
+
+            // Economic assertion: drain every bucket FIFO, one unit at a
+            // time — WHICH lot leaves, in which order, must match the
+            // merge-free model exactly.
+            for key in accounts {
+                assert_eq!(
+                    prod_drain(&mut prod, key),
+                    model_drain(&mut model, key),
+                    "seed {seed}: active-bucket FIFO tape of {key:?}"
+                );
+                let pend_p = prod.pending_units(MINT, key);
+                let pend_m = model.pending_units(&(MINT, key));
+                assert_eq!(pend_p, pend_m, "seed {seed}: pending totals of {key:?}");
+                if pend_p > 0 {
+                    prod.cancel_unstake(MINT, key, pend_p).unwrap();
+                    model.cancel((MINT, key), pend_m);
+                    assert_eq!(
+                        prod_drain(&mut prod, key),
+                        model_drain(&mut model, key),
+                        "seed {seed}: pending->active FIFO tape of {key:?}"
+                    );
+                }
+            }
+        }
     }
 }

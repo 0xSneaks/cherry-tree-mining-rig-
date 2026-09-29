@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="THE CHERRY TREE — a Solana-native planting/mining simulation. Documentation: user flow, architecture, protocol, economics, security, development, deployment, operations.">
+<meta name="theme-color" content="#080c16">
+<meta property="og:title" content="THE CHERRY TREE — Docs">
+<meta property="og:description" content="A Solana-native mining simulation. Users buy non-redeemable seeds, receive a share of a transparently funded SOL reward stream, and may claim rewards or compound them into additional seeds.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/cherry-tree-hero.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='%23ff5ba8'%3E%3Ccircle cx='16' cy='9.5' r='5.6'/%3E%3Ccircle cx='9.8' cy='14' r='5.6'/%3E%3Ccircle cx='12.2' cy='21.3' r='5.6'/%3E%3Ccircle cx='19.8' cy='21.3' r='5.6'/%3E%3Ccircle cx='22.2' cy='14' r='5.6'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23080c16'/%3E%3C/g%3E%3C/svg%3E">
+<title>THE CHERRY TREE — Docs</title>
+<link rel="stylesheet" href="assets/style.css?v=3">
+<script src="assets/site.js?v=3" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <button class="menu-btn" aria-expanded="false" aria-controls="sidebar" aria-label="Open menu">☰ MENU</button>
+  <a class="brand" href="index.html">
+    <img src="assets/cherry-tree-hero.png" alt="" width="28" height="28">
+    <span class="wordmark">THE CHERRY TREE</span>
+  </a>
+  <a class="gh" href="https://github.com/PhantomCapAI/cherry-tree-mining-rig-">GitHub ↗</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Documentation">
+      <input class="nav-search" type="search" placeholder="FILTER" aria-label="Filter pages by title">
+      <div class="nav-group">
+        <b>START</b>
+        <a class="page" href="index.html">Overview</a>
+        <a class="page" href="user-flow.html">User flow</a>
+        <a class="page" href="glossary.html">Glossary</a>
+      </div>
+      <div class="nav-group">
+        <b>HOW IT WORKS</b>
+        <a class="page" href="architecture.html">Architecture</a>
+        <a class="page" href="protocol.html">Protocol</a>
+        <a class="page" href="economics.html">Economics</a>
+        <a class="page" href="security.html">Security</a>
+      </div>
+      <div class="nav-group">
+        <b>BUILD &amp; RUN</b>
+        <a class="page" href="development.html">Development</a>
+        <a class="page" href="deployment.html">Deployment</a>
+        <a class="page" href="operations.html">Operations</a>
+      </div>
+      <a class="page gh-side" href="https://github.com/PhantomCapAI/cherry-tree-mining-rig-">GitHub ↗</a>
+    </nav>
+  </aside>
+
+  <main id="main">
+
+    <!-- banner scene: one inline SVG, no image files -->
+    <section class="banner" aria-label="THE CHERRY TREE — a Solana-native community">
+      <svg class="scene" viewBox="0 0 1200 620" preserveAspectRatio="xMinYMax slice" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id="moonG" cx="50%" cy="42%" r="65%">
+            <stop offset="0%" stop-color="#ff8fbf" stop-opacity=".85"/>
+            <stop offset="55%" stop-color="#8c3560" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#2a1030"/>
+          </radialGradient>
+          <radialGradient id="haloG">
+            <stop offset="0%" stop-color="#ff5fa2" stop-opacity=".28"/>
+            <stop offset="100%" stop-color="#ff5fa2" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="treeG">
+            <stop offset="0%" stop-color="#ff5fa2" stop-opacity=".22"/>
+            <stop offset="100%" stop-color="#ff5fa2" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="wgrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#101a30"/>
+            <stop offset="1" stop-color="#070b16"/>
+          </linearGradient>
+          <filter id="lblur"><feGaussianBlur stdDeviation="2.5"/></filter>
+          <clipPath id="tclip"><circle cx="215" cy="300" r="156"/></clipPath>
+        </defs>
+
+        <rect width="1200" height="620" fill="#05081a"/>
+
+        <!-- moon behind the tree, peeking out at its upper right -->
+        <circle cx="365" cy="185" r="168" fill="url(#moonG)"/>
+        <circle cx="365" cy="185" r="235" fill="url(#haloG)"/>
+
+        <!-- mountains, far to near -->
+        <path fill="#101a30" d="M0 430 L90 355 L170 405 L260 340 L350 410 L430 360 L520 420 L600 370 L700 425 L790 365 L880 415 L970 360 L1060 410 L1140 370 L1200 400 V620 H0 Z"/>
+        <path fill="#0c1326" d="M0 480 L120 410 L230 470 L330 420 L450 480 L560 430 L680 485 L790 435 L900 485 L1010 440 L1120 480 L1200 450 V620 H0 Z"/>
+        <path fill="#080f1f" d="M0 545 L150 495 L300 532 L460 498 L620 542 L780 505 L940 548 L1090 508 L1200 538 V620 H0 Z"/>
+
+        <!-- skyline, horizon at y=520 -->
+        <g id="city" fill="#131c33">
+          <rect x="430" y="478" width="16" height="42"/><rect x="452" y="455" width="20" height="65"/>
+          <rect x="478" y="470" width="14" height="50"/><rect x="498" y="442" width="22" height="78"/>
+          <rect x="526" y="468" width="16" height="52"/><rect x="548" y="450" width="26" height="70"/>
+          <rect x="580" y="476" width="14" height="44"/><rect x="600" y="460" width="20" height="60"/>
+          <rect x="626" y="445" width="18" height="75"/><rect x="650" y="470" width="24" height="50"/>
+          <rect x="680" y="452" width="16" height="68"/><rect x="702" y="478" width="20" height="42"/>
+          <rect x="728" y="440" width="26" height="80"/><rect x="760" y="465" width="16" height="55"/>
+          <rect x="782" y="450" width="22" height="70"/><rect x="810" y="472" width="18" height="48"/>
+          <rect x="834" y="458" width="24" height="62"/><rect x="864" y="475" width="14" height="45"/>
+          <rect x="884" y="438" width="28" height="82"/><rect x="918" y="462" width="20" height="58"/>
+          <rect x="944" y="470" width="16" height="50"/><rect x="966" y="446" width="24" height="74"/>
+          <rect x="996" y="468" width="18" height="52"/><rect x="1020" y="455" width="22" height="65"/>
+          <rect x="1048" y="477" width="16" height="43"/><rect x="1070" y="460" width="26" height="60"/>
+          <rect x="1102" y="445" width="18" height="75"/><rect x="1126" y="470" width="20" height="50"/>
+          <rect x="1152" y="452" width="24" height="68"/>
+          <!-- lit windows -->
+          <g fill="#ff5fa2" opacity=".85">
+            <rect x="458" y="470" width="3" height="4"/><rect x="504" y="458" width="3" height="4"/>
+            <rect x="556" y="466" width="3" height="4"/><rect x="632" y="456" width="3" height="4"/>
+            <rect x="736" y="452" width="3" height="4"/><rect x="788" y="462" width="3" height="4"/>
+            <rect x="892" y="450" width="3" height="4"/><rect x="974" y="456" width="3" height="4"/>
+            <rect x="1028" y="466" width="3" height="4"/><rect x="1108" y="460" width="3" height="4"/>
+            <rect x="590" y="480" width="3" height="4"/><rect x="840" y="472" width="3" height="4"/>
+          </g>
+        </g>
+
+        <!-- lake: mirrored, blurred, low-opacity skyline -->
+        <rect x="380" y="520" width="820" height="100" fill="url(#wgrad)"/>
+        <use href="#city" transform="translate(0,1040) scale(1,-1)" opacity=".2" filter="url(#lblur)"/>
+        <ellipse cx="365" cy="565" rx="150" ry="11" fill="#8c3560" opacity=".28" filter="url(#lblur)"/>
+        <rect x="380" y="519.4" width="820" height="1" fill="#2b3a5c" opacity=".7"/>
+
+        <!-- cliff and the tree -->
+        <path fill="#070c18" d="M-10 620 L30 520 L90 480 L200 468 L300 490 L370 540 L410 620 Z"/>
+        <circle cx="215" cy="300" r="175" fill="url(#treeG)"/>
+        <image href="assets/cherry-tree-hero.png" x="55" y="140" width="320" height="320" clip-path="url(#tclip)" preserveAspectRatio="xMidYMid slice"/>
+      </svg>
+
+      <div class="banner-copy">
+        <p class="b-eyebrow">A SOLANA-NATIVE COMMUNITY</p>
+        <p class="b-the">— THE —</p>
+        <p class="b-title">CHERRY TREE</p>
+        <p class="b-tagline">PLANT · GROW · EARN · COMPOUND · TOGETHER</p>
+      </div>
+      <p class="b-strip">THE CHERRY TREE · 🍒 · POWERED BY <a href="https://cherry.fun">CHERRY</a> · BUILT ON SOLANA</p>
+      <p class="b-sign" aria-hidden="true">It All Grows</p>
+    </section>
+
+    <!-- hero -->
+    <section class="hero">
+      <div class="petals" aria-hidden="true"></div>
+      <img class="avatar" src="assets/cherry-tree-hero.png" alt="THE CHERRY TREE logo — a neon-pink cherry blossom tree inside a pink ring" width="160" height="160">
+      <h1>THE CHERRY TREE 🌸</h1>
+      <p class="eyebrow">SOLANA · PLANTING SIMULATION · FUNDED SOL REWARDS</p>
+      <p class="hero-msg">THE CHERRY TREE is a Solana-native mining simulation. Users buy non-redeemable seeds, receive a share of a transparently funded SOL reward stream, and may claim rewards or compound them into additional seeds.</p>
+      <div class="callout alert">
+        <span class="pill alert">SIMULATION</span>
+        <p>This is a simulation. Seeds do not mine SOL, participate in Solana consensus, or represent a deposit or redeemable principal.</p>
+      </div>
+      <p class="cta">
+        <a class="btn primary" href="#overview">Read the docs →</a>
+        <a class="btn" href="https://github.com/PhantomCapAI/cherry-tree-mining-rig-">View source</a>
+      </p>
+      <p class="status"><span class="dot" aria-hidden="true"></span>DOCS · V2</p>
+    </section>
+
+    <!-- miner status: in your face, honest by construction. Every ticker
+         line is a fact from the docs; the numbers are real constants.
+         The CHAIN LINK badge flips live the day an RPC-backed deployment
+         exists — no fabricated stats before that. -->
+    <section class="miner-strip" aria-label="Miner status">
+      <div class="m-head">
+        <span class="dot" aria-hidden="true"></span>
+        <b>MINER STATUS</b>
+        <span class="m-live">CHAIN LINK · <em>AWAITING DEPLOYMENT</em></span>
+      </div>
+      <div class="ticker" aria-hidden="true">
+        <div class="ticker-track">
+          <span>PLANTING SEEDS != FUNDING EXISTING MINER REWARDS</span><i>▸</i>
+          <span>REWARDS EXIST ONLY WHEN AN AUTHORIZED FUNDER DEPOSITS SOL</span><i>▸</i>
+          <span>SEEDS CANNOT BE SOLD BACK OR REDEEMED</span><i>▸</i>
+          <span>CLAIM PENALTIES 25% · 15% · 5% · 0%</span><i>▸</i>
+          <span>VALID FIRST REFERRER: WEIGHT 100 → 105</span><i>▸</i>
+          <span>EMPTY RUNWAY STOPS EMISSION — NO UNCOVERED PROMISE</span><i>▸</i>
+          <span>SCRIPTS REFUSE MAINNET</span><i>▸</i>
+          <span>CHAIN STATE IS AUTHORITATIVE</span><i>▸</i>
+          <span>PLANTING SEEDS != FUNDING EXISTING MINER REWARDS</span><i>▸</i>
+          <span>REWARDS EXIST ONLY WHEN AN AUTHORIZED FUNDER DEPOSITS SOL</span><i>▸</i>
+          <span>SEEDS CANNOT BE SOLD BACK OR REDEEMED</span><i>▸</i>
+          <span>CLAIM PENALTIES 25% · 15% · 5% · 0%</span><i>▸</i>
+          <span>VALID FIRST REFERRER: WEIGHT 100 → 105</span><i>▸</i>
+          <span>EMPTY RUNWAY STOPS EMISSION — NO UNCOVERED PROMISE</span><i>▸</i>
+          <span>SCRIPTS REFUSE MAINNET</span><i>▸</i>
+          <span>CHAIN STATE IS AUTHORITATIVE</span><i>▸</i>
+        </div>
+      </div>
+    </section>
+
+    <!-- hyper stats: real protocol constants, count up on load -->
+    <section class="hyperstats" aria-label="Protocol constants">
+      <div class="stat"><b data-count="10" data-suffix="%">0%</b><span>PURCHASE FEE CAP</span></div>
+      <div class="stat"><b data-count="1000000" data-suffix=" SEEDS">0</b><span>MAX PER PURCHASE</span></div>
+      <div class="stat"><b>25·15·5·0%</b><span>CLAIM PENALTY LADDER</span></div>
+      <div class="stat"><b>100 → 105</b><span>REFERRED WEIGHT</span></div>
+    </section>
+
+    <!-- five pillars -->
+    <nav class="pillars" aria-label="Product pillars">
+      <a href="user-flow.html" title="Plant once — user flow">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="16" r="3"/><path d="M12 13V8"/><path d="M9 8c0-2 1.3-3 3-3s3 1 3 3"/><path d="M5 21h14"/></svg>
+        <span>PLANT<br>ONCE</span>
+      </a>
+      <a href="index.html#overview" title="Grow together — overview">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21v-7"/><path d="M8 14C5.5 14 4 12.5 4 10c2.5 0 4 1.5 4 4z"/><path d="M16 21v-7"/><path d="M16 14c2.5 0 4-1.5 4-4-2.5 0-4 1.5-4 4z"/><path d="M12 21v-4"/></svg>
+        <span>GROW<br>TOGETHER</span>
+      </a>
+      <a href="economics.html" title="Earn SOL — economics">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8l2.6 4-2.6 4-2.6-4z"/></svg>
+        <span>EARN<br>SOL</span>
+      </a>
+      <a href="protocol.html#instructions" title="Compound rewards — protocol">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 3v4h-4"/></svg>
+        <span>COMPOUND<br>REWARDS</span>
+      </a>
+      <a href="economics.html#referral-weight" title="Same roots, bigger fruits — referral weight">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.5" cy="16.5" r="3.5"/><circle cx="15.5" cy="17.5" r="3"/><path d="M8.5 13C9 9 12 7 16 6"/><path d="M15.5 14.5C15 10.5 13.5 8 16 6"/></svg>
+        <span>SAME ROOTS<br>BIGGER FRUITS</span>
+      </a>
+    </nav>
+
+    <!-- core invariant -->
+    <section class="invariant" aria-label="Core invariant">
+      <p class="inv-label">CORE INVARIANT</p>
+      <pre class="inv-readout"><code>PLANTING SEEDS != FUNDING EXISTING MINER REWARDS</code></pre>
+    </section>
+
+    <!-- vault cards -->
+    <section class="vaults" aria-label="Program vaults">
+      <div class="vault">
+        <h3>CAPITAL</h3>
+        <p><b>RECEIVES</b><br>non-fee portion of Seed purchases</p>
+        <p><b>PAYS OUT</b><br>nothing in V1</p>
+      </div>
+      <div class="vault">
+        <h3>REWARD</h3>
+        <p><b>RECEIVES</b><br>realized revenue via <code>fund_rewards</code></p>
+        <p><b>PAYS OUT</b><br>user claims and compounds only</p>
+      </div>
+      <div class="vault">
+        <h3>FEE</h3>
+        <p><b>RECEIVES</b><br>disclosed purchase fee</p>
+        <p><b>PAYS OUT</b><br>authority withdrawal</p>
+      </div>
+    </section>
+
+    <!-- overview content -->
+    <article>
+      <h2 id="overview">Overview</h2>
+
+      <h3 id="plain-english">Plain English</h3>
+      <p>THE CHERRY TREE is a game loop built around Seeds and a funded reward stream. A purchase creates production capacity; it does not fund rewards owed to other users. Rewards exist only when an authorized funder deposits SOL into the reward vault and sets an emission window.</p>
+      <p>Seeds cannot be sold back or redeemed. Users can claim settled rewards or compound them into whole additional Seeds.</p>
+
+      <h3 id="technical-detail">Technical detail</h3>
+      <p>Three program-owned vaults are separate: CAPITAL receives non-fee purchase proceeds and is locked in this version; REWARD receives <code>fund_rewards</code> deposits and pays <code>claim</code>/<code>compound</code>; FEE receives purchase fees and is the only vault with an authority withdrawal path. Accounting lives in <code>crates/rigs-engine/</code>; Anchor handlers validate accounts and move lamports.</p>
+
+      <div class="callout leaf"><span class="pill leaf">VERIFIED</span><p>source/tests cover separation, integer accounting, instruction validation, and adversarial cases.</p></div>
+      <div class="callout sky"><span class="pill sky">DOCUMENTED INTENT</span><p>deployment and operational procedures describe a live launch.</p></div>
+      <div class="callout alert"><span class="pill alert">INCOMPLETE / UNCONFIRMED</span><p>this checkout does not prove live deployment, real Cherry handshake, or live wallet execution.</p></div>
+      <div class="callout steel"><span class="pill steel">INFERENCE</span><p>figures are not a live schedule unless read from chain state.</p></div>
+    </article>
+
+    <!-- explore grid -->
+    <nav class="rowcards" aria-label="Explore the docs">
+      <a class="rowcard" href="user-flow.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13"/><path d="M14 7l5 5-5 5"/></svg><b>User flow</b><span>connect → plant → claim</span><i class="chev">›</i></a>
+      <a class="rowcard" href="architecture.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg><b>Architecture</b><span>layers &amp; locations</span><i class="chev">›</i></a>
+      <a class="rowcard" href="protocol.html"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg><b>Protocol</b><span>instructions · PDAs · state</span><i class="chev">›</i></a>
+      <a class="rowcard" href="economics.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16"/><path d="M8 15l4-5 3 3 5-7"/></svg><b>Economics</b><span>pricing · funded APR · penalties</span><i class="chev">›</i></a>
+      <a class="rowcard" href="security.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg><b>Security</b><span>what the program enforces</span><i class="chev">›</i></a>
+      <a class="rowcard" href="development.html"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M12 15h5"/></svg><b>Development</b><span>verify pipeline · layout</span><i class="chev">›</i></a>
+      <a class="rowcard" href="deployment.html"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 15v4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4"/></svg><b>Deployment</b><span>devnet-guarded sequence</span><i class="chev">›</i></a>
+      <a class="rowcard" href="operations.html"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 13l4-4"/><path d="M12 5V3"/></svg><b>Operations</b><span>funding · runway · pausing</span><i class="chev">›</i></a>
+      <a class="rowcard" href="glossary.html"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6"/></svg><b>Glossary</b><span>terms, in one place</span><i class="chev">›</i></a>
+    </nav>
+
+    <nav class="prevnext" aria-label="Pagination">
+      <a class="pagenav prev" href="operations.html"><span class="dir">← Previous</span><b>Operations</b></a>
+      <a class="pagenav next" href="user-flow.html"><span class="dir">Next →</span><b>User flow</b></a>
+    </nav>
+  </main>
+
+  <aside class="rail" aria-label="On this page">
+    <b class="rail-title">ON THIS PAGE</b>
+    <nav class="toc"></nav>
+  </aside>
+</div>
+
+<footer><p class="powered">POWERED BY <a href="https://cherry.fun" rel="noopener">CHERRY</a> · PART OF THE FAMILY</p>
+Implementation source is available under the Business Source License 1.1. This documentation is not a yield promise, investment advice, or a claim that a live deployment exists.</footer>
+</body>
+</html>

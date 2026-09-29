@@ -266,7 +266,7 @@ pub struct FruitPool {
     /// [`terminal_resolution`] refuse it.
     pub kind: LedgerKind,
     /// Lock pools only: the pool-owned allocation lifecycle (Pass #7
-    /// P7-L1 / F7). Default (Uninitialized) on every other pool.
+    /// P7-L1 / F7 / P7-B). Default (empty, `Registering`) on every other pool.
     pub lock: LockState,
 }
 

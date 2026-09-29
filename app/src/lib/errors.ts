@@ -95,6 +95,25 @@ export const ANCHOR_ERROR_NAMES = [
   'TreasuryDestinationInvalid',
   'InvalidForfeited',
   'ForfeitOnlyOnLockLedger',
+  // Lock Season (Pass #7 P7-B), appended in program order.
+  'LockRegistrationClosed',
+  'InvalidLockRequest',
+  'InvalidLockWeight',
+  'LockRegistrationCancelled',
+  'LockAllocationPhase',
+  'LockSeasonNotStarted',
+  'LockAlreadyWeighed',
+  'LockWeightExceedsRequest',
+  'LockTallyIncomplete',
+  'LockNotWeighed',
+  'LockAlreadyAwarded',
+  'LockAllocationNotFinal',
+  'LockTallyInvalid',
+  'LockSafetyReleaseDisabled',
+  'LockSeasonUnscheduled',
+  'LockRegistrationMismatch',
+  'DuplicateLockRegistration',
+  'LockBatchMismatch',
 ] as const;
 
 export type AnchorErrorName = (typeof ANCHOR_ERROR_NAMES)[number];

@@ -152,7 +152,7 @@ pub enum RigsError {
     FruitAccountMismatch,
     #[msg("Fruit account layout version is not supported")]
     FruitVersionMismatch,
-    #[msg("Lock pools are not implemented in this version")]
+    #[msg("Lock pools and lock forfeiture go only through the lock instructions")]
     LockPoolsNotImplemented,
     #[msg("Reserve withdrawal destination is not the configured reserve recipient")]
     ReserveRecipientMismatch,
@@ -178,6 +178,43 @@ pub enum RigsError {
     InvalidForfeited,
     #[msg("Only lock-ledger roots may carry forfeiture")]
     ForfeitOnlyOnLockLedger,
+    // --- Lock Season (Pass #7 P7-B). Appended; existing codes unchanged. ---
+    #[msg("Lock registration and cancellation are open only on [FRUIT_T0, t_s)")]
+    LockRegistrationClosed,
+    #[msg("Requested lock weight must be in (0, 2.5 SOL]")]
+    InvalidLockRequest,
+    #[msg("Lock weight, award input or H_lock out of range")]
+    InvalidLockWeight,
+    #[msg("Lock registration is cancelled")]
+    LockRegistrationCancelled,
+    #[msg("Lock allocation is in the wrong phase for this operation")]
+    LockAllocationPhase,
+    #[msg("Lock weights are posted and sealed only at or after t_s")]
+    LockSeasonNotStarted,
+    #[msg("Lock registration already weighed in this generation")]
+    LockAlreadyWeighed,
+    #[msg("Lock weight exceeds the requested weight")]
+    LockWeightExceedsRequest,
+    #[msg("Lock tally does not cover every active registration")]
+    LockTallyIncomplete,
+    #[msg("Lock registration not weighed in this generation")]
+    LockNotWeighed,
+    #[msg("Lock registration already awarded in this generation")]
+    LockAlreadyAwarded,
+    #[msg("Lock pool has no Final allocation")]
+    LockAllocationNotFinal,
+    #[msg("Lock tally failed revalidation")]
+    LockTallyInvalid,
+    #[msg("Lock safety release is disabled until the EXTREME dwell is set")]
+    LockSafetyReleaseDisabled,
+    #[msg("Launch T0 is not set; the lock Season has no FRUIT_T0")]
+    LockSeasonUnscheduled,
+    #[msg("Lock registration account is not this pool's registration")]
+    LockRegistrationMismatch,
+    #[msg("A lock registration appears twice in one batch")]
+    DuplicateLockRegistration,
+    #[msg("Lock batch weights and registration accounts do not match")]
+    LockBatchMismatch,
 }
 
 impl From<EngineError> for RigsError {
@@ -233,6 +270,20 @@ impl From<EngineError> for RigsError {
             EngineError::NoPendingFeeChange => RigsError::NoPendingFeeChange,
             EngineError::FeeTimelockActive => RigsError::FeeTimelockActive,
             EngineError::InvalidForfeited => RigsError::InvalidForfeited,
+            EngineError::LockRegistrationClosed => RigsError::LockRegistrationClosed,
+            EngineError::InvalidLockRequest => RigsError::InvalidLockRequest,
+            EngineError::InvalidLockWeight => RigsError::InvalidLockWeight,
+            EngineError::LockRegistrationCancelled => RigsError::LockRegistrationCancelled,
+            EngineError::LockAllocationPhase => RigsError::LockAllocationPhase,
+            EngineError::LockSeasonNotStarted => RigsError::LockSeasonNotStarted,
+            EngineError::LockAlreadyWeighed => RigsError::LockAlreadyWeighed,
+            EngineError::LockWeightExceedsRequest => RigsError::LockWeightExceedsRequest,
+            EngineError::LockTallyIncomplete => RigsError::LockTallyIncomplete,
+            EngineError::LockNotWeighed => RigsError::LockNotWeighed,
+            EngineError::LockAlreadyAwarded => RigsError::LockAlreadyAwarded,
+            EngineError::LockAllocationNotFinal => RigsError::LockAllocationNotFinal,
+            EngineError::LockTallyInvalid => RigsError::LockTallyInvalid,
+            EngineError::LockSafetyReleaseDisabled => RigsError::LockSafetyReleaseDisabled,
         }
     }
 }

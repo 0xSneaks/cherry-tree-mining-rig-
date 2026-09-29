@@ -298,8 +298,8 @@ pub fn commit_fruit_pool(
     require_version(fc.state_version)?;
     require_version(ctx.accounts.ledger.state_version)?;
     require!(!fc.is_paused(kind), RigsError::FruitPaused);
-    // Lock capacity is `sum A_i` from a frozen `H_lock` (§8), not the linear
-    // schedule; until the lock mechanics exist, lock pools fail closed.
+    // Lock pools have their own window, Season account and tally (§8); they
+    // are committed only by `commit_lock_pool`.
     require!(
         LedgerKind::from_u8(kind).anchor()? != LedgerKind::Lock,
         RigsError::LockPoolsNotImplemented

@@ -1773,10 +1773,11 @@ impl Fx {
     }
 
     /// Plant a committed LOCK pool of budget `e`, exactly as a commit would
-    /// leave it (`Z -= E; U += E`). Lock commits fail closed in this version
-    /// (the lock engine writes `H_lock` / `sum A_i` in a later pass), so the
-    /// fixture stands in for that commit; every later step — post, finalize,
-    /// close — runs through the real instructions.
+    /// leave it (`Z -= E; U += E`), but with no `LockSeason` and a window the
+    /// generic commit would take: an injected pool outside the lock path
+    /// (`commit_lock_pool`, tested in `fruit_lock.rs`). Every later step —
+    /// post, finalize, close — runs through the real generic instructions,
+    /// which must refuse it.
     async fn plant_lock_pool(&mut self, id: u64, e: u64, t0: i64, t1: i64) {
         use anchor_lang::AccountSerialize;
         self.fund(LOCK, e).await.unwrap();
@@ -1834,9 +1835,9 @@ impl Fx {
     }
 }
 
-/// Test 89 on-chain, fail-closed half. This program version has no lock
-/// registration, so no lock allocation exists and lock pools cannot be
-/// committed. Even an injected lock pool fails closed: a lock root carrying
+/// Test 89 on-chain, fail-closed half. Lock roots, claims and close are
+/// wired to the lock allocation in P7-D; until then the generic paths see no
+/// lock allocation. An injected lock pool fails closed: a lock root carrying
 /// any forfeiture is refused, the engine refuses every generic root on a
 /// lock pool (its capacity is the lock cliff, Pass #7 F3), so nothing is
 /// posted, the pool cannot reconcile or close, and no lamport moves. The
@@ -1895,8 +1896,8 @@ async fn t89_lock_forfeiture_fails_closed_until_lock_allocation_exists() {
 
 /// A lock pool whose Final complete root and carried `forfeited` were
 /// injected (corrupted or pre-upgrade state) cannot release anything: close
-/// finds no pool-owned Final lock allocation and refuses without moving
-/// lamports.
+/// finds no Final lock allocation (`LockAllocationNotFinal`) and refuses
+/// without moving lamports.
 #[tokio::test]
 async fn t89_injected_forfeiture_cannot_close() {
     use anchor_lang::AccountSerialize;
@@ -1924,7 +1925,7 @@ async fn t89_injected_forfeiture_cannot_close() {
     fx.env.warp(1).await;
     assert_rigs_error(
         fx.close(LOCK, 1).await.unwrap_err(),
-        RigsError::InvalidFruitState,
+        RigsError::LockAllocationNotFinal,
     );
     let after = fx.ledger(LOCK).await;
     assert_eq!(

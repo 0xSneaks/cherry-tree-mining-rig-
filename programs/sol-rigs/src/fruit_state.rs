@@ -8,7 +8,8 @@
 
 use anchor_lang::prelude::*;
 use rigs_engine::{
-    FruitLedger, FruitPool, FruitRoot, LedgerKind, LockState, PoolStatus, RootStatus,
+    FruitLedger, FruitPool, FruitRoot, LedgerKind, LockAllocationStatus, LockRegistrationState,
+    LockState, PoolStatus, RootStatus,
 };
 
 use crate::constants::MAX_VETO_SIGNERS;
@@ -138,8 +139,9 @@ pub struct Pool {
     pub paid_cum: u64,
     /// [`PoolStatus`] discriminant.
     pub status: u8,
-    /// Frozen lock denominator. Reserved: written only by the future lock
-    /// implementation; always 0 in this version.
+    /// Frozen lock denominator `H_lock` (lamport-days): mirrors the pool's
+    /// [`LockSeason`] once its allocation is Final, `0` before that and on
+    /// every non-lock pool. Checked against the Season on every lock read.
     pub h_lock: u64,
     pub latest_version: u64,
     pub pending_version: u64,
@@ -178,12 +180,47 @@ impl Pool {
             final_forfeited: self.final_forfeited,
             forfeit_treasury_released: self.forfeit_treasury_released,
             kind: LedgerKind::from_u8(self.ledger_kind).anchor()?,
-            // No lock registration exists in this program version, so no
-            // lock allocation is ever established: the engine then rejects
-            // any non-zero `forfeited` at post and at close (architecture §8),
-            // and lock pools cannot be committed at all.
+            // Lock state lives in the pool's `LockSeason`; only
+            // [`Pool::lock_accounting`] loads it. Every other path sees an
+            // empty lock state, so the engine refuses lock roots, lock
+            // forfeiture and lock close there (fail closed).
             lock: LockState::default(),
         })
+    }
+
+    /// Accounting of a lock pool together with its Season. The kind comes
+    /// from the stored `ledger_kind` (bound into the pool PDA), the lock
+    /// lifecycle only from the PDA-bound `LockSeason`; the `h_lock` mirror
+    /// must agree with it.
+    pub fn lock_accounting(&self, pool_key: &Pubkey, season: &LockSeason) -> Result<FruitPool> {
+        require_version(season.state_version)?;
+        require_keys_eq!(season.pool, *pool_key, RigsError::FruitAccountMismatch);
+        require!(
+            LedgerKind::from_u8(self.ledger_kind).anchor()? == LedgerKind::Lock
+                && season.pool_id == self.pool_id,
+            RigsError::InvalidLedgerKind
+        );
+        let lock = season.lock_state()?;
+        let mirror = if lock.status == LockAllocationStatus::Final {
+            lock.h_lock
+        } else {
+            0
+        };
+        require!(self.h_lock == mirror, RigsError::LockTallyInvalid);
+        let mut p = self.accounting()?;
+        p.lock = lock;
+        Ok(p)
+    }
+
+    /// Write back a lock pool and its Season, keeping the `h_lock` mirror.
+    pub fn write_lock_accounting(&mut self, season: &mut LockSeason, p: &FruitPool) {
+        self.write_accounting(p);
+        season.write_lock_state(&p.lock);
+        self.h_lock = if p.lock.status == LockAllocationStatus::Final {
+            p.lock.h_lock
+        } else {
+            0
+        };
     }
 
     pub fn write_accounting(&mut self, p: &FruitPool) {
@@ -271,6 +308,132 @@ pub struct ClaimRecord {
     /// Highest cumulative entitlement ever paid against. Never decreases.
     pub claimed_cum: u64,
     pub bump: u8,
+}
+
+/// LOCK SEASON PDA — seeds `["lock_season", pool]`. Created together with its
+/// lock pool by `commit_lock_pool`; holds the pool-owned lock lifecycle
+/// (Pass #7 P7-B). Never closed.
+#[account]
+#[derive(InitSpace, Debug)]
+pub struct LockSeason {
+    pub state_version: u16,
+    pub pool: Pubkey,
+    pub pool_id: u64,
+    /// `FRUIT_T0` the Season was derived from (`t_s = FRUIT_T0 + 6 days`).
+    pub fruit_t0: i64,
+    /// [`LockAllocationStatus`] discriminant.
+    pub status: u8,
+    /// `B_lock` fixed at commit.
+    pub budget: u64,
+    pub generation: u64,
+    pub total_reg_count: u64,
+    pub active_reg_count: u64,
+    pub active_requested_total: u64,
+    pub weighed_count: u64,
+    pub positive_count: u64,
+    pub sum_ell: u64,
+    pub h_lock: u64,
+    pub gross_allocatable: u64,
+    pub awarded_count: u64,
+    pub assigned_total: u64,
+    pub posted_at: i64,
+    pub final_after: i64,
+    /// Bit `i` set when veto signer `i` has vetoed the current generation.
+    pub veto_bitmap: u8,
+    pub veto_count: u8,
+    pub bump: u8,
+}
+
+impl LockSeason {
+    pub fn lock_state(&self) -> Result<LockState> {
+        Ok(LockState {
+            status: LockAllocationStatus::from_u8(self.status).anchor()?,
+            budget: self.budget,
+            generation: self.generation,
+            total_reg_count: self.total_reg_count,
+            active_reg_count: self.active_reg_count,
+            active_requested_total: self.active_requested_total,
+            weighed_count: self.weighed_count,
+            positive_count: self.positive_count,
+            sum_ell: self.sum_ell,
+            h_lock: self.h_lock,
+            gross_allocatable: self.gross_allocatable,
+            awarded_count: self.awarded_count,
+            assigned_total: self.assigned_total,
+            posted_at: self.posted_at,
+            final_after: self.final_after,
+            veto_count: self.veto_count,
+        })
+    }
+
+    /// Write back; a new generation clears the veto bitmap.
+    pub fn write_lock_state(&mut self, s: &LockState) {
+        if s.generation != self.generation {
+            self.veto_bitmap = 0;
+        }
+        self.status = s.status as u8;
+        self.budget = s.budget;
+        self.generation = s.generation;
+        self.total_reg_count = s.total_reg_count;
+        self.active_reg_count = s.active_reg_count;
+        self.active_requested_total = s.active_requested_total;
+        self.weighed_count = s.weighed_count;
+        self.positive_count = s.positive_count;
+        self.sum_ell = s.sum_ell;
+        self.h_lock = s.h_lock;
+        self.gross_allocatable = s.gross_allocatable;
+        self.awarded_count = s.awarded_count;
+        self.assigned_total = s.assigned_total;
+        self.posted_at = s.posted_at;
+        self.final_after = s.final_after;
+        self.veto_count = s.veto_count;
+    }
+}
+
+/// LOCK REGISTRATION PDA — seeds `["lock_reg", pool, wallet]`. One per wallet
+/// per Season, created by `register_lock` and never closed (D-B2): a
+/// cancelled registration stays, so the wallet cannot register again.
+#[account]
+#[derive(InitSpace, Debug)]
+pub struct LockRegistration {
+    pub state_version: u16,
+    pub pool: Pubkey,
+    pub wallet: Pubkey,
+    /// Requested weight, `0 < requested <= Kmax`. Immutable.
+    pub requested: u64,
+    pub registered_at: i64,
+    pub cancelled: bool,
+    /// `0` unless cancelled.
+    pub cancelled_at: i64,
+    /// `ell_i` of generation `weight_gen`.
+    pub ell: u64,
+    pub weight_gen: u64,
+    /// `A_i` of generation `award_gen`.
+    pub award: u64,
+    pub award_gen: u64,
+    pub bump: u8,
+}
+
+impl LockRegistration {
+    pub fn state(&self) -> LockRegistrationState {
+        LockRegistrationState {
+            requested: self.requested,
+            cancelled: self.cancelled,
+            ell: self.ell,
+            weight_gen: self.weight_gen,
+            award: self.award,
+            award_gen: self.award_gen,
+        }
+    }
+
+    pub fn write_state(&mut self, r: &LockRegistrationState) {
+        self.requested = r.requested;
+        self.cancelled = r.cancelled;
+        self.ell = r.ell;
+        self.weight_gen = r.weight_gen;
+        self.award = r.award;
+        self.award_gen = r.award_gen;
+    }
 }
 
 /// Fail closed on any Fruit account written by a different layout version.

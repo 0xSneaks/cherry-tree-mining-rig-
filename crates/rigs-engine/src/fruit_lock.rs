@@ -16,44 +16,35 @@
 //! H_lock            = max(sum u_i, Hfloor * 5) = max(5 sum ell_i, 62.5 SOL-days)
 //! gross_allocatable = floor(B * sum u_i / H_lock)      (engine-computed)
 //! A_i               = floor(B * u_i / H_lock)          (never rounded up)
-//! assigned_total    = sum_i A_i                        (committed, challenged)
+//! assigned_total    = sum_i A_i                        (engine-accumulated)
 //! rounding_dust     = gross_allocatable - assigned_total
 //! unallocated       = B - assigned_total               (dust included; 100% to Z)
 //! forfeited        <= assigned_total - final_total
 //! A_i <= floor(B/5)
 //! ```
 //!
-//! The engine only sees `sum ell`, so it cannot recompute `assigned_total`;
-//! the poster commits it with the allocation, bounded by `gross_allocatable`,
-//! and it goes through the same challenge/veto window as `H_lock` (F7).
+//! Pass #7 P7-B (closes V-1 / V-2 by construction): `assigned_total` is never
+//! an input. Each active registration is weighed once per generation (the
+//! poster posts `ell_i <= requested_i`), weights are sealed only when every
+//! active registration is weighed, and then each award `A_i` is computed by
+//! the engine and added exactly once. `assigned_total` is therefore exactly
+//! `sum_i floor(A_i)`, dust is exactly `gross_allocatable - assigned_total`,
+//! and no poster value can move dust into forfeiture.
 //!
-//! Timing (P7-L1): registration is open on `[FRUIT_T0, t_s)` and closes at
-//! exactly `t_s`. The allocation is computed from the `t_s` snapshot, so it
-//! can only be posted at or after `t_s`; it becomes Final only after its
-//! challenge window without a veto, and is then immutable — a Final zero
-//! allocation included. Until it is Final the lock pool accepts no root, so
-//! all of `B_lock` stays reserved.
+//! Timing (P7-L1, D-B1): registration and cancellation are open on
+//! `[FRUIT_T0, t_s)`; at `t_s` the active registration set is frozen.
+//! Weights are posted only at or after `t_s`. The allocation becomes Final
+//! only after its challenge window without a veto, and is then immutable — a
+//! Final zero allocation included. Until it is Final the lock pool accepts no
+//! root, so all of `B_lock` stays reserved.
 //!
-//! Lifecycle (pool-owned, [`LockAllocationStatus`]):
-//!
-//! ```text
-//! Uninitialized --post--> Pending(generation g) --finalize--> Final (terminal)
-//!                            |
-//!                            +--veto at threshold--> Uninitialized (g retired)
-//! ```
-//!
-//! Every post takes a fresh generation, and veto and finalize act only on the
-//! pool's own Pending allocation and must be handed exactly that commitment,
-//! so a stale or copied allocation (or one from another pool) cannot
-//! finalize.
+//! Lifecycle (pool-owned, [`LockAllocationStatus`]): see that type. A veto
+//! retires the generation; the re-tally runs over the same frozen active set.
 //!
 //! Capacity: a cliff. `0` before `t_s + 5 days`, exactly `assigned_total`
 //! from then. The earned-to-date safety-release path (linear) exists only
 //! when [`SafetyRelease::Enabled`], which requires the EXTREME dwell period to
 //! be explicitly set; with it unset the cliff is the only schedule.
-//!
-//! Error codes reuse existing [`EngineError`] variants: the on-chain program
-//! maps them exhaustively and does not expose lock instructions yet.
 
 use crate::error::{EngineError, EngineResult};
 use crate::fruit::{
@@ -114,7 +105,7 @@ pub fn lock_h(sum_ell: u64) -> EngineResult<u64> {
 /// `u <= h_lock`, so the result never exceeds `budget`.
 fn floor_share(budget: u64, u: u64, h_lock: u64) -> EngineResult<u64> {
     if h_lock < LOCK_H_FLOOR_LAMPORT_DAYS || u > h_lock {
-        return Err(EngineError::InvalidFruitState);
+        return Err(EngineError::InvalidLockWeight);
     }
     let v = (budget as u128)
         .checked_mul(u as u128)
@@ -140,7 +131,7 @@ pub fn lock_allocation(budget: u64, sum_ell: u64) -> EngineResult<(u64, u64)> {
 /// Never above `floor(B/5)` (checked, not only proved).
 pub fn lock_award(budget: u64, ell_i: u64, h_lock: u64) -> EngineResult<u64> {
     if ell_i == 0 || ell_i > LOCK_KMAX_LAMPORTS {
-        return Err(EngineError::InvalidFruitState);
+        return Err(EngineError::InvalidLockWeight);
     }
     let u_i = ell_i * LOCK_DAYS; // <= 12.5e9, cannot overflow
     let a = floor_share(budget, u_i, h_lock)?;
@@ -154,7 +145,7 @@ pub fn lock_award(budget: u64, ell_i: u64, h_lock: u64) -> EngineResult<u64> {
 /// `floor(A_i * ell_surv / ell_i)`, `ell_surv <= ell_i`.
 pub fn lock_vest_at_maturity(award: u64, ell_surv: u64, ell_i: u64) -> EngineResult<u64> {
     if ell_i == 0 || ell_surv > ell_i {
-        return Err(EngineError::InvalidFruitState);
+        return Err(EngineError::InvalidLockWeight);
     }
     let v = (award as u128) * (ell_surv as u128) / (ell_i as u128);
     u64::try_from(v).map_err(|_| EngineError::MathOverflow)
@@ -193,10 +184,10 @@ pub fn lock_safety_vest(
     t_event: i64,
 ) -> EngineResult<u64> {
     if safety == SafetyRelease::Disabled {
-        return Err(EngineError::InvalidConfig);
+        return Err(EngineError::LockSafetyReleaseDisabled);
     }
     if ell_i == 0 || ell_surv > ell_i {
-        return Err(EngineError::InvalidFruitState);
+        return Err(EngineError::InvalidLockWeight);
     }
     let elapsed = ((t_event as i128) - (t_s as i128)).clamp(0, LOCK_DURATION_SECONDS as i128);
     let num = (award as u128)
@@ -209,74 +200,146 @@ pub fn lock_safety_vest(
     u64::try_from(num / den).map_err(|_| EngineError::MathOverflow)
 }
 
-/// Pool-owned allocation lifecycle. `Final` is terminal and immutable.
+/// Pool-owned allocation lifecycle (Pass #7 P7-B). `Final` is terminal and
+/// immutable.
+///
+/// ```text
+/// Registering --t_s--> Weighing(g) --seal--> Awarding(g) --seal--> Pending(g) --window--> Final
+///                         ^                                            |
+///                         +---------- veto at threshold: g+1 ----------+
+/// ```
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum LockAllocationStatus {
+    /// Registration window `[FRUIT_T0, t_s)`; no weight yet.
     #[default]
-    Uninitialized = 0,
-    Pending = 1,
-    Final = 2,
+    Registering = 0,
+    /// Weights of generation `g` are being posted (at or after `t_s`).
+    Weighing = 1,
+    /// `H_lock` and `gross_allocatable` are sealed; awards are computed.
+    Awarding = 2,
+    /// Every active registration is awarded; challenge window open.
+    Pending = 3,
+    /// Immutable.
+    Final = 4,
 }
 
-/// One posted Season allocation: the whole commitment that is challenged,
-/// vetoed or finalized. Veto and finalize must be handed exactly the pool's
-/// current Pending commitment.
+impl LockAllocationStatus {
+    pub fn from_u8(v: u8) -> EngineResult<Self> {
+        match v {
+            0 => Ok(LockAllocationStatus::Registering),
+            1 => Ok(LockAllocationStatus::Weighing),
+            2 => Ok(LockAllocationStatus::Awarding),
+            3 => Ok(LockAllocationStatus::Pending),
+            4 => Ok(LockAllocationStatus::Final),
+            _ => Err(EngineError::LockTallyInvalid),
+        }
+    }
+}
+
+/// Lock Season state carried by every [`FruitPool`]; meaningful only on a
+/// [`LedgerKind::Lock`] pool. The program persists it in the pool's
+/// `LockSeason` account.
+///
+/// Registration counters change only inside `[FRUIT_T0, t_s)` and are frozen
+/// from `t_s`; every tally generation runs over that same frozen active set.
+/// `assigned_total` is never an input: it is the sum of the engine-computed
+/// awards, each added exactly once per generation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct LockAllocation {
-    /// The pool this allocation was posted on ([`LockState::pool_id`]).
-    pub pool_id: u64,
-    /// Post counter on that pool; a vetoed generation is never reused.
-    pub generation: u64,
-    /// Budget `B_lock` it was computed against (the pool's `E`).
+pub struct LockState {
+    pub status: LockAllocationStatus,
+    /// `B_lock` fixed at commit; must equal the pool's `E` on every read.
     pub budget: u64,
-    /// `sum ell_i` at `t_s`.
+    /// Current tally generation, `>= 1`; a veto retires it (`g + 1`).
+    pub generation: u64,
+    /// Registrations ever made (cancelled included). Never decreases.
+    pub total_reg_count: u64,
+    /// Registrations not cancelled.
+    pub active_reg_count: u64,
+    /// `sum requested_i` over active registrations.
+    pub active_requested_total: u64,
+    /// Active registrations weighed in this generation.
+    pub weighed_count: u64,
+    /// Of those, the ones with `ell_i > 0`.
+    pub positive_count: u64,
+    /// `sum ell_i` of this generation.
     pub sum_ell: u64,
-    /// Registered requested weight; `sum_ell <= requested_total`.
-    pub requested_total: u64,
-    /// Frozen `H_lock`, lamport-days.
+    /// `H_lock`, lamport-days; set when weights are sealed.
     pub h_lock: u64,
-    /// Engine-computed `floor(B * sum u / H_lock)`.
+    /// `floor(B * sum u / H_lock)`; set when weights are sealed.
     pub gross_allocatable: u64,
-    /// Committed `sum_i floor(B * u_i / H_lock)`, `<= gross_allocatable`.
+    /// Active registrations awarded in this generation.
+    pub awarded_count: u64,
+    /// `sum_i floor(B * u_i / H_lock)`, accumulated by the engine.
     pub assigned_total: u64,
     pub posted_at: i64,
     pub final_after: i64,
+    /// Distinct veto signatures on the Pending allocation.
+    pub veto_count: u8,
+}
+
+/// One wallet's registration (the program's `LockRegistration` account).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LockRegistrationState {
+    /// Requested weight, `0 < requested <= Kmax`. Immutable.
+    pub requested: u64,
+    /// Cancelled before `t_s`; permanent.
+    pub cancelled: bool,
+    /// `ell_i` posted for generation `weight_gen`.
+    pub ell: u64,
+    /// Generation `ell` belongs to; `0` = never weighed.
+    pub weight_gen: u64,
+    /// `A_i` computed for generation `award_gen`.
+    pub award: u64,
+    /// Generation `award` belongs to; `0` = never awarded.
+    pub award_gen: u64,
+}
+
+impl LockRegistrationState {
+    /// The award of the Final generation `generation`, or 0 if this
+    /// registration holds none (cancelled, or stale).
+    pub fn award_for(&self, generation: u64) -> u64 {
+        if !self.cancelled && self.award_gen == generation && self.weight_gen == generation {
+            self.award
+        } else {
+            0
+        }
+    }
+}
+
+/// Read-only summary of a Final (or sealed) allocation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LockAllocation {
+    pub generation: u64,
+    /// `B_lock` (the pool's `E`).
+    pub budget: u64,
+    pub active_reg_count: u64,
+    pub positive_count: u64,
+    pub active_requested_total: u64,
+    pub sum_ell: u64,
+    pub h_lock: u64,
+    pub gross_allocatable: u64,
+    pub assigned_total: u64,
 }
 
 impl LockAllocation {
     /// `gross_allocatable - assigned_total`: never assigned to a wallet.
+    /// Exact (the tally guarantees `assigned_total <= gross_allocatable`).
     pub fn rounding_dust(&self) -> u64 {
-        self.gross_allocatable.saturating_sub(self.assigned_total)
+        self.gross_allocatable - self.assigned_total
     }
 
     /// `B - assigned_total` (rounding dust included): returns 100% to `Z`.
     pub fn unallocated(&self) -> u64 {
-        self.budget.saturating_sub(self.assigned_total)
+        self.budget - self.assigned_total
     }
-}
-
-/// Lock state carried by every [`FruitPool`]; meaningful only on a
-/// [`LedgerKind::Lock`] pool.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct LockState {
-    /// Pool identity fixed at [`commit_lock_pool`].
-    pub pool_id: u64,
-    pub status: LockAllocationStatus,
-    /// Last generation issued; never decreases.
-    pub generation: u64,
-    /// Distinct veto signatures on the Pending allocation.
-    pub veto_count: u8,
-    /// The Pending or Final allocation; default while Uninitialized.
-    pub allocation: LockAllocation,
 }
 
 /// COMMIT the Season's lock pool: `[t_s, t_s + 5 days)` with
 /// `t_s = FRUIT_T0 + 6 days`, before `t_s`. The only way to make a
-/// [`LedgerKind::Lock`] pool.
+/// [`LedgerKind::Lock`] pool; its tally starts at generation 1.
 pub fn commit_lock_pool(
     ledger: &mut FruitLedger,
-    pool_id: u64,
     budget: u64,
     fruit_t0: i64,
     now: i64,
@@ -289,7 +352,8 @@ pub fn commit_lock_pool(
     let mut pool = commit_pool(&mut next, budget, t_s, t_end, now)?;
     pool.kind = LedgerKind::Lock;
     pool.lock = LockState {
-        pool_id,
+        budget,
+        generation: 1,
         ..LockState::default()
     };
     *ledger = next;
@@ -306,167 +370,339 @@ fn require_lock_pool(pool: &FruitPool) -> EngineResult<()> {
     validate_lock_window(pool.t_start, pool.t_end)
 }
 
-/// Every committed field of `a` against the pool: identity, generation,
-/// budget, recomputed `H_lock` / `gross_allocatable`, and
-/// `assigned_total <= gross_allocatable <= budget`.
-fn validate_allocation(pool: &FruitPool, a: &LockAllocation) -> EngineResult<()> {
-    if a.pool_id != pool.lock.pool_id
-        || a.generation != pool.lock.generation
-        || a.generation == 0
-        || a.budget != pool.budget
-        || a.sum_ell > a.requested_total
-    {
-        return Err(EngineError::InvalidFruitState);
+/// `[FRUIT_T0, t_s)` of this pool (`FRUIT_T0 = t_s - 6 days`).
+fn require_registration_open(pool: &FruitPool, now: i64) -> EngineResult<()> {
+    let t_s = pool.t_start;
+    let fruit_t0 = t_s
+        .checked_sub(LOCK_SEASON_OFFSET)
+        .ok_or(EngineError::MathOverflow)?;
+    if !lock_registration_open(fruit_t0, t_s, now) {
+        return Err(EngineError::LockRegistrationClosed);
     }
-    let (h_lock, gross) = lock_allocation(a.budget, a.sum_ell)?;
-    if a.h_lock != h_lock
-        || a.gross_allocatable != gross
-        || a.assigned_total > a.gross_allocatable
-        || a.gross_allocatable > a.budget
-    {
-        return Err(EngineError::InvalidFruitState);
+    if pool.lock.status != LockAllocationStatus::Registering {
+        return Err(EngineError::LockAllocationPhase);
     }
     Ok(())
 }
 
-/// The pool's Final allocation, fully revalidated. The only source of lock
-/// capacity and of the forfeiture bound; a caller-built allocation object
-/// cannot stand in for it.
-pub fn lock_final_allocation(pool: &FruitPool) -> EngineResult<LockAllocation> {
-    if pool.kind != LedgerKind::Lock || pool.lock.status != LockAllocationStatus::Final {
-        return Err(EngineError::InvalidFruitState);
+fn add(a: u64, b: u64) -> EngineResult<u64> {
+    a.checked_add(b).ok_or(EngineError::MathOverflow)
+}
+
+/// REGISTER: one wallet's intent, inside `[FRUIT_T0, t_s)`, with
+/// `0 < requested <= Kmax`. Returns the new registration. The caller
+/// guarantees one registration per wallet per Season (the program's `init`).
+pub fn register_lock(
+    pool: &mut FruitPool,
+    requested: u64,
+    now: i64,
+) -> EngineResult<LockRegistrationState> {
+    require_lock_pool(pool)?;
+    require_registration_open(pool, now)?;
+    if requested == 0 || requested > LOCK_KMAX_LAMPORTS {
+        return Err(EngineError::InvalidLockRequest);
     }
-    let a = pool.lock.allocation;
-    validate_allocation(pool, &a)?;
+    let mut s = pool.lock;
+    s.total_reg_count = add(s.total_reg_count, 1)?;
+    s.active_reg_count = add(s.active_reg_count, 1)?;
+    s.active_requested_total = add(s.active_requested_total, requested)?;
+    pool.lock = s;
+    Ok(LockRegistrationState {
+        requested,
+        ..LockRegistrationState::default()
+    })
+}
+
+/// CANCEL (D-B1): inside `[FRUIT_T0, t_s)` only, once. Marks the
+/// registration cancelled and removes it from the active count and the
+/// active requested total, atomically. The registration is kept, so the
+/// wallet can never register again for this Season.
+pub fn cancel_lock(
+    pool: &mut FruitPool,
+    reg: &mut LockRegistrationState,
+    now: i64,
+) -> EngineResult<()> {
+    require_lock_pool(pool)?;
+    require_registration_open(pool, now)?;
+    if reg.cancelled {
+        return Err(EngineError::LockRegistrationCancelled);
+    }
+    if reg.requested == 0 || reg.requested > LOCK_KMAX_LAMPORTS {
+        return Err(EngineError::LockTallyInvalid);
+    }
+    let mut s = pool.lock;
+    s.active_reg_count = s
+        .active_reg_count
+        .checked_sub(1)
+        .ok_or(EngineError::LockTallyInvalid)?;
+    s.active_requested_total = s
+        .active_requested_total
+        .checked_sub(reg.requested)
+        .ok_or(EngineError::LockTallyInvalid)?;
+    pool.lock = s;
+    reg.cancelled = true;
+    Ok(())
+}
+
+/// POST WEIGHT (poster): `ell_i = min(requested_i, w_i(t_s))` for one active
+/// registration, at or after `t_s`, once per generation, `ell_i <= requested_i`.
+pub fn post_lock_weight(
+    pool: &mut FruitPool,
+    reg: &mut LockRegistrationState,
+    ell: u64,
+    now: i64,
+) -> EngineResult<()> {
+    require_lock_pool(pool)?;
+    if now < pool.t_start {
+        return Err(EngineError::LockSeasonNotStarted);
+    }
+    let mut s = pool.lock;
+    if !matches!(
+        s.status,
+        LockAllocationStatus::Registering | LockAllocationStatus::Weighing
+    ) {
+        return Err(EngineError::LockAllocationPhase);
+    }
+    if reg.cancelled {
+        return Err(EngineError::LockRegistrationCancelled);
+    }
+    if reg.weight_gen > s.generation {
+        return Err(EngineError::LockTallyInvalid);
+    }
+    if reg.weight_gen == s.generation {
+        return Err(EngineError::LockAlreadyWeighed);
+    }
+    if ell > reg.requested {
+        return Err(EngineError::LockWeightExceedsRequest);
+    }
+    s.weighed_count = add(s.weighed_count, 1)?;
+    s.sum_ell = add(s.sum_ell, ell)?;
+    if ell > 0 {
+        s.positive_count = add(s.positive_count, 1)?;
+    }
+    if s.weighed_count > s.active_reg_count || s.sum_ell > s.active_requested_total {
+        return Err(EngineError::LockTallyInvalid);
+    }
+    s.status = LockAllocationStatus::Weighing;
+    pool.lock = s;
+    reg.ell = ell;
+    reg.weight_gen = s.generation;
+    reg.award = 0;
+    Ok(())
+}
+
+/// SEAL WEIGHTS: every active registration weighed in this generation (the
+/// zero-active path seals an empty tally). Computes `H_lock` and
+/// `gross_allocatable`.
+pub fn seal_lock_weights(pool: &mut FruitPool, now: i64) -> EngineResult<()> {
+    require_lock_pool(pool)?;
+    if now < pool.t_start {
+        return Err(EngineError::LockSeasonNotStarted);
+    }
+    let mut s = pool.lock;
+    if !matches!(
+        s.status,
+        LockAllocationStatus::Registering | LockAllocationStatus::Weighing
+    ) {
+        return Err(EngineError::LockAllocationPhase);
+    }
+    if s.weighed_count != s.active_reg_count {
+        return Err(EngineError::LockTallyIncomplete);
+    }
+    let (h_lock, gross) = lock_allocation(pool.budget, s.sum_ell)?;
+    s.h_lock = h_lock;
+    s.gross_allocatable = gross;
+    s.status = LockAllocationStatus::Awarding;
+    pool.lock = s;
+    Ok(())
+}
+
+/// AWARD (permissionless): `A_i = floor(B * 5 ell_i / H_lock)` for one
+/// registration weighed in this generation, once. Adds it to
+/// `assigned_total`. Returns `A_i`.
+pub fn award_lock_registration(
+    pool: &mut FruitPool,
+    reg: &mut LockRegistrationState,
+) -> EngineResult<u64> {
+    require_lock_pool(pool)?;
+    let mut s = pool.lock;
+    if s.status != LockAllocationStatus::Awarding {
+        return Err(EngineError::LockAllocationPhase);
+    }
+    if reg.cancelled {
+        return Err(EngineError::LockRegistrationCancelled);
+    }
+    if reg.weight_gen != s.generation {
+        return Err(EngineError::LockNotWeighed);
+    }
+    if reg.award_gen > s.generation {
+        return Err(EngineError::LockTallyInvalid);
+    }
+    if reg.award_gen == s.generation {
+        return Err(EngineError::LockAlreadyAwarded);
+    }
+    let a = if reg.ell == 0 {
+        0
+    } else {
+        lock_award(pool.budget, reg.ell, s.h_lock)?
+    };
+    s.awarded_count = add(s.awarded_count, 1)?;
+    s.assigned_total = add(s.assigned_total, a)?;
+    if s.awarded_count > s.active_reg_count || s.assigned_total > s.gross_allocatable {
+        return Err(EngineError::LockTallyInvalid);
+    }
+    pool.lock = s;
+    reg.award = a;
+    reg.award_gen = s.generation;
     Ok(a)
 }
 
-/// POST ALLOCATION (Pending) on the pool. Only at or after `t_s` (P7-L1),
-/// only while Uninitialized and before any root, with
-/// `sum_ell <= requested_total` and
-/// `assigned_total <= gross_allocatable`. `H_lock` and `gross_allocatable`
-/// are computed here; `assigned_total` is the poster's commitment (F7),
-/// challenged with the rest. Returns the commitment.
-pub fn post_lock_allocation(
-    pool: &mut FruitPool,
-    sum_ell: u64,
-    requested_total: u64,
-    assigned_total: u64,
-    now: i64,
-    challenge_window: i64,
-) -> EngineResult<LockAllocation> {
+/// Every tally invariant against the pool: complete counts, recomputed
+/// `H_lock` / `gross_allocatable`, `assigned_total <= gross <= B`, and the
+/// rounding bound `assigned_total >= gross - (positive_count - 1)`.
+fn validate_tally(pool: &FruitPool, s: &LockState) -> EngineResult<()> {
+    let bad = || EngineError::LockTallyInvalid;
+    if s.generation == 0
+        || s.budget != pool.budget
+        || s.active_reg_count > s.total_reg_count
+        || s.weighed_count != s.active_reg_count
+        || s.awarded_count != s.active_reg_count
+        || s.positive_count > s.weighed_count
+        || s.sum_ell > s.active_requested_total
+        || (s.active_requested_total as u128)
+            > (s.active_reg_count as u128) * (LOCK_KMAX_LAMPORTS as u128)
+        || (s.sum_ell as u128) > (s.positive_count as u128) * (LOCK_KMAX_LAMPORTS as u128)
+        || s.sum_ell < s.positive_count
+    {
+        return Err(bad());
+    }
+    let (h_lock, gross) = lock_allocation(pool.budget, s.sum_ell)?;
+    if s.h_lock != h_lock
+        || s.gross_allocatable != gross
+        || s.assigned_total > s.gross_allocatable
+        || s.gross_allocatable > pool.budget
+    {
+        return Err(bad());
+    }
+    // sum_i floor(x_i) > floor(sum_i x_i) - n over the n positive weights.
+    if s.positive_count == 0 {
+        if s.assigned_total != 0 || s.gross_allocatable != 0 {
+            return Err(bad());
+        }
+    } else if (s.assigned_total as u128) + (s.positive_count as u128 - 1)
+        < s.gross_allocatable as u128
+    {
+        return Err(bad());
+    }
+    Ok(())
+}
+
+/// SEAL AWARDS (permissionless): every active registration awarded. Opens
+/// the allocation's challenge window.
+pub fn seal_lock_awards(pool: &mut FruitPool, now: i64, challenge_window: i64) -> EngineResult<()> {
     require_lock_pool(pool)?;
-    match pool.lock.status {
-        LockAllocationStatus::Final => return Err(EngineError::InvalidFruitState),
-        LockAllocationStatus::Pending => return Err(EngineError::RootAlreadyPending),
-        LockAllocationStatus::Uninitialized => {}
+    let mut s = pool.lock;
+    if s.status != LockAllocationStatus::Awarding {
+        return Err(EngineError::LockAllocationPhase);
     }
-    if pool.latest_version != 0 {
-        return Err(EngineError::InvalidFruitState);
-    }
-    if now < pool.t_start {
-        return Err(EngineError::FutureCheckpoint);
-    }
-    if sum_ell > requested_total {
-        return Err(EngineError::RootExceedsCapacity);
+    if s.awarded_count != s.active_reg_count {
+        return Err(EngineError::LockTallyIncomplete);
     }
     if challenge_window <= 0 {
         return Err(EngineError::InvalidFruitGovernance);
     }
-    let final_after = now
+    validate_tally(pool, &s)?;
+    s.final_after = now
         .checked_add(challenge_window)
         .ok_or(EngineError::MathOverflow)?;
-    let (h_lock, gross_allocatable) = lock_allocation(pool.budget, sum_ell)?;
-    if assigned_total > gross_allocatable {
-        return Err(EngineError::RootExceedsCapacity);
-    }
-    let generation = pool
-        .lock
-        .generation
-        .checked_add(1)
-        .ok_or(EngineError::MathOverflow)?;
-    let allocation = LockAllocation {
-        pool_id: pool.lock.pool_id,
-        generation,
-        budget: pool.budget,
-        sum_ell,
-        requested_total,
-        h_lock,
-        gross_allocatable,
-        assigned_total,
-        posted_at: now,
-        final_after,
-    };
-    pool.lock = LockState {
-        pool_id: pool.lock.pool_id,
-        status: LockAllocationStatus::Pending,
-        generation,
-        veto_count: 0,
-        allocation,
-    };
-    Ok(allocation)
-}
-
-fn require_pending(pool: &FruitPool, expected: &LockAllocation) -> EngineResult<()> {
-    if pool.lock.status != LockAllocationStatus::Pending || pool.lock.allocation != *expected {
-        return Err(EngineError::RootNotPending);
-    }
+    s.posted_at = now;
+    s.veto_count = 0;
+    s.status = LockAllocationStatus::Pending;
+    pool.lock = s;
     Ok(())
 }
 
-/// One distinct veto signature on the pool's Pending allocation `expected`.
-/// At `threshold` the allocation is discarded (it never finalizes), the pool
-/// returns to Uninitialized and the generation is retired.
-pub fn veto_lock_allocation(
-    pool: &mut FruitPool,
-    expected: &LockAllocation,
-    threshold: u8,
-    now: i64,
-) -> EngineResult<bool> {
+/// One distinct veto signature on the Pending allocation (the caller
+/// guarantees distinctness). At `threshold` the generation is retired and the
+/// tally restarts at `g + 1` over the same frozen active registration set.
+pub fn veto_lock_allocation(pool: &mut FruitPool, threshold: u8, now: i64) -> EngineResult<bool> {
     require_lock_pool(pool)?;
-    require_pending(pool, expected)?;
-    if now >= pool.lock.allocation.final_after {
+    let s = pool.lock;
+    if s.status != LockAllocationStatus::Pending {
+        return Err(EngineError::LockAllocationPhase);
+    }
+    if now >= s.final_after {
         return Err(EngineError::ChallengeWindowClosed);
     }
     if threshold == 0 {
         return Err(EngineError::InvalidFruitGovernance);
     }
-    let votes = pool
-        .lock
+    let votes = s
         .veto_count
         .checked_add(1)
         .ok_or(EngineError::MathOverflow)?;
-    if votes >= threshold {
-        pool.lock = LockState {
-            pool_id: pool.lock.pool_id,
-            generation: pool.lock.generation,
-            ..LockState::default()
-        };
-        return Ok(true);
+    if votes < threshold {
+        pool.lock.veto_count = votes;
+        return Ok(false);
     }
-    pool.lock.veto_count = votes;
-    Ok(false)
+    let generation = add(s.generation, 1)?;
+    pool.lock = LockState {
+        status: LockAllocationStatus::Weighing,
+        budget: s.budget,
+        generation,
+        total_reg_count: s.total_reg_count,
+        active_reg_count: s.active_reg_count,
+        active_requested_total: s.active_requested_total,
+        ..LockState::default()
+    };
+    Ok(true)
 }
 
-/// FINALIZE ALLOCATION after its window: the pool's Pending allocation must
-/// equal `expected` and revalidate in full; it then becomes Final, for good.
-/// Moves no lamports and does not touch `U` or `Z` (P7-L2).
-pub fn finalize_lock_allocation(
-    pool: &mut FruitPool,
-    expected: &LockAllocation,
-    now: i64,
-) -> EngineResult<LockAllocation> {
+fn summary(pool: &FruitPool) -> LockAllocation {
+    let s = pool.lock;
+    LockAllocation {
+        generation: s.generation,
+        budget: pool.budget,
+        active_reg_count: s.active_reg_count,
+        positive_count: s.positive_count,
+        active_requested_total: s.active_requested_total,
+        sum_ell: s.sum_ell,
+        h_lock: s.h_lock,
+        gross_allocatable: s.gross_allocatable,
+        assigned_total: s.assigned_total,
+    }
+}
+
+/// FINALIZE ALLOCATION (permissionless) after the challenge window, before
+/// any root: revalidates the whole tally, then Final for good. Moves no
+/// lamports and does not touch `U` or `Z` (P7-L2).
+pub fn finalize_lock_allocation(pool: &mut FruitPool, now: i64) -> EngineResult<LockAllocation> {
     require_lock_pool(pool)?;
-    require_pending(pool, expected)?;
-    if now < pool.lock.allocation.final_after {
+    if pool.lock.status != LockAllocationStatus::Pending {
+        return Err(EngineError::LockAllocationPhase);
+    }
+    if now < pool.lock.final_after {
         return Err(EngineError::ChallengeWindowOpen);
     }
     if pool.latest_version != 0 {
-        return Err(EngineError::InvalidFruitState);
+        return Err(EngineError::LockTallyInvalid);
     }
-    validate_allocation(pool, &pool.lock.allocation)?;
+    validate_tally(pool, &pool.lock)?;
     pool.lock.status = LockAllocationStatus::Final;
-    Ok(pool.lock.allocation)
+    Ok(summary(pool))
+}
+
+/// The pool's Final allocation, fully revalidated. The only source of lock
+/// capacity and of the forfeiture bound.
+pub fn lock_final_allocation(pool: &FruitPool) -> EngineResult<LockAllocation> {
+    if pool.kind != LedgerKind::Lock {
+        return Err(EngineError::InvalidLedgerKind);
+    }
+    if pool.lock.status != LockAllocationStatus::Final {
+        return Err(EngineError::LockAllocationNotFinal);
+    }
+    validate_tally(pool, &pool.lock)?;
+    Ok(summary(pool))
 }
 
 /// Lock cliff capacity at `checkpoint_time` from the pool's Final

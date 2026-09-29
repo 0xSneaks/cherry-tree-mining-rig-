@@ -1,9 +1,10 @@
-# Pass #7 — Lock decision amendment (P7-L1, P7-L2, rounding, F7)
+# Pass #7 — Lock decision amendment (P7-L1, P7-L2, rounding, F7, P7-B)
 
 Date: 2026-09-29. Founder decisions, frozen for Pass #7. Narrow amendment to
 `CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md` (§8, §10a, §12); it resolves
 only the conflicts quoted below and changes nothing else. Implemented by
-`crates/rigs-engine/src/fruit_lock.rs` (P7-A).
+`crates/rigs-engine/src/fruit_lock.rs` (P7-A) and
+`programs/sol-rigs/src/instructions/fruit_lock.rs` (P7-B).
 
 ## P7-L1 — Registration cutoff vs allocation finalization
 
@@ -73,33 +74,111 @@ forfeited        <= assigned_total - final_total
 - Rounding dust returns 100% to `Z` at close, with the rest of `unallocated`.
 - It is never eligible for the 80% treasury forfeiture transfer: the
   forfeiture bound is `assigned_total - final_total`, which excludes dust.
-- `gross_allocatable` is never treated as the sum of wallet awards. The
-  engine sees only `sum ell`, so the poster commits `assigned_total` with the
-  allocation; it is bounded by `gross_allocatable` and goes through the same
-  challenge/veto window as `H_lock`. Lock root capacity (the cliff) is
-  `assigned_total`.
+- `gross_allocatable` is never treated as the sum of wallet awards. Lock
+  root capacity (the cliff) is `assigned_total`.
+- Superseded in P7-B (see below): at 7a28be1 the poster committed
+  `assigned_total`, bounded only by `gross_allocatable` (verification
+  findings V-1 / V-2). Since P7-B the engine computes it; it is never an
+  input.
+
+## Authorization of the P7-A remediation (F1, F2, F3, F7)
+
+Date: 2026-09-29. The founder confirmed that F1, F2, F3 and F7 were
+authorized remediation findings for P7-A, and that the `programs/sol-rigs`
+changes of the remediation commit `7a28be1` (`Pool::accounting()` deriving
+the pool kind, and the two updated `t89` program tests) were authorized
+remediation. P7-A was accepted as verified at `7a28be1`.
+
+## P7-B — on-chain registration and exact allocation tally
+
+Date: 2026-09-29. Founder decisions and acceptance criteria, frozen.
+
+### V-1 / V-2 closure (acceptance criteria)
+
+`assigned_total` is never poster input. It is computed by the engine from
+authoritative on-chain registration state:
+
+1. Each wallet registers once per Season (`LockRegistration` PDA
+   `["lock_reg", pool, wallet]`, `0 < requested <= Kmax`).
+2. At or after `t_s` the poster posts, per active registration and once per
+   generation, `ell_i <= requested_i` (the `t_s` snapshot weight).
+3. Weights seal only when every active registration is weighed; the engine
+   then fixes `H_lock` and `gross_allocatable`.
+4. The permissionless award pass computes `A_i = floor(B * 5 ell_i / H_lock)`
+   per registration, once per generation, and adds it to `assigned_total`.
+5. Awards seal only when every active registration is awarded; the tally is
+   revalidated in full (counts, recomputed `H_lock` / gross, `budget`,
+   `assigned_total <= gross <= B`, and the additional invariant
+   `assigned_total >= gross - (positive_count - 1)`) and the challenge window
+   opens. Finalization revalidates again and is write-once.
+
+Hence `assigned_total = sum_i floor(A_i)` exactly and
+`dust = gross_allocatable - assigned_total` exactly. The forfeiture bound is
+`assigned_total - final_total`, so no poster value can reclassify dust as
+forfeiture or route it to the treasury. The poster still attests each
+`ell_i` (inherent: `w_i(t_s)` is off-chain history), visible per wallet on
+its registration account and subject to the veto window.
+
+### D-B1 — cancellation window (approved)
+
+Cancellation is allowed only during `[FRUIT_T0, t_s)`. At `t_s`
+registrations become immutable. Accounting:
+
+- `total_reg_count` counts every registration ever made; `active_reg_count`
+  and `active_requested_total` cover non-cancelled ones.
+- A first valid cancellation atomically marks the registration cancelled,
+  decrements `active_reg_count` once and subtracts its `requested` from
+  `active_requested_total` (checked; an underflow is corrupt state and fails
+  closed). A repeated cancellation fails without mutation.
+- The registration account is kept, so the wallet cannot register again.
+- Cancelled registrations cannot be weighed or awarded; both seals compare
+  against `active_reg_count`. Counters freeze at `t_s`, and every veto
+  re-tally runs over the same frozen active set.
+- **Zero-active path.** If every registration is cancelled (or none is
+  made), at or after `t_s` the empty tally seals with `sum ell = 0`,
+  `H_lock` at the floor and `gross = assigned = 0`, and finalizes after the
+  challenge window like any allocation. A zero-total complete root then
+  closes the pool with all of `B_lock` returned to `Z` (P7-D wires the lock
+  root / close path).
+
+### D-B2 / D-B3 / D-B4 / D-B5
+
+- D-B2 (approved default): registration accounts stay open; no refund-close
+  yet (addable later without a layout change).
+- D-B3 (approved default): no minimum weight and no registration cap.
+  Registration-spam / liveness risk: every active registration must be
+  weighed and awarded before the allocation can finalize, so a large number
+  of registrations lengthens the tally (about `n / 24` weight transactions
+  and `n / 24` award transactions). Each spam registration costs its creator
+  the account rent; counters are checked. A tally that is never completed
+  keeps all of `B_lock` reserved in `U` (fail closed), it never releases it.
+- D-B4 (approved): the award pass, both seals and finalization are
+  permissionless; posting weights is root-poster only; veto uses the Fruit
+  veto set.
+- D-B5: deferred to P7-C / P7-D.
 
 ## Allocation lifecycle (engine, pool-owned)
 
-The allocation lifecycle is stored on the lock pool itself, never inferred
-from a numeric total:
+Since P7-B the lifecycle is a tally, stored on the lock pool (on-chain: the
+pool's `LockSeason` PDA `["lock_season", pool]`), never inferred from a
+numeric total:
 
 ```text
-Uninitialized --post--> Pending(generation g) --finalize--> Final (terminal)
-                           +--veto at threshold--> Uninitialized (g retired)
+Registering --t_s--> Weighing(g) --seal--> Awarding(g) --seal--> Pending(g) --window--> Final
+                        ^                                            |
+                        +---------- veto at threshold: g+1 ----------+
 ```
 
-- Posting records the whole commitment (pool identity, generation, budget,
-  `sum ell`, requested total, `H_lock`, `gross_allocatable`,
-  `assigned_total`, window) on the pool.
-- Veto and finalize act only on the pool's own Pending commitment and must be
-  handed exactly that commitment, so a stale copy, a vetoed generation or an
-  allocation from another pool cannot finalize.
-- Finalize revalidates every committed field; Final is written explicitly and
-  is permanent, including a Final allocation of zero.
+- Final is written explicitly and is permanent, including a Final zero
+  allocation; `Pool.h_lock` mirrors the Final `H_lock` and must agree with
+  the Season on every read.
 - Lock pools are created only by `commit_lock_pool` (window derived from
-  `FRUIT_T0`). The generic `post_root` and `terminal_resolution` refuse lock
+  `launch_t0`). The generic `post_root` and `terminal_resolution` refuse lock
   pools; roots, terminal resolution and close of a lock pool read only the
   pool's Final allocation.
+- No account layout changes: `Pool`, `FruitConfig`, `Ledger`, `Root` and
+  `ClaimRecord` are unchanged, `LockSeason` and `LockRegistration` are new,
+  `FRUIT_STATE_VERSION` stays 1; no migration.
 
-This records engine behavior only; it changes no rule of the architecture.
+This records engine and program behavior only; it changes no rule of the
+architecture.

@@ -94,6 +94,13 @@ pub const FRUIT_POOL_SEED: &[u8] = b"fruit_pool";
 pub const FRUIT_ROOT_SEED: &[u8] = b"fruit_root";
 /// FRUIT CLAIM RECORD PDA: `["fruit_claim", pool, wallet]`.
 pub const FRUIT_CLAIM_SEED: &[u8] = b"fruit_claim";
+/// LOCK SEASON PDA: `["lock_season", pool]`. One per lock pool.
+pub const LOCK_SEASON_SEED: &[u8] = b"lock_season";
+/// LOCK REGISTRATION PDA: `["lock_reg", pool, wallet]`. One per wallet per
+/// Season, never closed (D-B2), so a cancelled wallet cannot re-register.
+pub const LOCK_REG_SEED: &[u8] = b"lock_reg";
+/// Lock batches (weights / awards) per instruction.
+pub const MAX_LOCK_BATCH: usize = 24;
 
 /// Layout version carried by every Fruit account. Every Fruit instruction
 /// refuses an account whose version differs (fail closed); a future layout

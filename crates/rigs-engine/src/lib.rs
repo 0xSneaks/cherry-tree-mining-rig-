@@ -49,12 +49,14 @@ pub use fruit::{
     P_REF_LAMPORTS, QMAX_DEN, QMAX_NUM,
 };
 pub use fruit_lock::{
-    commit_lock_pool, finalize_lock_allocation, lock_allocation, lock_award, lock_capacity,
-    lock_final_allocation, lock_h, lock_registration_open, lock_safety_vest, lock_season_start,
-    lock_vest_at_maturity, post_lock_allocation, post_lock_root, root_capacity,
-    terminal_lock_resolution, validate_lock_window, veto_lock_allocation, LockAllocation,
-    LockAllocationStatus, LockState, SafetyRelease, LOCK_DAYS, LOCK_DURATION_SECONDS,
-    LOCK_HFLOOR_LAMPORTS, LOCK_H_FLOOR_LAMPORT_DAYS, LOCK_KMAX_LAMPORTS, LOCK_SEASON_OFFSET,
+    award_lock_registration, cancel_lock, commit_lock_pool, finalize_lock_allocation,
+    lock_allocation, lock_award, lock_capacity, lock_final_allocation, lock_h,
+    lock_registration_open, lock_safety_vest, lock_season_start, lock_vest_at_maturity,
+    post_lock_root, post_lock_weight, register_lock, root_capacity, seal_lock_awards,
+    seal_lock_weights, terminal_lock_resolution, validate_lock_window, veto_lock_allocation,
+    LockAllocation, LockAllocationStatus, LockRegistrationState, LockState, SafetyRelease,
+    LOCK_DAYS, LOCK_DURATION_SECONDS, LOCK_HFLOOR_LAMPORTS, LOCK_H_FLOOR_LAMPORT_DAYS,
+    LOCK_KMAX_LAMPORTS, LOCK_SEASON_OFFSET,
 };
 pub use fruit_schedule::{
     fruit_t0, plan_fruit, validate_plan, EpochKind, FruitEpoch, FruitPlan, PlanKind,

@@ -305,3 +305,89 @@ pub struct LockForfeitReleased {
     pub treasury_release: u64,
     pub treasury: Pubkey,
 }
+
+// --- Lock Season (Pass #7 P7-B) ---
+
+#[event]
+pub struct LockPoolCommitted {
+    pub pool: Pubkey,
+    pub season: Pubkey,
+    pub pool_id: u64,
+    pub budget: u64,
+    pub t_start: i64,
+    pub t_end: i64,
+    pub fruit_t0: i64,
+}
+
+#[event]
+pub struct LockRegistered {
+    pub pool: Pubkey,
+    pub wallet: Pubkey,
+    pub requested: u64,
+    pub active_reg_count: u64,
+    pub active_requested_total: u64,
+}
+
+#[event]
+pub struct LockCancelled {
+    pub pool: Pubkey,
+    pub wallet: Pubkey,
+    pub requested: u64,
+    pub active_reg_count: u64,
+    pub active_requested_total: u64,
+}
+
+#[event]
+pub struct LockWeightsPosted {
+    pub pool: Pubkey,
+    pub generation: u64,
+    pub count: u32,
+    pub weighed_count: u64,
+    pub sum_ell: u64,
+}
+
+#[event]
+pub struct LockWeightsSealed {
+    pub pool: Pubkey,
+    pub generation: u64,
+    pub sum_ell: u64,
+    pub h_lock: u64,
+    pub gross_allocatable: u64,
+}
+
+#[event]
+pub struct LockAwardsComputed {
+    pub pool: Pubkey,
+    pub generation: u64,
+    pub count: u32,
+    pub awarded_count: u64,
+    pub assigned_total: u64,
+}
+
+#[event]
+pub struct LockAwardsSealed {
+    pub pool: Pubkey,
+    pub generation: u64,
+    pub assigned_total: u64,
+    pub rounding_dust: u64,
+    pub final_after: i64,
+}
+
+#[event]
+pub struct LockAllocationVetoVote {
+    pub pool: Pubkey,
+    pub generation: u64,
+    pub signer: Pubkey,
+    pub veto_count: u8,
+    pub vetoed: bool,
+}
+
+#[event]
+pub struct LockAllocationFinalized {
+    pub pool: Pubkey,
+    pub generation: u64,
+    pub h_lock: u64,
+    pub gross_allocatable: u64,
+    pub assigned_total: u64,
+    pub rounding_dust: u64,
+}

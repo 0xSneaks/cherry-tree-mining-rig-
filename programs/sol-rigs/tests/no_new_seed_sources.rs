@@ -1,7 +1,8 @@
 //! Frozen-architecture test 11: only base rewards compound.
 //!
-//! No loyalty, lock, bonus or referral-commission instruction exists in this
-//! program. The Fruit ledger instructions (§10a) are an exact, reviewed set
+//! No loyalty or bonus instruction exists in this program; the lock Season
+//! instructions (§8, Pass #7 P7-B) and the single referral-commission payout
+//! are exact, reviewed sets. The Fruit ledger instructions (§10a) are an exact, reviewed set
 //! whose sources never touch a miner position, a seed count, a base vault or
 //! the compound path, and no base instruction touches a Fruit account. The
 //! only ways a seed count changes are the two capped engine transitions
@@ -29,8 +30,16 @@ const FRUIT_SOURCES: &[(&str, &str)] = &[
         include_str!("../src/instructions/fruit_claim.rs"),
     ),
     (
+        "instructions/fruit_lock.rs",
+        include_str!("../src/instructions/fruit_lock.rs"),
+    ),
+    (
         "engine fruit.rs",
         include_str!("../../../crates/rigs-engine/src/fruit.rs"),
+    ),
+    (
+        "engine fruit_lock.rs",
+        include_str!("../../../crates/rigs-engine/src/fruit_lock.rs"),
     ),
 ];
 const PROGRAM_SOURCES: &[(&str, &str)] = &[
@@ -114,6 +123,22 @@ const FRUIT_INSTRUCTIONS: &[&str] = &[
     "withdraw_fruit_reserve",
 ];
 
+/// The lock Season instructions (§8, Pass #7 P7-B): an exact set. They live
+/// in `instructions/fruit_lock.rs`, which is a Fruit source, so the
+/// no-seed / no-base-vault rule below covers them. None is a claim, a
+/// compound or a lamport outflow.
+const LOCK_INSTRUCTIONS: &[&str] = &[
+    "award_lock_registrations",
+    "cancel_lock",
+    "commit_lock_pool",
+    "finalize_lock_allocation",
+    "post_lock_weights",
+    "register_lock",
+    "seal_lock_awards",
+    "seal_lock_weights",
+    "veto_lock_allocation",
+];
+
 #[test]
 fn the_instruction_set_has_no_bonus_lock_or_commission_path() {
     let mut ixs = program_instructions();
@@ -139,9 +164,17 @@ fn the_instruction_set_has_no_bonus_lock_or_commission_path() {
         "withdraw_fees",
     ];
     expected.extend_from_slice(FRUIT_INSTRUCTIONS);
+    expected.extend_from_slice(LOCK_INSTRUCTIONS);
     expected.sort();
     assert_eq!(ixs, expected);
-    for banned in ["loyalty", "lock", "bonus"] {
+    // Every instruction naming a lock is one of the reviewed lock set.
+    for i in ixs.iter().filter(|i| i.contains("lock")) {
+        assert!(
+            LOCK_INSTRUCTIONS.contains(&i.as_str()),
+            "unreviewed lock instruction {i}"
+        );
+    }
+    for banned in ["loyalty", "bonus"] {
         assert!(
             !ixs.iter().any(|i| i.contains(banned)),
             "a `{banned}` instruction exists; it must never create seeds"

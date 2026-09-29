@@ -335,6 +335,65 @@ pub mod sol_rigs {
         instructions::fruit_ledger::withdraw_fruit_reserve(ctx, kind, amount)
     }
 
+    // --- Lock Season (§8; Pass #7 P7-B) ---
+
+    /// COMMIT the Season's lock pool (window derived from `launch_t0`) and
+    /// its `LockSeason`. Fruit admin only; before `t_s`.
+    pub fn commit_lock_pool(
+        ctx: Context<CommitLockPool>,
+        pool_id: u64,
+        budget: u64,
+        reference_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::fruit_lock::commit_lock_pool(ctx, pool_id, budget, reference_hash)
+    }
+
+    /// Register lock intent inside `[FRUIT_T0, t_s)`. One per wallet.
+    pub fn register_lock(ctx: Context<RegisterLock>, requested: u64) -> Result<()> {
+        instructions::fruit_lock::register_lock(ctx, requested)
+    }
+
+    /// Cancel a registration inside `[FRUIT_T0, t_s)`, once. No re-registration.
+    pub fn cancel_lock(ctx: Context<CancelLock>) -> Result<()> {
+        instructions::fruit_lock::cancel_lock_registration(ctx)
+    }
+
+    /// Post `ell_i` for a batch of registrations (remaining accounts). Root
+    /// poster only; at or after `t_s`.
+    pub fn post_lock_weights<'info>(
+        ctx: Context<'_, '_, 'info, 'info, PostLockWeights<'info>>,
+        weights: Vec<u64>,
+    ) -> Result<()> {
+        instructions::fruit_lock::post_lock_weights(ctx, weights)
+    }
+
+    /// Seal the weights once every active registration is weighed.
+    pub fn seal_lock_weights(ctx: Context<LockTallyStep>) -> Result<()> {
+        instructions::fruit_lock::seal_lock_weights(ctx)
+    }
+
+    /// Compute and add awards for a batch of registrations. Permissionless.
+    pub fn award_lock_registrations<'info>(
+        ctx: Context<'_, '_, 'info, 'info, LockTallyStep<'info>>,
+    ) -> Result<()> {
+        instructions::fruit_lock::award_lock_registrations(ctx)
+    }
+
+    /// Seal the awards; opens the allocation's challenge window.
+    pub fn seal_lock_awards(ctx: Context<LockTallyStep>) -> Result<()> {
+        instructions::fruit_lock::seal_lock_awards(ctx)
+    }
+
+    /// One veto signature against the Pending lock allocation.
+    pub fn veto_lock_allocation(ctx: Context<VetoLockAllocation>) -> Result<()> {
+        instructions::fruit_lock::veto_lock_allocation(ctx)
+    }
+
+    /// Finalize the lock allocation after its window. Permissionless.
+    pub fn finalize_lock_allocation(ctx: Context<LockTallyStep>) -> Result<()> {
+        instructions::fruit_lock::finalize_lock_allocation(ctx)
+    }
+
     /// Pause or resume one Fruit ledger (pools, roots, finalize, close).
     pub fn set_fruit_paused(ctx: Context<FruitAdminOnly>, kind: u8, paused: bool) -> Result<()> {
         instructions::fruit_ledger::set_fruit_paused(ctx, kind, paused)

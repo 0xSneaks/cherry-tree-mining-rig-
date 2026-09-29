@@ -86,28 +86,39 @@ impl Sim {
     /// `t_end = 1_000 + 5 days`).
     fn commit_lock(&mut self, e: u64, now: i64) -> EngineResult<usize> {
         let fruit_t0 = 1_000 - LOCK_SEASON_OFFSET;
-        let id = self.pools.len() as u64;
-        let p = commit_lock_pool(&mut self.ledger, id, e, fruit_t0, now)?;
+        let p = commit_lock_pool(&mut self.ledger, e, fruit_t0, now)?;
         self.pools.push((p, Vec::new(), vec![0; self.wallets]));
         self.check();
         Ok(self.pools.len() - 1)
     }
 
-    /// Establish a lock pool's Final allocation with `assigned_total` wallet
-    /// awards through the real post/finalize path. `sum ell` at the floor
-    /// makes `gross_allocatable = E`.
-    fn allocate(&mut self, i: usize, assigned_total: u64) -> EngineResult<()> {
+    /// Establish a lock pool's Final allocation whose engine-computed
+    /// `assigned_total` is exactly `target`, through the real register /
+    /// weigh / award / finalize path (Pass #7 P7-B: the total is never an
+    /// input). Weights keep `sum ell <= 12.5 SOL`, so `H_lock` is the floor
+    /// and each award is `floor(E * ell / 12.5 SOL)`; the fixtures pick
+    /// targets for which that is exact.
+    fn allocate(&mut self, i: usize, target: u64) -> EngineResult<()> {
         let p = &mut self.pools[i].0;
-        let ts = p.t_start;
-        let a = post_lock_allocation(
-            p,
-            LOCK_HFLOOR_LAMPORTS,
-            LOCK_HFLOOR_LAMPORTS,
-            assigned_total,
-            ts,
-            WINDOW,
-        )?;
-        finalize_lock_allocation(p, &a, ts + WINDOW)?;
+        let e = p.budget;
+        let (fruit_t0, ts) = (p.t_start - LOCK_SEASON_OFFSET, p.t_start);
+        let mut need = (target as u128 * LOCK_HFLOOR_LAMPORTS as u128 / e as u128) as u64;
+        let mut regs = Vec::new();
+        while need > 0 {
+            let ell = need.min(LOCK_KMAX_LAMPORTS);
+            regs.push((register_lock(p, ell, fruit_t0)?, ell));
+            need -= ell;
+        }
+        for (r, ell) in regs.iter_mut() {
+            post_lock_weight(p, r, *ell, ts)?;
+        }
+        seal_lock_weights(p, ts)?;
+        for (r, _) in regs.iter_mut() {
+            award_lock_registration(p, r)?;
+        }
+        seal_lock_awards(p, ts, WINDOW)?;
+        let a = finalize_lock_allocation(p, ts + WINDOW)?;
+        assert_eq!(a.assigned_total, target, "fixture target not exact");
         self.check();
         Ok(())
     }
@@ -801,7 +812,7 @@ fn lock_forfeit_releases_eighty_percent_to_treasury() {
     // No allocation established: the lock pool takes no root at all.
     assert_eq!(
         sim.post_forfeit(i, 1, t1, total, true, 1, t1),
-        Err(EngineError::InvalidFruitState)
+        Err(EngineError::LockAllocationNotFinal)
     );
     // A core pool never carries forfeiture.
     let mut core = Sim::new(1);
@@ -811,14 +822,11 @@ fn lock_forfeit_releases_eighty_percent_to_treasury() {
         core.post_forfeit(k, 1, t1, total, true, 1, t1),
         Err(EngineError::InvalidForfeited)
     );
-    // Assigned awards above gross_allocatable (= E here): rejected.
-    assert_eq!(
-        sim.allocate(i, e + 1),
-        Err(EngineError::RootExceedsCapacity)
-    );
+    // `sum A_i` is computed by the engine from the registrations (P7-B);
+    // there is no allocation input to overstate.
     assert_eq!(
         sim.pools[i].0.lock.status,
-        LockAllocationStatus::Uninitialized
+        LockAllocationStatus::Registering
     );
     sim.allocate(i, sum_a).unwrap();
 
@@ -886,11 +894,11 @@ fn lock_forfeit_bound_is_tight_and_rechecked_at_close() {
     );
     // Tamper: the allocation is withdrawn (not Final): no close at all.
     let mut tampered = sim.clone_pool(i);
-    tampered.lock.status = LockAllocationStatus::Uninitialized;
+    tampered.lock.status = LockAllocationStatus::Pending;
     let mut ledger = sim.ledger;
     assert_eq!(
         close_pool(&mut ledger, &mut tampered, t1 + WINDOW),
-        Err(EngineError::InvalidFruitState)
+        Err(EngineError::LockAllocationNotFinal)
     );
 
     let out = sim.close_full(i, t1 + WINDOW).unwrap();

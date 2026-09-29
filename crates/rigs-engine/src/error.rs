@@ -116,6 +116,35 @@ pub enum EngineError {
     /// A root's `forfeited` exceeds the capacity it releases, or is set on a
     /// root that is not marked complete.
     InvalidForfeited,
+    // --- Lock Season (architecture §8; Pass #7 P7-B). Appended. ---
+    /// Lock registration or cancellation outside `[FRUIT_T0, t_s)`.
+    LockRegistrationClosed,
+    /// Requested lock weight is zero or above `Kmax`.
+    InvalidLockRequest,
+    /// A lock weight, award input or `H_lock` is out of range.
+    InvalidLockWeight,
+    /// The lock registration is cancelled.
+    LockRegistrationCancelled,
+    /// The lock allocation is not in the phase this operation requires.
+    LockAllocationPhase,
+    /// Lock weights are posted and sealed only at or after `t_s`.
+    LockSeasonNotStarted,
+    /// The registration was already weighed in this generation.
+    LockAlreadyWeighed,
+    /// A posted weight exceeds the registration's requested weight.
+    LockWeightExceedsRequest,
+    /// Not every active registration is weighed / awarded in this generation.
+    LockTallyIncomplete,
+    /// The registration was not weighed in this generation.
+    LockNotWeighed,
+    /// The registration was already awarded in this generation.
+    LockAlreadyAwarded,
+    /// The lock pool has no Final allocation.
+    LockAllocationNotFinal,
+    /// Stored lock tally fails revalidation.
+    LockTallyInvalid,
+    /// Safety release while the EXTREME dwell period is unset.
+    LockSafetyReleaseDisabled,
 }
 
 impl fmt::Display for EngineError {
@@ -176,6 +205,24 @@ impl fmt::Display for EngineError {
             EngineError::FeeTimelockActive => "the 72-hour fee-change timelock has not elapsed",
             EngineError::InvalidForfeited => {
                 "forfeited must be on a complete root and within released capacity"
+            }
+            EngineError::LockRegistrationClosed => "lock registration is closed",
+            EngineError::InvalidLockRequest => "requested lock weight must be in (0, 2.5 SOL]",
+            EngineError::InvalidLockWeight => "lock weight or H_lock out of range",
+            EngineError::LockRegistrationCancelled => "lock registration is cancelled",
+            EngineError::LockAllocationPhase => "lock allocation is in the wrong phase",
+            EngineError::LockSeasonNotStarted => "lock season has not started",
+            EngineError::LockAlreadyWeighed => "registration already weighed this generation",
+            EngineError::LockWeightExceedsRequest => "lock weight exceeds the requested weight",
+            EngineError::LockTallyIncomplete => {
+                "lock tally does not cover every active registration"
+            }
+            EngineError::LockNotWeighed => "registration not weighed this generation",
+            EngineError::LockAlreadyAwarded => "registration already awarded this generation",
+            EngineError::LockAllocationNotFinal => "lock pool has no final allocation",
+            EngineError::LockTallyInvalid => "lock tally failed revalidation",
+            EngineError::LockSafetyReleaseDisabled => {
+                "lock safety release is disabled until the EXTREME dwell is set"
             }
         };
         f.write_str(s)

@@ -528,6 +528,17 @@ fn exploit_referral_payout_surface_is_exactly_claim_commission() {
         "set_fruit_paused",
         "veto_fruit_root",
         "withdraw_fruit_reserve",
+        // Lock Season (§8, Pass #7 P7-B): registration and the on-chain
+        // allocation tally; no claim, compound or referral path.
+        "award_lock_registrations",
+        "cancel_lock",
+        "commit_lock_pool",
+        "finalize_lock_allocation",
+        "post_lock_weights",
+        "register_lock",
+        "seal_lock_awards",
+        "seal_lock_weights",
+        "veto_lock_allocation",
     ];
     expected.sort_unstable();
     assert_eq!(fns, expected);

@@ -501,6 +501,7 @@ fn p6r4_kernel_rejects_not_earned_over_registered_wallets() {
     )
     .unwrap();
     assert!(s.not_earned_lamports > 0);
+    assert!(s.conserves(513_698_631));
 }
 
 // ------------------------------------------------- P6-D5 (settlement math)

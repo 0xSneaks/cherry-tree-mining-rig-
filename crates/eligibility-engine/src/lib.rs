@@ -46,6 +46,7 @@ pub mod pricing;
 pub mod rational;
 pub mod replay;
 pub mod safe_mode;
+pub mod settlement;
 pub mod types;
 pub mod valuation;
 
@@ -66,12 +67,19 @@ pub use pricing::{
 };
 pub use rational::Ratio;
 pub use replay::{
-    order_events, replay, Eligibility, EligibilityConfig, IneligibleReason, IntervalStatus,
-    PendingReason, PoolInterval, ReplayReport, Segment, WalletAccrual,
+    order_events, replay, replay_epoch, Eligibility, EligibilityConfig, EpochCarry, EpochReplay,
+    IneligibleReason, IntervalStatus, PendingReason, PoolInterval, ReplayReport, Segment,
+    WalletAccrual,
 };
 pub use safe_mode::{
     authorize_entry, leverage_for_cr, zone_for_cr, EntryDecision, EntryDenial, ExtremeCondition,
     ExtremeTracker, QuoteStatus, RiskZone, RouteCheck, SafeModeBoundaries,
+};
+pub use settlement::{
+    apr_pool, apr_weight, classify_outage, classify_segment, recognized_weight, settle_epoch,
+    shared_denominator, weight_inputs, EpochApr, EpochInterval, EpochSettlement, IntervalVerdict,
+    OutageClass, OutageEvidence, Participant, WalletSettlement, APR_PERCENT_SCALE, DAY_SECONDS,
+    DENOMINATOR_FLOOR, P_REF_LAMPORTS, SEED_BENCHMARK_M, SEED_THRESHOLD_T,
 };
 pub use types::{
     AccountSnapshot, Addr, Authority, DebtAmount, EncumbranceKind, Event, EventKey, EventKind,

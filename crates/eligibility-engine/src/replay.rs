@@ -1,6 +1,8 @@
 //! Global ownership timeline replay and equity integration (section 5,
 //! tests 16–29; Pass #5 adds reference pricing, Safe Mode resets and route
-//! halts, tests 30–39).
+//! halts, tests 30–39; Pass #6 adds epoch-level selection gating and the
+//! epoch-boundary carry, architecture §5 "switching is effective next
+//! epoch").
 //!
 //! * Events are totally ordered by `(slot, tx, ix, inner)`; each slot has
 //!   one `unix_timestamp`. State between two consecutive events holds for
@@ -16,6 +18,12 @@
 //!   Intervals after the last checkpoint are PENDING (not yet reconciled).
 //! * Per wallet: `X = max(0, sum A*G - D)`, with `G` from recognized units
 //!   of the selected asset and `D` netted once across the debt registry.
+//! * Selection gating (Pass #6, P6-D3): one selected asset per wallet per
+//!   epoch. A wallet's FIRST activation of an epoch (or the selection
+//!   carried in across the boundary) fixes that epoch's asset; a later
+//!   `Register` naming a different asset is a deferred switch, effective
+//!   NEXT epoch — including after an exit, so exit + re-register cannot
+//!   buy an immediate same-epoch switch. Exiting itself is immediate.
 //! * Valuation (Pass #5): units are carried as FIFO lots. Units held at the
 //!   reference timestamp use the committed reference price; units added or
 //!   registered after it use `min(reference, verified price at the event)`
@@ -208,6 +216,14 @@ struct State<'a> {
     /// consistent checkpoint).
     in_sync: bool,
     registrations: BTreeMap<Addr, AssetKind>,
+    /// The one asset each wallet may activate THIS epoch (Pass #6, P6-D3):
+    /// fixed at the wallet's first activation of the epoch (or by the
+    /// selection carried in across the boundary). A `Register` naming any
+    /// other asset is deferred to the next epoch.
+    anchors: BTreeMap<Addr, AssetKind>,
+    /// Deferred next-epoch selections: a switch requested during this
+    /// epoch (possibly after an exit). Never active within this epoch.
+    deferred: BTreeMap<Addr, AssetKind>,
     debt: DebtBook,
     unknown_assets: BTreeSet<AssetKind>,
     /// Latest observed version of every pinned program.
@@ -484,6 +500,41 @@ impl State<'_> {
         Ok(())
     }
 
+    /// Beneficiary-bucket credits with the same registration anchoring as
+    /// [`Self::credit_anchored`], for checkpoint adoption: the holder key
+    /// IS the beneficiary wallet (there is no token account to look up).
+    /// Pre-reference (Reference-basis) credits of a wallet whose selection
+    /// is active are anchored, so a redundant mid-epoch re-registration can
+    /// never reprice them (Pass #6 carry-in equivalence: a selection
+    /// carried across the boundary behaves exactly like a registration at
+    /// the boundary). For every non-carry flow this marking is idempotent —
+    /// an already-registered wallet's keys were marked by its registration
+    /// event — so verified Pass #4/#5 behavior is unchanged.
+    fn credit_beneficiary_anchored(
+        &mut self,
+        mint: Addr,
+        beneficiary: Addr,
+        units: u64,
+        price: Option<UnitPrice>,
+        basis: LotBasis,
+        pending: bool,
+    ) -> EligibilityResult<()> {
+        if pending {
+            self.lots
+                .credit_pending(mint, beneficiary, units, price, basis)?;
+        } else {
+            self.lots.credit(mint, beneficiary, units, price, basis)?;
+        }
+        if basis == LotBasis::Reference {
+            if let Some(adapter) = self.config.adapter_of_mint(&mint) {
+                if self.registrations.get(&beneficiary) == Some(&adapter.asset) {
+                    self.lots.mark_registered(mint, &[beneficiary]);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Keep lots in step with a token event that the ledger just applied.
     fn apply_lots(&mut self, kind: &EventKind, ts: i64) -> EligibilityResult<()> {
         match kind {
@@ -664,20 +715,27 @@ impl State<'_> {
             let cur = self.lots.units(*mint, *beneficiary);
             if *active > cur {
                 let (price, basis) = self.acquisition(mint, ts)?;
-                self.lots
-                    .credit(*mint, *beneficiary, *active - cur, price, basis)?;
+                self.credit_beneficiary_anchored(
+                    *mint,
+                    *beneficiary,
+                    *active - cur,
+                    price,
+                    basis,
+                    false,
+                )?;
             } else if cur > *active {
                 self.lots.consume(*mint, *beneficiary, cur - *active)?;
             }
             let cur_pending = self.lots.pending_units(*mint, *beneficiary);
             if *pending > cur_pending {
                 let (price, basis) = self.acquisition(mint, ts)?;
-                self.lots.credit_pending(
+                self.credit_beneficiary_anchored(
                     *mint,
                     *beneficiary,
                     *pending - cur_pending,
                     price,
                     basis,
+                    true,
                 )?;
             } else if cur_pending > *pending {
                 self.lots
@@ -691,10 +749,35 @@ impl State<'_> {
         let ts = ev.unix_timestamp;
         match &ev.kind {
             EventKind::Register { wallet, asset } => {
-                self.registrations.insert(*wallet, *asset);
-                self.registration_rebase(wallet, *asset, ts)?;
+                // Epoch-level selection gating (Pass #6, P6-D3). First
+                // activation of the epoch, or re-activation of the epoch's
+                // anchored asset (a duplicate, or a rejoin after an exit):
+                // immediate — "a later join accrues only from its
+                // finalized registration" (§5), and the rebase is a no-op
+                // for already-anchored holders (Pass #5). A registration
+                // naming a DIFFERENT asset is a switch: effective next
+                // epoch, never within this one.
+                match self.anchors.get(wallet) {
+                    None => {
+                        self.anchors.insert(*wallet, *asset);
+                        self.registrations.insert(*wallet, *asset);
+                        self.registration_rebase(wallet, *asset, ts)?;
+                    }
+                    Some(&anchored) if anchored == *asset => {
+                        self.registrations.insert(*wallet, *asset);
+                        self.registration_rebase(wallet, *asset, ts)?;
+                    }
+                    Some(_) => {
+                        self.deferred.insert(*wallet, *asset);
+                    }
+                }
             }
             EventKind::Exit { wallet } => {
+                // Exiting is always permitted and ends eligibility
+                // immediately (§5). The epoch's anchor SURVIVES the exit,
+                // so a later same-epoch registration of a different asset
+                // is still a deferred switch: exit + re-register must not
+                // permit an immediate same-epoch switch (P6-D3).
                 self.registrations.remove(wallet);
             }
             EventKind::DebtObserved {
@@ -818,12 +901,74 @@ fn dt(start: i64, end: i64) -> EligibilityResult<u64> {
 
 /// Replay `events` and integrate eligibility up to `end` (exclusive).
 /// `references` are the committed epoch reference prices (section 5).
+///
+/// One replay is ONE epoch's settlement context (Pass #6, P6-D7): no
+/// selection state comes in, so every wallet's first `Register` of the
+/// timeline is its first activation of the epoch (immediate). Chained
+/// epochs use [`replay_epoch`] with the previous epoch's
+/// [`EpochCarry`].
 pub fn replay(
     config: &EligibilityConfig,
     references: &EpochReferences,
     events: Vec<Event>,
     end: i64,
 ) -> EligibilityResult<ReplayReport> {
+    Ok(replay_inner(config, references, EpochCarry::default(), events, end)?.report)
+}
+
+/// Selection and Safe-Mode state that crosses an epoch boundary (Pass #6,
+/// P6-D3 / P6-D7). Holdings, debt and seed counts also carry across epochs,
+/// but they do so as chain state re-observed by the next epoch's
+/// checkpoints — lot history is never mutated across epochs (P6-D7).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EpochCarry {
+    /// The selection in force for each wallet at the boundary: its
+    /// deferred switch (requested last epoch, effective now) or, failing
+    /// that, its still-active selection. Seeded as both the active
+    /// selection and the epoch's anchor.
+    pub selections: BTreeMap<Addr, AssetKind>,
+    /// Mints whose required route was halted when the epoch ended. A halt
+    /// persists across the boundary until a `RouteResumed` event lifts it
+    /// (P6-D7); it is not erased by a new reference commit.
+    pub halted_mints: BTreeSet<Addr>,
+    /// Emergency/reset price overrides still in force at the boundary.
+    /// Superseded here by the new epoch's committed reference for the same
+    /// key (P6-D7: "until superseded by a later committed reference").
+    pub active_prices: BTreeMap<PriceKey, UnitPrice>,
+}
+
+/// The result of one epoch's replay: its report plus the state to carry
+/// into the next epoch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EpochReplay {
+    pub report: ReplayReport,
+    pub carry: EpochCarry,
+}
+
+/// Replay ONE epoch of a chained sequence with the previous epoch's
+/// [`EpochCarry`] (Pass #6). The carried selections are active from the
+/// boundary — a switch requested last epoch is effective now, with no
+/// registration event of its own — and anchor pre-reference credits exactly
+/// like a registration at the boundary would. Carried route halts stay in
+/// force; carried reset prices survive only where the new epoch did not
+/// commit a fresh reference.
+pub fn replay_epoch(
+    config: &EligibilityConfig,
+    references: &EpochReferences,
+    carry: EpochCarry,
+    events: Vec<Event>,
+    end: i64,
+) -> EligibilityResult<EpochReplay> {
+    replay_inner(config, references, carry, events, end)
+}
+
+fn replay_inner(
+    config: &EligibilityConfig,
+    references: &EpochReferences,
+    carry: EpochCarry,
+    events: Vec<Event>,
+    end: i64,
+) -> EligibilityResult<EpochReplay> {
     let events = order_events(events)?;
     // Fail closed on versions: every pinned external program (adapter or
     // registry) is UNKNOWN until a finalized observation matches its pin.
@@ -837,18 +982,33 @@ pub fn replay(
         .filter(|a| !a.pins.is_empty())
         .map(|a| a.asset)
         .collect();
+    // Carried selections are both the active selection and the epoch's
+    // anchor: this epoch can no longer switch them. Carried halts apply
+    // only to mints a configured adapter still claims. A carried reset
+    // price survives only where this epoch's references did not supersede
+    // it with a fresh committed reference.
     let mut st = State {
         config,
         references,
         ledger: Ledger::default(),
         in_sync: true,
-        registrations: BTreeMap::new(),
+        registrations: carry.selections.clone(),
+        anchors: carry.selections,
+        deferred: BTreeMap::new(),
         debt,
         unknown_assets,
         observed_versions: BTreeMap::new(),
-        active: BTreeMap::new(),
+        active: carry
+            .active_prices
+            .into_iter()
+            .filter(|(k, _)| references.get(k).is_none())
+            .collect(),
         observations: BTreeMap::new(),
-        halted_mints: BTreeSet::new(),
+        halted_mints: carry
+            .halted_mints
+            .into_iter()
+            .filter(|m| config.adapter_of_mint(m).is_some())
+            .collect(),
         nav_invalid: BTreeSet::new(),
         lots: LotLedger::default(),
     };
@@ -950,7 +1110,20 @@ pub fn replay(
         }
     }
     commit(&mut report, window, IntervalStatus::NotReconciled)?;
-    Ok(report)
+
+    // Carry out: a deferred switch wins over the still-active selection
+    // (it was requested later); halts and surviving reset prices persist
+    // into the next epoch (P6-D7).
+    let mut selections = st.deferred.clone();
+    for (w, a) in &st.registrations {
+        selections.entry(*w).or_insert(*a);
+    }
+    let out = EpochCarry {
+        selections,
+        halted_mints: st.halted_mints.clone(),
+        active_prices: st.active.clone(),
+    };
+    Ok(EpochReplay { report, carry: out })
 }
 
 fn commit(

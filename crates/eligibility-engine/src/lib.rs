@@ -76,10 +76,11 @@ pub use safe_mode::{
     ExtremeTracker, QuoteStatus, RiskZone, RouteCheck, SafeModeBoundaries,
 };
 pub use settlement::{
-    apr_pool, apr_weight, classify_outage, classify_segment, recognized_weight, settle_epoch,
-    shared_denominator, weight_inputs, EpochApr, EpochInterval, EpochSettlement, IntervalVerdict,
-    OutageClass, OutageEvidence, Participant, WalletSettlement, APR_PERCENT_SCALE, DAY_SECONDS,
-    DENOMINATOR_FLOOR, P_REF_LAMPORTS, SEED_BENCHMARK_M, SEED_THRESHOLD_T,
+    apr_pool, apr_weight, classify_interval, classify_outage, classify_segment, recognized_weight,
+    settle_epoch, shared_denominator, weight_inputs, EpochApr, EpochInterval, EpochSettlement,
+    IntervalVerdict, OutageClass, OutageEvidence, Participant, WalletSettlement, ACCUMULATOR_SCALE,
+    APR_PERCENT_SCALE, DAY_SECONDS, DENOMINATOR_FLOOR, P_REF_LAMPORTS, SEED_BENCHMARK_M,
+    SEED_THRESHOLD_T,
 };
 pub use types::{
     AccountSnapshot, Addr, Authority, DebtAmount, EncumbranceKind, Event, EventKey, EventKind,

@@ -323,6 +323,26 @@ impl EpochReferences {
     pub fn is_empty(&self) -> bool {
         self.commits.is_empty()
     }
+
+    /// The one epoch start shared by every committed reference, `None`
+    /// with no commits, and an error when commits disagree: references
+    /// belong to exactly one epoch (P6-D7 item 1 — each epoch has its own
+    /// `EpochReferences`, committed before it starts).
+    pub fn common_epoch_start(&self) -> EligibilityResult<Option<i64>> {
+        let mut start: Option<i64> = None;
+        for c in self.commits.values() {
+            match start {
+                None => start = Some(c.epoch_start),
+                Some(s) if s == c.epoch_start => {}
+                Some(_) => {
+                    return Err(EligibilityError::InvariantViolation(
+                        "epoch references disagree on the epoch start",
+                    ))
+                }
+            }
+        }
+        Ok(start)
+    }
 }
 
 /// `min(a, b)` over unit prices by exact rational comparison. The addition

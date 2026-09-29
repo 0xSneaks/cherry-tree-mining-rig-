@@ -48,10 +48,9 @@ pub use fruit::{
     P_REF_LAMPORTS, QMAX_DEN, QMAX_NUM,
 };
 pub use fruit_schedule::{
-    fruit_t0, plan_fruit, registration_finalized_in_window, registration_window, season_start,
-    validate_plan, EpochKind, FruitEpoch, FruitPlan, PlanKind, CONTINUATION_BUDGET_R,
-    CORE_END_OFFSET, CORE_START_OFFSETS, DAY_SECONDS, HARVEST_BUDGET_LAMPORTS,
-    SEASON_BUDGET_LAMPORTS, SEASON_START_OFFSET, STORM_CEILING_LAMPORTS,
+    fruit_t0, plan_fruit, validate_plan, EpochKind, FruitEpoch, FruitPlan, PlanKind,
+    CONTINUATION_BUDGET_R, CORE_END_OFFSET, CORE_START_OFFSETS, DAY_SECONDS,
+    HARVEST_BUDGET_LAMPORTS, SEASON_BUDGET_LAMPORTS, STORM_CEILING_LAMPORTS,
     SUPERFRUIT_BUDGET_LAMPORTS,
 };
 pub use launch::{

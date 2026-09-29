@@ -1,5 +1,5 @@
 //! Fruit schedule planning — architecture §3 (launch timeline), canonical
-//! tests 40–43, plus the §8 registration-window cutoff PRIMITIVE for test 41.
+//! tests 40–43.
 //!
 //! The planner is a pure function of the activation timestamp `T0` and the
 //! cleared core funding `F`. It fixes, before anything runs, which epochs
@@ -27,11 +27,11 @@
 //! Every interval is half-open `[t_start, t_end)`; a boundary instant
 //! belongs to the LATER interval (§3 time convention, test 42).
 //!
-//! Scope note (Pass #6, P6-D2): the registration-window functions here are
-//! the half-open cutoff PRIMITIVE of test 41 only — `[FRUIT_T0, t_s)` with
-//! `t_s` the Season start. Lock cohort closure (requested-weight capture,
-//! `ell_i`, durations, vesting, forfeiture) is the later Lock package and
-//! is deliberately absent.
+//! Scope note (Pass #6, P6-D2): test 41 — the Lock registration window
+//! `[FRUIT_T0, t_s)` and its half-open cutoff — belongs to the later Lock
+//! package and is deliberately NOT implemented here. The Season start
+//! offset itself is part of the published epoch table above and is
+//! asserted by test 42.
 
 use crate::error::{EngineError, EngineResult};
 
@@ -204,30 +204,6 @@ pub fn plan_fruit(launch_t0: i64, funding_lamports: u64) -> FruitPlan {
     plan
 }
 
-/// `t_s`: the Season start, `FRUIT_T0 + 6 days` (§8). Locks start at `t_s`
-/// and the five-day Season ends at `t_s + 5 days`.
-pub const SEASON_START_OFFSET: i64 = 6 * DAY_SECONDS;
-
-pub const fn season_start(launch_t0: i64) -> i64 {
-    fruit_t0(launch_t0) + SEASON_START_OFFSET
-}
-
-/// The Lock registration window `[FRUIT_T0, t_s)` (§8). PRIMITIVE ONLY in
-/// Pass #6 (P6-D2): the half-open cutoff itself; no cohort closure.
-pub const fn registration_window(launch_t0: i64) -> (i64, i64) {
-    (fruit_t0(launch_t0), season_start(launch_t0))
-}
-
-/// Whether a registration FINALIZED at `finalized_at` falls inside the
-/// window: in from `FRUIT_T0` (inclusive), excluded at `t_s` (§8: "The
-/// finalized chain ordering determines inclusion; registrations at or after
-/// t_s are excluded"). A registration finalized before public opening is
-/// not in the window either.
-pub const fn registration_finalized_in_window(launch_t0: i64, finalized_at: i64) -> bool {
-    let (open, close) = registration_window(launch_t0);
-    finalized_at >= open && finalized_at < close
-}
-
 /// Validate that a plan is internally coherent: contiguous epoch windows in
 /// chain order (allowing the `F = R` gap where Storm was omitted), positive
 /// budgets, and the published core end. Exercised by the planner's own
@@ -368,23 +344,5 @@ mod tests {
         // Durations 1/2/3/5 days (§2).
         let d: Vec<i64> = p.epochs.iter().map(|e| e.duration_seconds()).collect();
         assert_eq!(d, vec![86_400, 172_800, 259_200, 432_000]);
-    }
-
-    #[test]
-    fn registration_window_primitive_is_half_open() {
-        let (open, close) = registration_window(T0);
-        assert_eq!(open, fruit_t0(T0));
-        assert_eq!(close, fruit_t0(T0) + 6 * DAY_SECONDS);
-        assert_eq!(close, season_start(T0));
-        // The Season epoch starts exactly at t_s.
-        let p = plan_fruit(T0, CONTINUATION_BUDGET_R);
-        assert_eq!(p.epochs.last().unwrap().t_start, close);
-        assert!(registration_finalized_in_window(T0, open));
-        assert!(registration_finalized_in_window(T0, close - 1));
-        assert!(!registration_finalized_in_window(T0, close));
-        assert!(!registration_finalized_in_window(T0, close + 1));
-        // Before public opening there is no registration window at all.
-        assert!(!registration_finalized_in_window(T0, open - 1));
-        assert!(!registration_finalized_in_window(T0, T0));
     }
 }

@@ -18,22 +18,31 @@
 //!
 //! Accounting rules, exactly as frozen:
 //!
-//! * **Exact arithmetic only.** Allocations accumulate as reduced exact
-//!   fractions (`u128`, checked); the leaf is `floor(exact cumulative)`.
-//!   Flooring happens ONCE, on the cumulative amount, so checkpoint
-//!   frequency cannot change entitlement (§10 "carried remainders").
-//! * **Never round up.** `leaf ≤ exact`; `Σ leaves ≤ E`;
-//!   `leaf_i ≤ floor(E/5)` (the `qmax = 1/5` per-wallet ceiling).
+//! * **Fixed-precision accumulator (P6-D5).** Per settled segment
+//!   `[a, b)`: `acc_seg = floor(E · (b−a) · SCALE / (D · H_seg))` with
+//!   `SCALE = 10^18`. Each wallet keeps ONE cumulative integer
+//!   `Σ_seg w_i,seg · acc_seg` (`u128`, checked), and the leaf is
+//!   `floor(cumulative / SCALE)`, capped at `floor(E/5)`. Flooring of the
+//!   wallet happens ONCE, on the cumulative amount, so checkpoint
+//!   frequency cannot change entitlement beyond the frozen sub-lamport
+//!   drift of the per-segment `acc` floors (`≤ w/SCALE` per segment,
+//!   §10 "carried remainders"). No exact-fraction arithmetic: unreduced
+//!   fraction denominators compound across segments and overflow at
+//!   realistic scales.
+//! * **Never round up.** Every operation floors: `leaf ≤ exact`;
+//!   `Σ leaves ≤ E`; `leaf_i ≤ floor(E/5)` (the `qmax = 1/5` per-wallet
+//!   ceiling).
 //! * **The rounding remainder is not redistributed.** Whatever the floors
 //!   leave behind stays unallocated and returns `U → Z` at pool close —
-//!   never to other wallets (test 45).
+//!   exactly once, never to other wallets (test 45).
 //! * **An unverified shared denominator reserves the whole interval.** If
-//!   any wallet-level PENDING condition that data or replay could later
-//!   clear taints the interval, NO wallet settles against the incomplete
-//!   `H` (P6-D6): the interval's scheduled capacity stays in `U`. A
-//!   VERIFIED route halt is the one carve-out: the affected asset's weight
-//!   is 0 for the halt (known, not unknown), recognition stops there, and
-//!   resumption is not retroactive — other wallets settle normally.
+//!   any seed-qualified registered wallet is PENDING — for ANY reason,
+//!   `RouteHalted` included (P6-D6 item 5: no Pass #6 resolution semantics
+//!   for specific Pending reasons) — NO wallet settles against the
+//!   incomplete `H` (P6-D6): the interval's scheduled capacity stays in
+//!   `U`, and the pending wallet's share is never redistributed to the
+//!   others. A PENDING wallet below the seed threshold (`S_i < 150`) has
+//!   weight 0 by definition and cannot change `H`, so it does not block.
 //! * **Outage classification (P6-D10).** Only finalized on-chain Fruit
 //!   program state — the canonical registration pause flag, or the program
 //!   absent / non-executable — makes an interval **not earned**; its
@@ -46,7 +55,7 @@ use std::collections::BTreeMap;
 
 use crate::error::{EligibilityError, EligibilityResult};
 use crate::rational::Ratio;
-use crate::replay::{Eligibility, IntervalStatus, PendingReason, Segment};
+use crate::replay::{Eligibility, IntervalStatus, Segment};
 use crate::types::Addr;
 
 /// Frozen seed-price reference `P_ref` (§1): lamports per seed. The same
@@ -66,6 +75,10 @@ pub const DENOMINATOR_FLOOR: u128 = 12_500_000_000;
 pub const DAY_SECONDS: u128 = 86_400;
 /// APR scale: `APR_weight = 36,500 · r/H` in percent per year (§1).
 pub const APR_PERCENT_SCALE: u128 = 36_500;
+/// Fixed-point scale of the settlement accumulator (P6-D5): per settled
+/// segment `acc_seg = floor(E·Δt·SCALE/(D·H_seg))`, and each wallet's leaf
+/// is `floor(Σ_seg w_i,seg·acc_seg / SCALE)`.
+pub const ACCUMULATOR_SCALE: u128 = 1_000_000_000_000_000_000;
 
 /// `w_i(t) = 1[S_i ≥ T] · min(K_i, X_i)` with `K_i = P_ref · min(S_i, M)`
 /// (§1). Weight 0 for a wallet below the seed threshold or with no equity.
@@ -186,30 +199,80 @@ pub enum IntervalVerdict {
     Reserve,
     /// A verified registration-program outage (P6-D10): the interval is
     /// **not earned**; its capacity is released to `Z` at pool close.
+    /// Reachable ONLY through [`classify_interval`] with canonical
+    /// on-chain evidence over reconciled history containing no finalized
+    /// registration — never a caller's bare label.
     NotEarned,
 }
 
-/// Classify one replayed [`Segment`]:
+/// Classify one interval for settlement from the replayed [`Segment`], the
+/// seed counts, and any outage evidence observed for it (P6-D6 + P6-D10).
+///
+/// * No outage evidence — the plain P6-D6 rule of [`classify_segment`].
+/// * A DATA outage (RPC/indexer/frontend/operator/backend/per-ledger) —
+///   the interval is **earned**: verdict is still [`classify_segment`]'s
+///   (an unreconciled or pending-tainted segment reserves and stays
+///   replayable; a clean one settles). Operator and indexer input can
+///   never declare earned capacity "not earned".
+/// * A REGISTRATION-PROGRAM outage (only the finalized on-chain forms:
+///   the canonical pause flag, the program absent, the program
+///   non-executable) — **not earned** only when BOTH hold:
+///   1. the segment's history is reconciled (`IntervalStatus::Verified`;
+///      P6-D10 guard 2 — absence of an OBSERVED registration inside an
+///      unreconciled window is Pending, never "not earned"), and
+///   2. no finalized registration exists in the segment (`wallets` empty
+///      — presence means registered on chain). Wallets already registered
+///      keep accruing during a registration-program outage (P6-D10 item
+///      3), so a registered segment falls back to the normal rule
+///      instead.
+pub fn classify_interval(
+    seg: &Segment,
+    seeds: &BTreeMap<Addr, u64>,
+    outage: Option<OutageEvidence>,
+) -> IntervalVerdict {
+    let Some(e) = outage else {
+        return classify_segment(seg, seeds);
+    };
+    match classify_outage(e) {
+        OutageClass::Data => classify_segment(seg, seeds),
+        OutageClass::RegistrationProgram => {
+            if seg.status == IntervalStatus::Verified && seg.wallets.is_empty() {
+                IntervalVerdict::NotEarned
+            } else {
+                classify_segment(seg, seeds)
+            }
+        }
+    }
+}
+
+/// Classify one replayed [`Segment`] (P6-D6):
 ///
 /// * `Unresolved` / `NotReconciled` segments — an indexer gap or the
 ///   post-checkpoint tail — are **earned but reserved** (data outage
 ///   semantics, §3): [`IntervalVerdict::Reserve`].
-/// * A `Verified` segment settles UNLESS some wallet is PENDING for a
-///   reason data or replay could still clear (debt unreadable, program
-///   UNKNOWN, unpriced additions, NAV unverified, …): any such wallet makes
-///   `H` unverified, so the whole interval reserves (P6-D6).
-/// * The one carve-out: `Pending(RouteHalted)` is a VERIFIED fact, not
-///   missing data — the affected weight is 0 for the halt and resumption is
-///   not retroactive (P6-D6), so the interval still settles for everyone
-///   else. `Ineligible` wallets are likewise known weight 0 (test 32).
-pub fn classify_segment(seg: &Segment) -> IntervalVerdict {
+/// * A `Verified` segment settles UNLESS some wallet registered in it is
+///   PENDING **with qualifying weight potential**: seed-qualified
+///   (`S_i ≥ 150`, from `seeds`) — its `w_i ∈ [0, K_i]` is unknown, so
+///   `H_seg` is unverified and the whole interval reserves (P6-D6 item 1).
+///   EVERY PENDING reason blocks, `RouteHalted` included: Pass #6 adds no
+///   resolution semantics for specific Pending reasons, they stay reserved
+///   until the eligibility engine resolves them (P6-D6 item 5) — a halt is
+///   never silently converted into weight 0, which would redistribute the
+///   halted wallet's share to everyone else.
+/// * A PENDING wallet below the seed threshold has `w_i = 0` BY DEFINITION
+///   (`w_i = 1[S_i ≥ T]·min(K_i, X_i)`): it cannot change `H_seg` and does
+///   NOT block the interval — an ineligible/non-qualifying wallet never
+///   halts everyone else's settlement (P6-D6 item 1, P6R-7).
+///   `Ineligible` wallets are likewise known weight 0 (test 32).
+pub fn classify_segment(seg: &Segment, seeds: &BTreeMap<Addr, u64>) -> IntervalVerdict {
     match seg.status {
         IntervalStatus::Unresolved | IntervalStatus::NotReconciled => IntervalVerdict::Reserve,
         IntervalStatus::Verified => {
-            let reserving = seg.wallets.values().any(|e| {
-                matches!(e, Eligibility::Pending(r) if !matches!(r, PendingReason::RouteHalted))
+            let blocking = seg.wallets.iter().any(|(w, e)| {
+                matches!(e, Eligibility::Pending(_))
+                    && seeds.get(w).copied().unwrap_or(0) >= SEED_THRESHOLD_T
             });
-            if reserving {
+            if blocking {
                 IntervalVerdict::Reserve
             } else {
                 IntervalVerdict::Settle
@@ -234,7 +297,10 @@ pub struct EpochInterval {
     pub start: i64,
     pub end: i64,
     pub verdict: IntervalVerdict,
-    /// Weight inputs. Meaningful for `Settle` intervals; ignored elsewhere.
+    /// Weight inputs. Meaningful for `Settle` intervals; must be EMPTY for
+    /// `NotEarned` ones (a not-earned interval holds no finalized
+    /// registration, P6-D10 — non-empty input is rejected as an attempt to
+    /// erase registered accrual with a bare label); ignored for `Reserve`.
     pub participants: Vec<Participant>,
 }
 
@@ -266,63 +332,16 @@ fn capacity(budget: u64, t_start: i64, t_end: i64, t: i64) -> EligibilityResult<
     u64::try_from(cap).map_err(|_| EligibilityError::MathOverflow)
 }
 
-/// Reduced exact fraction (den > 0). Overflow fails closed: settlement is
-/// never silently inexact (P6-D5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Frac {
-    num: u128,
-    den: u128,
-}
-
-fn gcd(mut a: u128, mut b: u128) -> u128 {
-    while b != 0 {
-        let r = a % b;
-        a = b;
-        b = r;
-    }
-    a
-}
-
-impl Frac {
-    const ZERO: Frac = Frac { num: 0, den: 1 };
-
-    fn new(num: u128, den: u128) -> Frac {
-        let g = gcd(num, den).max(1);
-        Frac {
-            num: num / g,
-            den: den / g,
-        }
-    }
-
-    fn add(self, other: Frac) -> EligibilityResult<Frac> {
-        let g = gcd(self.den, other.den);
-        let den_l = other.den / g;
-        let den_r = self.den / g;
-        let num = self
-            .num
-            .checked_mul(den_l)
-            .and_then(|a| other.num.checked_mul(den_r).and_then(|b| a.checked_add(b)))
-            .ok_or(EligibilityError::MathOverflow)?;
-        let den = self
-            .den
-            .checked_mul(den_l)
-            .ok_or(EligibilityError::MathOverflow)?;
-        Ok(Frac::new(num, den))
-    }
-
-    fn floor_u64(self) -> EligibilityResult<u64> {
-        u64::try_from(self.num / self.den).map_err(|_| EligibilityError::MathOverflow)
-    }
-}
-
 /// One wallet's settlement outcome.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WalletSettlement {
     pub wallet: Addr,
-    /// The leaf amount: `floor` of the exact cumulative allocation, capped
-    /// at `floor(E/5)` (P6-D5). Paid through cumulative Merkle leaves.
+    /// The leaf amount: `floor` of the cumulative fixed-precision
+    /// allocation, capped at `floor(E/5)` (P6-D5). Paid through cumulative
+    /// Merkle leaves.
     pub leaf_lamports: u64,
-    /// The exact cumulative allocation (always ≥ the leaf).
+    /// The cumulative allocation `Σ_seg w_i,seg · acc_seg` over
+    /// `ACCUMULATOR_SCALE` (always ≥ the leaf).
     pub exact: Ratio,
 }
 
@@ -376,11 +395,16 @@ impl EpochSettlement {
 /// is classified by the caller — a stretch with no verdict at all is not
 /// free capacity, it is missing input, and is rejected.
 ///
-/// Exactness note (P6-D5): each wallet's cumulative allocation is an exact
-/// reduced fraction in `u128` checked arithmetic. At production scales
-/// (billions of lamports over ≥ 86,400-second epochs) the accumulators stay
-/// far below `u128`; a hypothetical overflow fails closed with
-/// [`EligibilityError::MathOverflow`] rather than rounding.
+/// Fixed-precision note (P6-D5): the accumulator is the frozen integer
+/// `acc_seg = floor(E·Δt_seg·SCALE/(D·H_seg))` per segment and one
+/// cumulative `Σ_seg w_i,seg·acc_seg` per wallet, in `u128` checked
+/// arithmetic. Reachable production bounds cannot overflow it: the largest
+/// possible epoch budget is the Storm ceiling `8,561,643,836` lamports and
+/// the longest epoch is the core end `950,400` seconds, so the `acc`
+/// numerator is ≤ `8.6e9 · 9.5e5 · 1e18 ≈ 8.2e33` and the wallet-side
+/// cumulative is ≤ `Kmax · E·SCALE/Hfloor ≈ 1.8e27`, both far below
+/// `u128::MAX ≈ 3.4e38`. A hypothetical out-of-range input fails closed
+/// with [`EligibilityError::MathOverflow`] rather than rounding.
 pub fn settle_epoch(
     budget: u64,
     t_start: i64,
@@ -409,7 +433,9 @@ pub fn settle_epoch(
         ));
     }
 
-    let mut exact: BTreeMap<Addr, Frac> = BTreeMap::new();
+    // Per-wallet cumulative fixed-point entitlement: Σ_seg w_i,seg · acc_seg
+    // (P6-D5). One integer per wallet; flooring happens once, at the leaf.
+    let mut cumulative: BTreeMap<Addr, u128> = BTreeMap::new();
     let mut last_settle_observation: Option<(u128, u128, u128)> = None; // (cw, h, cn)
     let mut reserve_claims: Vec<(i64, i64)> = Vec::new(); // timeline order
     let mut not_earned_claims: Vec<(i64, i64)> = Vec::new();
@@ -441,43 +467,64 @@ pub fn settle_epoch(
                     weights.push((p.wallet, w));
                 }
                 let h = shared_denominator(cw);
+                // acc_seg = floor(E · Δt · SCALE / (D · H_seg)), downward
+                // only (P6-D5); drift ≤ 1/SCALE per segment.
+                let acc_seg = (u128::from(budget)
+                    .checked_mul(dt)
+                    .and_then(|v| v.checked_mul(ACCUMULATOR_SCALE))
+                    .ok_or(EligibilityError::MathOverflow)?)
+                    / (duration
+                        .checked_mul(h)
+                        .ok_or(EligibilityError::MathOverflow)?);
                 for (wallet, w) in weights {
                     if w == 0 {
                         continue;
                     }
-                    let term = Frac::new(
-                        u128::from(budget)
-                            .checked_mul(w)
-                            .and_then(|v| v.checked_mul(dt))
-                            .ok_or(EligibilityError::MathOverflow)?,
-                        h.checked_mul(duration)
-                            .ok_or(EligibilityError::MathOverflow)?,
-                    );
-                    let acc = exact.entry(wallet).or_insert(Frac::ZERO);
-                    *acc = acc.add(term)?;
+                    let term = w
+                        .checked_mul(acc_seg)
+                        .ok_or(EligibilityError::MathOverflow)?;
+                    let acc = cumulative.entry(wallet).or_insert(0);
+                    *acc = acc
+                        .checked_add(term)
+                        .ok_or(EligibilityError::MathOverflow)?;
                 }
                 last_settle_observation = Some((cw, h, P_REF_LAMPORTS * cn_seeds));
             }
             IntervalVerdict::Reserve => reserve_claims.push((iv.start, iv.end)),
-            IntervalVerdict::NotEarned => not_earned_claims.push((iv.start, iv.end)),
+            IntervalVerdict::NotEarned => {
+                // P6-D10: terminal not-earned treatment needs canonical
+                // reconciled evidence; weight inputs for a not-earned
+                // interval mean registered wallets whose accrual the label
+                // would erase. Refuse — caller-controlled classification
+                // must not decide economics.
+                if !iv.participants.is_empty() {
+                    return Err(EligibilityError::InvariantViolation(
+                        "not-earned interval cannot carry registered wallets",
+                    ));
+                }
+                not_earned_claims.push((iv.start, iv.end));
+            }
         }
     }
 
-    // Leaves: floor of the exact cumulative, capped at the E/5 wallet
-    // ceiling. The cap is defensive — `w ≤ Kmax` and `H ≥ 5·Kmax` already
-    // bound `exact ≤ E/5` — but settlement never trusts its inputs' shape.
+    // Leaves: floor of the cumulative fixed-point entitlement, capped at the
+    // E/5 wallet ceiling. The cap is defensive — `w ≤ Kmax` and
+    // `H ≥ 5·Kmax` already bound `exact ≤ E/5` — but settlement never
+    // trusts its inputs' shape.
     let wallet_cap = budget / 5;
-    let mut allocations: Vec<WalletSettlement> = Vec::with_capacity(exact.len());
+    let mut allocations: Vec<WalletSettlement> = Vec::with_capacity(cumulative.len());
     let mut allocated: u64 = 0;
-    for (wallet, f) in &exact {
-        let leaf = f.floor_u64()?.min(wallet_cap);
+    for (wallet, c) in &cumulative {
+        let leaf = u64::try_from(c / ACCUMULATOR_SCALE)
+            .map_err(|_| EligibilityError::MathOverflow)?
+            .min(wallet_cap);
         allocated = allocated
             .checked_add(leaf)
             .ok_or(EligibilityError::MathOverflow)?;
         allocations.push(WalletSettlement {
             wallet: *wallet,
             leaf_lamports: leaf,
-            exact: Ratio::new(f.num, f.den),
+            exact: Ratio::new(*c, ACCUMULATOR_SCALE),
         });
     }
 

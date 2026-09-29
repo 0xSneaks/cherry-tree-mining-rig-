@@ -9,6 +9,8 @@ to the architecture happen on the docs branch and are re-imported.
 - `CHERRY_TREE_FINAL_TOKENOMICS_ARCHITECTURE.md` — the frozen specification.
 - `OPUS_CHERRY_TREE_TOKENOMICS_CLOSEOUT.md` — closeout, verdict, §12 fee addendum.
 - `CHERRY_TREE_FEE_OPTIMIZATION_MODEL.md` — APPROVED / FINAL fee model (§7a source).
+- `PASS7_LOCK_DECISIONS.md` — Pass #7 founder decisions P7-L1 / P7-L2 and lock
+  rounding (narrow amendment to §8 / §10a / §12).
 
 Implementation pass #1: permanent 250-seed wallet cap (§4 check 2), capped
 compound, Genesis cap pinned to 250, Day-1 `.skr` one-domain → one-wallet

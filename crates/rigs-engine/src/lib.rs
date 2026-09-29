@@ -23,6 +23,7 @@ pub mod accumulator;
 pub mod error;
 pub mod fees;
 pub mod fruit;
+pub mod fruit_lock;
 pub mod fruit_schedule;
 pub mod launch;
 pub mod penalty;
@@ -46,6 +47,14 @@ pub use fruit::{
     scheduled_capacity, terminal_resolution, veto_vote, wallet_cap, CloseOutcome, FruitLedger,
     FruitPool, FruitRoot, LedgerKind, PoolStatus, RootStatus, FRUIT_M, LOCK_FORFEIT_TREASURY_BPS,
     P_REF_LAMPORTS, QMAX_DEN, QMAX_NUM,
+};
+pub use fruit_lock::{
+    finalize_lock_allocation, lock_allocation, lock_award, lock_capacity, lock_h,
+    lock_registration_open, lock_safety_vest, lock_season_start, lock_vest_at_maturity,
+    post_lock_allocation, post_lock_root, root_capacity, terminal_lock_resolution,
+    validate_lock_window, veto_lock_allocation, LockAllocation, LockAllocationStatus,
+    SafetyRelease, LOCK_DAYS, LOCK_DURATION_SECONDS, LOCK_HFLOOR_LAMPORTS,
+    LOCK_H_FLOOR_LAMPORT_DAYS, LOCK_KMAX_LAMPORTS, LOCK_SEASON_OFFSET,
 };
 pub use fruit_schedule::{
     fruit_t0, plan_fruit, validate_plan, EpochKind, FruitEpoch, FruitPlan, PlanKind,

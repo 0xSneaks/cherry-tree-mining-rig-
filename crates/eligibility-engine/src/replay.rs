@@ -487,6 +487,24 @@ impl State<'_> {
     /// Keep lots in step with a token event that the ledger just applied.
     fn apply_lots(&mut self, kind: &EventKind, ts: i64) -> EligibilityResult<()> {
         match kind {
+            EventKind::InitializeAccount { account, .. } => {
+                // A freshly initialized account has no pricing history:
+                // any anchor or residual lots left by a previous life of
+                // the SAME address must not survive the reuse (F1-A,
+                // close + re-initialize). The ledger refuses to
+                // double-initialize a live account, so this only ever
+                // erases stale state.
+                self.lots.erase_account(*account);
+                Ok(())
+            }
+            EventKind::CloseAccount { account } => {
+                // The account key dies with the account (the ledger only
+                // closes EMPTY accounts): its registration anchor and any
+                // residual lots must not survive for the next owner of
+                // the address (F1-A, close + re-initialize).
+                self.lots.erase_account(*account);
+                Ok(())
+            }
             EventKind::MintTo { account, amount } => {
                 let mint = self
                     .mint_of_account(account)
@@ -893,19 +911,25 @@ pub fn replay(
                 .map(|s| (s.mint, s.beneficiary, s.active, s.pending_unstake))
                 .collect();
             st.reconcile_lots(&account_triples, &stake_quads, ts)?;
-            // Re-anchor every account whose owner changed in the gap: the
-            // anchor survives only if the OBSERVED owner is itself
-            // registered for the asset (mirroring the SetAccountOwner
-            // credit path); otherwise the recipient's own first
-            // registration applies.
+            // Re-acquire every account whose owner changed in the gap,
+            // replaying exactly what a live `SetAccountOwner` at the
+            // checkpoint would do: consume every lot, drop the prior
+            // owner's anchor, and re-credit the units at the checkpoint
+            // acquisition price (min rule; the recipient re-anchors only
+            // as the live credit path would). Checkpoint adoption and the
+            // equivalent live event must leave economically identical
+            // state — the observed owner is a NEW holder acquiring the
+            // account, never an inheritor of the prior owner's reference
+            // lots (F1-A, checkpoint path).
             for a in accounts {
                 if let Some(prev) = prev_owners.get(&a.account) {
                     if *prev != a.owner {
-                        if let Some(adapter) = st.config.adapter_of_mint(&a.mint) {
-                            st.lots.clear_registered(a.mint, a.account);
-                            if st.registrations.get(&a.owner) == Some(&adapter.asset) {
-                                st.lots.mark_registered(a.mint, &[a.account]);
-                            }
+                        let units = st.lots.units(a.mint, a.account);
+                        st.lots.consume(a.mint, a.account, units)?;
+                        st.lots.clear_registered(a.mint, a.account);
+                        if units > 0 {
+                            let (price, basis) = st.acquisition(&a.mint, ts)?;
+                            st.credit_anchored(a.mint, a.account, units, price, basis)?;
                         }
                     }
                 }

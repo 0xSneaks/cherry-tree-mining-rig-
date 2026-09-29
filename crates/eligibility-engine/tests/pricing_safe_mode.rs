@@ -1990,6 +1990,416 @@ fn f2a_invalid_newer_observation_poisons_the_cached_price() {
     );
 }
 
+// --------------------------------- Pass #5 third remediation (Claude)
+
+/// NEW-1 (F1-A still open via close + re-initialize): the ledger only
+/// closes EMPTY accounts, but the registration anchor keyed by the
+/// `(mint, account)` address outlives the account. Re-initializing the
+/// SAME address for a different owner must not let the prior owner's
+/// anchor skip the new owner's first-registration rebase.
+#[test]
+fn new1_close_reinitialize_cannot_inherit_the_prior_owners_anchor() {
+    let cfg = config(
+        vec![skr_adapter_max_age(StakeSupport::None, Some(10_000))],
+        &[LENDER_A],
+    );
+    let refs = EpochReferences::new().with(ref_commit_at(SKR_MINT, price(2, 1), 100));
+
+    // Claude's exact sequence: A registers pre-reference (anchoring the
+    // account key), the account is closed, the SAME address is
+    // re-initialized for B, B's 800 units arrive pre-reference, the
+    // market drops to 1 and B registers for the FIRST time. B must price
+    // at min(2, 1) = 1: A's stale anchor must not skip B's rebase.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr) // anchors the (empty) account key
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::CloseAccount {
+        account: ta(A, SKR_MINT),
+    });
+    t.slot(3, 70).ev(EventKind::InitializeAccount {
+        account: ta(A, SKR_MINT),
+        mint: SKR_MINT,
+        owner: B,
+    });
+    t.slot(4, 80).ev(EventKind::MintTo {
+        account: ta(A, SKR_MINT), // B's units land on the re-used address
+        amount: 800,
+    });
+    t.slot(5, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(6, 200)
+        .register(B, AssetKind::Skr) // B's FIRST registration
+        .no_debt(B, &[LENDER_A]);
+    t.slot(7, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &B, 250)),
+        800,
+        "B's first registration must apply the boundary price min(2,1)=1; \
+         A's anchor must not survive close + re-initialize of the address"
+    );
+    // Deterministic replay.
+    assert_eq!(r, run_with(&cfg, &refs, &t, 300));
+
+    // Address re-use AFTER the epoch boundary: B's units are an Addition
+    // priced by the min rule at their own event, independent of any
+    // anchor; B's late registration must neither reprice nor taint them.
+    let mut t = Tl::new();
+    t.slot(1, 50)
+        .init(A, SKR_MINT)
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A]);
+    t.slot(2, 60).ev(EventKind::CloseAccount {
+        account: ta(A, SKR_MINT),
+    });
+    t.slot(3, 110).ev(EventKind::InitializeAccount {
+        account: ta(A, SKR_MINT),
+        mint: SKR_MINT,
+        owner: B,
+    });
+    t.slot(4, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(5, 160).ev(EventKind::MintTo {
+        account: ta(A, SKR_MINT),
+        amount: 800, // Addition at min(2, 1) = 1
+    });
+    t.slot(6, 200)
+        .register(B, AssetKind::Skr)
+        .no_debt(B, &[LENDER_A]);
+    t.slot(7, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &B, 250)),
+        800,
+        "post-reference re-use prices at the event's min rule, and the \
+         stale anchor must not taint the addition either"
+    );
+
+    // Control: an ALREADY-registered recipient whose account is drained,
+    // closed, re-initialized and re-filled PRE-reference keeps its own
+    // legitimate anchor — reference pricing stands and a later
+    // re-registration never reprices (the fix must not over-clear).
+    let mut t = Tl::new();
+    t.slot(1, 40)
+        .init(A, SKR_MINT)
+        .init(B, SKR_MINT)
+        .init(C, SKR_MINT);
+    t.slot(2, 50)
+        .mint(A, SKR_MINT, 800)
+        .send(A, C, SKR_MINT, 800) // drain ta(A) so it can close
+        .pinned(&[LENDER_A])
+        .register(A, AssetKind::Skr)
+        .register(B, AssetKind::Skr)
+        .no_debt(A, &[LENDER_A])
+        .no_debt(B, &[LENDER_A]);
+    t.slot(3, 60).ev(EventKind::CloseAccount {
+        account: ta(A, SKR_MINT),
+    });
+    t.slot(4, 65).ev(EventKind::InitializeAccount {
+        account: ta(A, SKR_MINT),
+        mint: SKR_MINT,
+        owner: B,
+    });
+    t.slot(5, 70).ev(EventKind::Transfer {
+        source: ta(C, SKR_MINT),
+        destination: ta(A, SKR_MINT),
+        amount: 800, // pre-reference under B's active registration
+        authority: Authority::Owner,
+    });
+    t.slot(6, 150).observe(SKR_MINT, price(1, 1));
+    t.slot(7, 200)
+        .register(B, AssetKind::Skr) // re-registration: never reprices
+        .no_debt(B, &[LENDER_A]);
+    t.slot(8, 300).close();
+    let r = run_with(&cfg, &refs, &t, 300);
+    assert_eq!(
+        verified_x(x_at(&r, &B, 250)),
+        800 * 2,
+        "a registered recipient re-fills its re-initialized account \
+         pre-reference: the anchor is its own and reference pricing stands"
+    );
+}
+
+/// NEW-2 (F1-A checkpoint/live divergence): an ownership change adopted
+/// from a checkpoint must leave the SAME economic state as the equivalent
+/// live `SetAccountOwner` — the adopted account is an acquisition by the
+/// observed owner at the checkpoint's min-rule price, never the prior
+/// owner's reference lots.
+#[test]
+fn new2_checkpoint_owner_change_matches_the_live_event() {
+    let cfg = config(
+        vec![skr_adapter_max_age(StakeSupport::None, Some(10_000))],
+        &[LENDER_A],
+    );
+    let refs = EpochReferences::new().with(ref_commit_at(SKR_MINT, price(2, 1), 100));
+
+    let prefix = |t: &mut Tl| {
+        t.slot(1, 50)
+            .init(A, SKR_MINT)
+            .init(B, SKR_MINT)
+            .mint(A, SKR_MINT, 800)
+            .pinned(&[LENDER_A])
+            .register(A, AssetKind::Skr)
+            .register(B, AssetKind::Skr)
+            .no_debt(A, &[LENDER_A])
+            .no_debt(B, &[LENDER_A]);
+    };
+
+    // LIVE: the drop is observed at 150 and the account moves to the
+    // already-registered B at 165 as an observed event: B acquires the
+    // whole account at min(2, 1) = 1.
+    let mut live = Tl::new();
+    prefix(&mut live);
+    live.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    live.slot(3, 165).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT),
+        new_owner: B,
+    });
+    live.slot(4, 170).close();
+    live.slot(5, 250).close();
+    let rl = run_with(&cfg, &refs, &live, 250);
+
+    // CHECKPOINT: the same move happens inside a declared gap and is
+    // known only through the adopted checkpoint at 170.
+    let adopted = |owner: Addr| AccountSnapshot {
+        account: ta(A, SKR_MINT),
+        mint: SKR_MINT,
+        owner, // moved inside the gap
+        amount: 800,
+        delegate: None,
+        delegated_amount: 0,
+        frozen: false,
+    };
+    let mut gap = Tl::new();
+    prefix(&mut gap);
+    gap.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    gap.slot(3, 160).ev(EventKind::DeclaredGap);
+    gap.slot(4, 170).checkpoint(
+        vec![adopted(B), snap(B, SKR_MINT, 0)],
+        vec![],
+        vec![supply(SKR_MINT, 800)],
+    );
+    gap.slot(5, 250).close();
+    let rg = run_with(&cfg, &refs, &gap, 250);
+
+    fn seg(r: &ReplayReport) -> &Segment {
+        r.segments.iter().find(|s| s.start == 170).unwrap()
+    }
+    assert_eq!(seg(&rl).status, IntervalStatus::Verified);
+    assert_eq!(seg(&rg).status, IntervalStatus::Verified);
+    assert_eq!(
+        verified_x(x_at(&rl, &B, 200)),
+        800,
+        "live: the recipient acquires the whole account at the event price"
+    );
+    assert_eq!(
+        verified_x(x_at(&rg, &B, 200)),
+        800,
+        "checkpoint: the adopted owner change must price identically to \
+         the equivalent live event"
+    );
+    assert_eq!(
+        seg(&rl).wallets,
+        seg(&rg).wallets,
+        "economically identical transitions must leave identical state"
+    );
+    // Determinism.
+    assert_eq!(rg, run_with(&cfg, &refs, &gap, 250));
+
+    // UNREGISTERED recipient + STALE observation at its late first
+    // registration: the live path priced the units at the owner change
+    // (Verified 800); the checkpoint path must not leave them as
+    // unanchored REFERENCE lots whose late registration then taints them
+    // (PENDING) — same transition, same state.
+    let mut live = Tl::new();
+    prefix(&mut live);
+    live.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    live.slot(3, 165).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT),
+        new_owner: C,
+    });
+    live.slot(4, 170).close();
+    live.slot(5, 10_200)
+        .register(C, AssetKind::Skr) // the 150 observation is stale here
+        .no_debt(C, &[LENDER_A]);
+    live.slot(6, 11_000).close();
+    let rl = run_with(&cfg, &refs, &live, 11_000);
+
+    let mut gap = Tl::new();
+    prefix(&mut gap);
+    gap.slot(2, 150).observe(SKR_MINT, price(1, 1));
+    gap.slot(3, 160).ev(EventKind::DeclaredGap);
+    gap.slot(4, 170).checkpoint(
+        vec![adopted(C), snap(B, SKR_MINT, 0)],
+        vec![],
+        vec![supply(SKR_MINT, 800)],
+    );
+    gap.slot(5, 10_200)
+        .register(C, AssetKind::Skr)
+        .no_debt(C, &[LENDER_A]);
+    gap.slot(6, 11_000).close();
+    let rg = run_with(&cfg, &refs, &gap, 11_000);
+
+    assert_eq!(
+        x_at(&rl, &C, 10_500),
+        x_at(&rg, &C, 10_500),
+        "an unregistered recipient's late registration must not diverge \
+         between the live and checkpoint paths"
+    );
+    assert_eq!(
+        verified_x(x_at(&rl, &C, 10_500)),
+        800,
+        "the units were priced at the owner change; nothing re-taints them"
+    );
+
+    // PRE-REFERENCE owner change in the gap: the acquisition price is the
+    // reference itself, so both paths keep the recipient's legitimate
+    // anchor (a later drop and re-registration never reprice).
+    let mut live = Tl::new();
+    prefix(&mut live);
+    live.slot(2, 65).ev(EventKind::SetAccountOwner {
+        account: ta(A, SKR_MINT),
+        new_owner: B,
+    });
+    live.slot(3, 150).observe(SKR_MINT, price(1, 1));
+    live.slot(4, 200)
+        .register(B, AssetKind::Skr) // re-registration: never reprices
+        .no_debt(B, &[LENDER_A]);
+    live.slot(5, 260).close();
+    let rl = run_with(&cfg, &refs, &live, 260);
+
+    let mut gap = Tl::new();
+    prefix(&mut gap);
+    gap.slot(2, 60).ev(EventKind::DeclaredGap);
+    gap.slot(3, 70).checkpoint(
+        vec![adopted(B), snap(B, SKR_MINT, 0)],
+        vec![],
+        vec![supply(SKR_MINT, 800)],
+    );
+    gap.slot(4, 150).observe(SKR_MINT, price(1, 1));
+    gap.slot(5, 200)
+        .register(B, AssetKind::Skr)
+        .no_debt(B, &[LENDER_A]);
+    gap.slot(6, 260).close();
+    let rg = run_with(&cfg, &refs, &gap, 260);
+
+    assert_eq!(verified_x(x_at(&rl, &B, 250)), 800 * 2);
+    assert_eq!(
+        verified_x(x_at(&rg, &B, 250)),
+        800 * 2,
+        "pre-reference adoption re-anchors under the registered recipient: \
+         reference pricing stands, exactly like the live event"
+    );
+}
+
+/// NEW-3 (F1-C still open through registration merging): the registration
+/// rebase used to merge same-price lots across an intermediate-age
+/// PENDING lot, keeping the older stamp — erasing the age order the FIFO
+/// rule depends on. Exact Claude sequence: X@1 (160), Y@1.5 (180), Z@1
+/// (200) staked, unstake 200, cancel 100 (X returns), FIRST registration
+/// (the rebase must not merge X and Z across the pending Y), cancel 100
+/// (Y returns), unstake 200: the remaining position is Z@1 (100), never
+/// Y@1.5 (150).
+#[test]
+fn new3_registration_rebase_must_not_merge_across_pending_lots() {
+    let (cfg, refs) = stake_world();
+
+    let timeline = |first_registration_between_cancels: bool| {
+        let mut t = Tl::new();
+        t.slot(1, 50)
+            .init(A, SKR_MINT)
+            .ev(EventKind::InitializeAccount {
+                account: CUSTODY,
+                mint: SKR_MINT,
+                owner: STAKE_CUSTODY_OWNER,
+            })
+            .pinned(&[LENDER_A])
+            .no_debt(A, &[LENDER_A]);
+        if !first_registration_between_cancels {
+            // Control anchor point: registered pre-reference, so no
+            // registration event fires between the two cancellations.
+            t.register(A, AssetKind::Skr);
+        }
+        t.slot(2, 155).observe(SKR_MINT, price(1, 1));
+        t.slot(3, 160).mint(A, SKR_MINT, 100); // X at min(2,1) = 1
+        t.slot(4, 175).observe(SKR_MINT, price(3, 2)); // 1.5
+        t.slot(5, 180).mint(A, SKR_MINT, 100); // Y at 1.5
+        t.slot(6, 195).observe(SKR_MINT, price(1, 1));
+        t.slot(7, 200).mint(A, SKR_MINT, 100); // Z at 1
+        t.slot(8, 210).ev(EventKind::Stake {
+            source: ta(A, SKR_MINT),
+            custody: CUSTODY,
+            beneficiary: A,
+            amount: 300,
+        });
+        t.slot(9, 220).ev(EventKind::RequestUnstake {
+            mint: SKR_MINT,
+            beneficiary: A,
+            amount: 200,
+        }); // X and Y leave (oldest first)
+        t.slot(10, 230).ev(EventKind::CancelUnstake {
+            mint: SKR_MINT,
+            beneficiary: A,
+            amount: 100,
+        }); // X returns at its age position (before Z)
+        if first_registration_between_cancels {
+            t.slot(11, 240).register(A, AssetKind::Skr); // FIRST registration
+        }
+        t.slot(12, 250).ev(EventKind::CancelUnstake {
+            mint: SKR_MINT,
+            beneficiary: A,
+            amount: 100,
+        }); // Y returns at its age position (between X and Z)
+        t.slot(13, 260).ev(EventKind::RequestUnstake {
+            mint: SKR_MINT,
+            beneficiary: A,
+            amount: 200,
+        }); // consumes X and Y (the oldest 200)
+        t.slot(14, 300).close();
+        t
+    };
+
+    // Control (registration elsewhere): the remaining position is the
+    // newest lot Z@1 — FIFO order across both buckets, no rebase between
+    // the cancellations.
+    let r = run_with(&cfg, &refs, &timeline(false), 300);
+    match x_at(&r, &A, 280) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (100, 100),
+            "control: the remaining position is the newest lot Z at 1"
+        ),
+        o => panic!("{o:?}"),
+    }
+
+    // Exact Claude sequence with the first registration between the two
+    // cancellations: the rebase must not merge X and Z across the pending
+    // Y — the remaining position is still Z@1, never Y@1.5.
+    let t = timeline(true);
+    let r = run_with(&cfg, &refs, &t, 300);
+    match x_at(&r, &A, 280) {
+        Some(Eligibility::Verified {
+            units,
+            gross_lamports,
+            ..
+        }) => assert_eq!(
+            (units, gross_lamports),
+            (100, 100),
+            "registration must not merge same-price lots across the \
+             intermediate-age pending lot: FIFO order survives the rebase"
+        ),
+        o => panic!("{o:?}"),
+    }
+    // Determinism.
+    assert_eq!(r, run_with(&cfg, &refs, &t, 300));
+}
+
 /// INACTIVE (section 5: no committed reference at epoch start) composes
 /// with Safe Mode states: the asset is a KNOWN weight-0 ineligible from
 /// before the epoch starts, in any zone, and a route halt on the inactive

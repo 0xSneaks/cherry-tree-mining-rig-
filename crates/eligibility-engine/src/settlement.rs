@@ -43,19 +43,27 @@
 //!   `U`, and the pending wallet's share is never redistributed to the
 //!   others. A PENDING wallet below the seed threshold (`S_i < 150`) has
 //!   weight 0 by definition and cannot change `H`, so it does not block.
-//! * **Outage classification (P6-D10).** Only finalized on-chain Fruit
-//!   program state — the canonical registration pause flag, or the program
-//!   absent / non-executable — makes an interval **not earned**; its
-//!   capacity is released to the reserve (`Z`) at close. RPC, indexer,
-//!   frontend, operator, backend and per-ledger pause evidence are DATA
-//!   outages: the interval stays **earned-but-reserved** in `U` and settles
-//!   when the replay completes (test 46).
+//! * **Outage classification (P6-D10).** "Not earned" follows from
+//!   finalized chain state ALONE: a RECONCILED (`Verified`) segment in
+//!   which no finalized registration exists. Its capacity is released to
+//!   the reserve (`Z`) at close. No outage attestation — operator, RPC,
+//!   indexer, frontend, backend or per-ledger pause evidence, or even a
+//!   claimed on-chain program outage — is an input to settlement: an
+//!   unreconciled window stays **earned-but-reserved** in `U` and settles
+//!   when the replay completes (test 46), and a segment holding a
+//!   finalized registration settles by the normal rule.
+//! * **Provenance (P6-D10, Pass #6 R2).** [`settle_epoch`] consumes the
+//!   replay's [`ReplayReport`] — whose segments only the replay can
+//!   produce — and DERIVES every interval's verdict and participant set
+//!   itself ([`classify_segment`], [`weight_inputs`]). There is no public
+//!   way to hand settlement a pre-labelled interval, a verdict, or a
+//!   participant list.
 
 use std::collections::BTreeMap;
 
 use crate::error::{EligibilityError, EligibilityResult};
 use crate::rational::Ratio;
-use crate::replay::{Eligibility, IntervalStatus, Segment};
+use crate::replay::{Eligibility, IntervalStatus, ReplayReport, Segment};
 use crate::types::Addr;
 
 /// Frozen seed-price reference `P_ref` (§1): lamports per seed. The same
@@ -132,9 +140,16 @@ pub fn apr_pool(
     Ok(Some(Ratio::new(num, den)))
 }
 
-/// Evidence that a registration/selection program outage was claimed for
-/// some interval (P6-D10). Only the first three variants are finalized
-/// ON-CHAIN Fruit-program state; everything else is a data outage.
+/// The P6-D10 outage taxonomy: which kind of failure a claimed outage is.
+/// Only the first three variants describe finalized ON-CHAIN Fruit-program
+/// state; everything else is a data outage.
+///
+/// Descriptive only. This is NOT an input to settlement and authorizes
+/// nothing (P6-D10 item 1: "no separate outage attestation exists or is
+/// accepted"): even a genuine registration-program outage has its
+/// economic effect only through the replay — no finalized registration
+/// lands, so the reconciled segment holds no registration and
+/// [`classify_segment`] classifies it [`IntervalVerdict::NotEarned`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutageEvidence {
     /// The canonical registration pause flag of the Fruit program.
@@ -197,59 +212,27 @@ pub enum IntervalVerdict {
     /// the ENTIRE interval's scheduled capacity stays in `U` (P6-D6).
     /// No wallet settles against an incomplete `H`.
     Reserve,
-    /// A verified registration-program outage (P6-D10): the interval is
-    /// **not earned**; its capacity is released to `Z` at pool close.
-    /// Reachable ONLY through [`classify_interval`] with canonical
-    /// on-chain evidence over reconciled history containing no finalized
-    /// registration — never a caller's bare label.
+    /// Reconciled history holding NO finalized registration (P6-D10): the
+    /// interval is **not earned**; its capacity is released to `Z` at pool
+    /// close. Derived only by [`classify_segment`] from a `Verified`
+    /// segment with no registered wallet. Settlement accepts no verdicts
+    /// from its caller, so this value cannot be supplied to it as a label.
     NotEarned,
 }
 
-/// Classify one interval for settlement from the replayed [`Segment`], the
-/// seed counts, and any outage evidence observed for it (P6-D6 + P6-D10).
-///
-/// * No outage evidence — the plain P6-D6 rule of [`classify_segment`].
-/// * A DATA outage (RPC/indexer/frontend/operator/backend/per-ledger) —
-///   the interval is **earned**: verdict is still [`classify_segment`]'s
-///   (an unreconciled or pending-tainted segment reserves and stays
-///   replayable; a clean one settles). Operator and indexer input can
-///   never declare earned capacity "not earned".
-/// * A REGISTRATION-PROGRAM outage (only the finalized on-chain forms:
-///   the canonical pause flag, the program absent, the program
-///   non-executable) — **not earned** only when BOTH hold:
-///   1. the segment's history is reconciled (`IntervalStatus::Verified`;
-///      P6-D10 guard 2 — absence of an OBSERVED registration inside an
-///      unreconciled window is Pending, never "not earned"), and
-///   2. no finalized registration exists in the segment (`wallets` empty
-///      — presence means registered on chain). Wallets already registered
-///      keep accruing during a registration-program outage (P6-D10 item
-///      3), so a registered segment falls back to the normal rule
-///      instead.
-pub fn classify_interval(
-    seg: &Segment,
-    seeds: &BTreeMap<Addr, u64>,
-    outage: Option<OutageEvidence>,
-) -> IntervalVerdict {
-    let Some(e) = outage else {
-        return classify_segment(seg, seeds);
-    };
-    match classify_outage(e) {
-        OutageClass::Data => classify_segment(seg, seeds),
-        OutageClass::RegistrationProgram => {
-            if seg.status == IntervalStatus::Verified && seg.wallets.is_empty() {
-                IntervalVerdict::NotEarned
-            } else {
-                classify_segment(seg, seeds)
-            }
-        }
-    }
-}
-
-/// Classify one replayed [`Segment`] (P6-D6):
+/// Classify one replayed [`Segment`] (P6-D6 + P6-D10). `seeds` is the
+/// seed count (`Miner.rigs`) of the segment's wallets at the segment's
+/// start:
 ///
 /// * `Unresolved` / `NotReconciled` segments — an indexer gap or the
 ///   post-checkpoint tail — are **earned but reserved** (data outage
-///   semantics, §3): [`IntervalVerdict::Reserve`].
+///   semantics, §3): [`IntervalVerdict::Reserve`]. P6-D10 guard 2: the
+///   absence of an OBSERVED registration inside an unreconciled window is
+///   Pending, never "not earned".
+/// * A `Verified` segment in which NO finalized registration exists (no
+///   registered wallet at all) is **not earned**
+///   ([`IntervalVerdict::NotEarned`], P6-D10 item 1): nothing could
+///   accrue, and nothing is caught up later.
 /// * A `Verified` segment settles UNLESS some wallet registered in it is
 ///   PENDING **with qualifying weight potential**: seed-qualified
 ///   (`S_i ≥ 150`, from `seeds`) — its `w_i ∈ [0, K_i]` is unknown, so
@@ -264,13 +247,20 @@ pub fn classify_interval(
 ///   NOT block the interval — an ineligible/non-qualifying wallet never
 ///   halts everyone else's settlement (P6-D6 item 1, P6R-7).
 ///   `Ineligible` wallets are likewise known weight 0 (test 32).
+/// * A MISSING seed record is unreadable state, not zero seeds (§5:
+///   unreadable state is pending, §10 reserve): a PENDING or VERIFIED
+///   wallet with no entry in `seeds` has unknown `K_i`, so `H_seg` is
+///   unverified and the interval reserves (fails closed). A wallet with no
+///   rigs must be recorded with an explicit `0`.
 pub fn classify_segment(seg: &Segment, seeds: &BTreeMap<Addr, u64>) -> IntervalVerdict {
     match seg.status {
         IntervalStatus::Unresolved | IntervalStatus::NotReconciled => IntervalVerdict::Reserve,
+        IntervalStatus::Verified if seg.wallets.is_empty() => IntervalVerdict::NotEarned,
         IntervalStatus::Verified => {
-            let blocking = seg.wallets.iter().any(|(w, e)| {
-                matches!(e, Eligibility::Pending(_))
-                    && seeds.get(w).copied().unwrap_or(0) >= SEED_THRESHOLD_T
+            let blocking = seg.wallets.iter().any(|(w, e)| match e {
+                Eligibility::Ineligible(_) => false,
+                Eligibility::Pending(_) => seeds.get(w).is_none_or(|&s| s >= SEED_THRESHOLD_T),
+                Eligibility::Verified { .. } => !seeds.contains_key(w),
             });
             if blocking {
                 IntervalVerdict::Reserve
@@ -292,22 +282,80 @@ pub struct Participant {
 }
 
 /// One constant-state interval of the epoch, classified for settlement.
+/// CRATE-PRIVATE (P6-D10, Pass #6 R2): only [`settle_epoch`] builds these,
+/// from replayed segments, so no caller can pre-label an interval or choose
+/// its participants.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EpochInterval {
-    pub start: i64,
-    pub end: i64,
-    pub verdict: IntervalVerdict,
-    /// Weight inputs. Meaningful for `Settle` intervals; must be EMPTY for
+pub(crate) struct EpochInterval {
+    pub(crate) start: i64,
+    pub(crate) end: i64,
+    pub(crate) verdict: IntervalVerdict,
+    /// Weight inputs. Meaningful for `Settle` intervals; EMPTY for
     /// `NotEarned` ones (a not-earned interval holds no finalized
-    /// registration, P6-D10 — non-empty input is rejected as an attempt to
-    /// erase registered accrual with a bare label); ignored for `Reserve`.
-    pub participants: Vec<Participant>,
+    /// registration, P6-D10 — the kernel rejects anything else); ignored
+    /// for `Reserve`.
+    pub(crate) participants: Vec<Participant>,
+}
+
+/// Per-wallet seed counts (`Miner.rigs`) on the replay timeline (P6-D3):
+/// each observation holds from its timestamp until the wallet's next one.
+/// A wallet with no observation at or before `t` has an UNKNOWN count at
+/// `t` — never an implicit 0 (see [`classify_segment`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SeedTimeline {
+    by_wallet: BTreeMap<Addr, BTreeMap<i64, u64>>,
+}
+
+impl SeedTimeline {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `wallet` holds `seeds` from `from_ts` on. A second, DIFFERENT count
+    /// for the same wallet and timestamp is contradictory input and is
+    /// rejected (fail closed) rather than silently resolved.
+    pub fn observe(&mut self, wallet: Addr, from_ts: i64, seeds: u64) -> EligibilityResult<()> {
+        let obs = self.by_wallet.entry(wallet).or_default();
+        match obs.get(&from_ts) {
+            Some(&p) if p != seeds => Err(EligibilityError::InvariantViolation(
+                "conflicting seed observations at one timestamp",
+            )),
+            _ => {
+                obs.insert(from_ts, seeds);
+                Ok(())
+            }
+        }
+    }
+
+    /// The seed count of `wallet` at `t`, if known.
+    pub fn at(&self, wallet: &Addr, t: i64) -> Option<u64> {
+        self.by_wallet
+            .get(wallet)?
+            .range(..=t)
+            .next_back()
+            .map(|(_, s)| *s)
+    }
+
+    /// Timestamps strictly inside `(a, b)` at which any of `wallets`
+    /// changes its seed observation.
+    fn changes_within<'a>(
+        &'a self,
+        wallets: impl Iterator<Item = &'a Addr> + 'a,
+        a: i64,
+        b: i64,
+    ) -> impl Iterator<Item = i64> + 'a {
+        wallets
+            .filter_map(|w| self.by_wallet.get(w))
+            .flat_map(move |obs| obs.range(a + 1..b).map(|(t, _)| *t))
+    }
 }
 
 /// Weight inputs extracted from one replayed segment: every VERIFIED
 /// wallet's `X`, joined with its seed count. PENDING and INELIGIBLE wallets
 /// contribute nothing (weight 0; a reserving PENDING must instead make the
 /// whole interval [`IntervalVerdict::Reserve`] via [`classify_segment`]).
+/// Meaningful only for a segment [`classify_segment`] settles, which
+/// guarantees every VERIFIED wallet has a seed record.
 pub fn weight_inputs(seg: &Segment, seeds: &BTreeMap<Addr, u64>) -> Vec<Participant> {
     seg.wallets
         .iter()
@@ -390,10 +438,123 @@ impl EpochSettlement {
     }
 }
 
-/// Settle one epoch. `intervals` must partition `[t_start, t_end)` exactly
-/// (contiguous, in order, no gaps, no overlaps): every second of the epoch
-/// is classified by the caller — a stretch with no verdict at all is not
-/// free capacity, it is missing input, and is rejected.
+/// Settle one epoch from its replay (P6-D5 / P6-D6 / P6-D10).
+///
+/// Provenance (Pass #6 R2): the caller supplies ONLY chain-derived inputs —
+/// the replay `report` (whose segments nothing but the replay can produce)
+/// and the seed timeline — plus the pool's budget and window. Every
+/// interval's verdict ([`classify_segment`]) and participant set
+/// ([`weight_inputs`]) is DERIVED here. So:
+///
+/// * a segment holding a finalized registration can never be settled as
+///   not-earned, nor with its wallets dropped;
+/// * an unreconciled (reserved) segment can never become terminal
+///   not-earned — it stays in `U` and is paid when a later replay
+///   reconciles it (settlement is recomputed from the full replay, and
+///   leaves are cumulative, so a late settlement never double-allocates);
+/// * no outage attestation is an input at all (P6-D10 item 1).
+///
+/// The report's segments, clipped to `[t_start, t_end)`, must cover the
+/// window exactly — an unreplayed stretch is missing input, not free
+/// capacity, and is rejected. A segment is further split wherever one of
+/// its wallets' seed counts changes, so each settled piece has constant
+/// weights.
+///
+/// The R1 spoof shapes do not compile. A pre-labelled interval cannot be
+/// named outside the crate:
+///
+/// ```compile_fail
+/// use eligibility_engine::settlement::EpochInterval;
+/// ```
+///
+/// a report cannot be fabricated:
+///
+/// ```compile_fail
+/// let r = eligibility_engine::ReplayReport {
+///     wallets: Default::default(),
+///     pool: vec![],
+///     segments: vec![],
+/// };
+/// ```
+///
+/// and a replayed report's segments cannot be edited, dropped or relabelled:
+///
+/// ```compile_fail
+/// fn strip(r: &mut eligibility_engine::ReplayReport) {
+///     r.segments.clear();
+/// }
+/// ```
+///
+/// while the canonical inputs themselves are public:
+///
+/// ```
+/// fn settle(r: &eligibility_engine::ReplayReport) {
+///     let seeds = eligibility_engine::SeedTimeline::new();
+///     let _ = eligibility_engine::settle_epoch(1, 0, 1, r, &seeds);
+///     let _ = r.segments();
+/// }
+/// ```
+pub fn settle_epoch(
+    budget: u64,
+    t_start: i64,
+    t_end: i64,
+    report: &ReplayReport,
+    seeds: &SeedTimeline,
+) -> EligibilityResult<EpochSettlement> {
+    if t_end <= t_start {
+        return Err(EligibilityError::InvariantViolation("empty epoch window"));
+    }
+    let mut intervals: Vec<EpochInterval> = Vec::new();
+    let mut cursor = t_start;
+    for seg in report.segments() {
+        let (a, b) = (seg.start.max(t_start), seg.end.min(t_end));
+        if a >= b {
+            continue;
+        }
+        if a != cursor {
+            return Err(EligibilityError::InvariantViolation(
+                "replay does not cover the settlement window",
+            ));
+        }
+        let mut cuts: Vec<i64> = seeds.changes_within(seg.wallets.keys(), a, b).collect();
+        cuts.sort_unstable();
+        cuts.dedup();
+        cuts.push(b);
+        let mut from = a;
+        for to in cuts {
+            let snapshot: BTreeMap<Addr, u64> = seg
+                .wallets
+                .keys()
+                .filter_map(|w| seeds.at(w, from).map(|s| (*w, s)))
+                .collect();
+            let verdict = classify_segment(seg, &snapshot);
+            let participants = if verdict == IntervalVerdict::Settle {
+                weight_inputs(seg, &snapshot)
+            } else {
+                Vec::new()
+            };
+            intervals.push(EpochInterval {
+                start: from,
+                end: to,
+                verdict,
+                participants,
+            });
+            from = to;
+        }
+        cursor = b;
+    }
+    if cursor != t_end {
+        return Err(EligibilityError::InvariantViolation(
+            "replay does not cover the settlement window",
+        ));
+    }
+    settle_intervals(budget, t_start, t_end, &intervals)
+}
+
+/// The settlement kernel: settle already-derived intervals. CRATE-PRIVATE
+/// (Pass #6 R2) — reachable only through [`settle_epoch`], which derives
+/// the intervals from the replay. `intervals` must partition
+/// `[t_start, t_end)` exactly (contiguous, in order, no gaps, no overlaps).
 ///
 /// Fixed-precision note (P6-D5): the accumulator is the frozen integer
 /// `acc_seg = floor(E·Δt_seg·SCALE/(D·H_seg))` per segment and one
@@ -405,7 +566,7 @@ impl EpochSettlement {
 /// cumulative is ≤ `Kmax · E·SCALE/Hfloor ≈ 1.8e27`, both far below
 /// `u128::MAX ≈ 3.4e38`. A hypothetical out-of-range input fails closed
 /// with [`EligibilityError::MathOverflow`] rather than rounding.
-pub fn settle_epoch(
+pub(crate) fn settle_intervals(
     budget: u64,
     t_start: i64,
     t_end: i64,
@@ -492,11 +653,9 @@ pub fn settle_epoch(
             }
             IntervalVerdict::Reserve => reserve_claims.push((iv.start, iv.end)),
             IntervalVerdict::NotEarned => {
-                // P6-D10: terminal not-earned treatment needs canonical
-                // reconciled evidence; weight inputs for a not-earned
-                // interval mean registered wallets whose accrual the label
-                // would erase. Refuse — caller-controlled classification
-                // must not decide economics.
+                // P6-D10: a not-earned interval holds no finalized
+                // registration. Unreachable from settle_epoch (it derives
+                // empty participants); kept as a kernel self-check.
                 if !iv.participants.is_empty() {
                     return Err(EligibilityError::InvariantViolation(
                         "not-earned interval cannot carry registered wallets",
@@ -662,7 +821,7 @@ mod tests {
             verdict: IntervalVerdict::Settle,
             participants: p.clone(),
         }];
-        assert!(settle_epoch(1_000, 0, 100, &ok).is_ok());
+        assert!(settle_intervals(1_000, 0, 100, &ok).is_ok());
         // Gap at the end.
         let gapped = vec![EpochInterval {
             start: 0,
@@ -670,7 +829,7 @@ mod tests {
             verdict: IntervalVerdict::Settle,
             participants: p.clone(),
         }];
-        assert!(settle_epoch(1_000, 0, 100, &gapped).is_err());
+        assert!(settle_intervals(1_000, 0, 100, &gapped).is_err());
         // Overlap.
         let overlap = vec![
             EpochInterval {
@@ -686,9 +845,9 @@ mod tests {
                 participants: p,
             },
         ];
-        assert!(settle_epoch(1_000, 0, 100, &overlap).is_err());
+        assert!(settle_intervals(1_000, 0, 100, &overlap).is_err());
         // A zero-budget epoch is not a pool.
-        assert!(settle_epoch(0, 0, 100, &[]).is_err());
+        assert!(settle_intervals(0, 0, 100, &[]).is_err());
     }
 
     #[test]
@@ -702,7 +861,7 @@ mod tests {
             verdict: IntervalVerdict::Settle,
             participants: vec![participant(W1, 250, 2_500_000_000)],
         }];
-        let s = settle_epoch(e, 0, 86_400, &ivs).unwrap();
+        let s = settle_intervals(e, 0, 86_400, &ivs).unwrap();
         assert_eq!(s.allocations.len(), 1);
         let a = &s.allocations[0];
         // exact = E · 2.5/12.5 = E/5 = 200_000_001.4 → floor, at the cap.

@@ -184,12 +184,23 @@ pub struct Segment {
 pub struct ReplayReport {
     pub wallets: BTreeMap<Addr, WalletAccrual>,
     pub pool: Vec<PoolInterval>,
-    pub segments: Vec<Segment>,
+    /// The classified segments — the ONLY input from which Fruit
+    /// settlement derives its verdicts and participants (P6-D10,
+    /// Pass #6 R2). Private: a report's segments are produced by the
+    /// replay and nothing else, so a caller can neither fabricate a
+    /// report nor edit, drop or relabel a replayed segment before
+    /// [`crate::settle_epoch`] reads it. Read access: [`Self::segments`].
+    segments: Vec<Segment>,
 }
 
 impl ReplayReport {
     pub fn wallet(&self, w: &Addr) -> WalletAccrual {
         self.wallets.get(w).copied().unwrap_or_default()
+    }
+
+    /// The replayed, classified segments in timeline order (read-only).
+    pub fn segments(&self) -> &[Segment] {
+        &self.segments
     }
 }
 

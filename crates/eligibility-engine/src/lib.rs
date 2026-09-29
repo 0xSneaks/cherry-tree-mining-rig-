@@ -50,6 +50,9 @@ pub mod settlement;
 pub mod types;
 pub mod valuation;
 
+#[cfg(test)]
+mod settlement_kernel_tests;
+
 pub use adapter::{
     AdapterConfig, AdapterMint, AssetKind, MintRole, ProgramPin, RiskExtension, StakeSupport,
     TokenProgram,
@@ -76,9 +79,9 @@ pub use safe_mode::{
     ExtremeTracker, QuoteStatus, RiskZone, RouteCheck, SafeModeBoundaries,
 };
 pub use settlement::{
-    apr_pool, apr_weight, classify_interval, classify_outage, classify_segment, recognized_weight,
-    settle_epoch, shared_denominator, weight_inputs, EpochApr, EpochInterval, EpochSettlement,
-    IntervalVerdict, OutageClass, OutageEvidence, Participant, WalletSettlement, ACCUMULATOR_SCALE,
+    apr_pool, apr_weight, classify_outage, classify_segment, recognized_weight, settle_epoch,
+    shared_denominator, weight_inputs, EpochApr, EpochSettlement, IntervalVerdict, OutageClass,
+    OutageEvidence, Participant, SeedTimeline, WalletSettlement, ACCUMULATOR_SCALE,
     APR_PERCENT_SCALE, DAY_SECONDS, DENOMINATOR_FLOOR, P_REF_LAMPORTS, SEED_BENCHMARK_M,
     SEED_THRESHOLD_T,
 };

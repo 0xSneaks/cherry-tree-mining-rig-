@@ -299,7 +299,7 @@ proptest! {
         // FINAL supply (minting only grows it; segments never see more).
         let final_supply: u128 = shadow.supplies.values().map(|s| *s as u128).sum();
         let mut total_unit_seconds: u128 = 0;
-        for s in r.segments.iter().filter(|s| s.status == IntervalStatus::Verified) {
+        for s in r.segments().iter().filter(|s| s.status == IntervalStatus::Verified) {
             let mut units_now: u128 = 0;
             for e in s.wallets.values() {
                 if let Eligibility::Verified { units, gross_lamports, .. } = *e {

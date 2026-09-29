@@ -279,7 +279,7 @@ fn t33_pinned_program_upgrade_is_unknown_from_the_upgrade_slot() {
         Some(Eligibility::Verified { .. })
     ));
     let seg = r
-        .segments
+        .segments()
         .iter()
         .find(|s| s.start <= 400 && 400 < s.end)
         .unwrap();
@@ -307,7 +307,7 @@ fn t33_pinned_program_upgrade_is_unknown_from_the_upgrade_slot() {
     // and never zero.
     assert_eq!(r.wallet(&A).equity_seconds, 3_000 * 350);
     assert_eq!(r.wallet(&A).pending_seconds, 200);
-    for s in &r.segments {
+    for s in r.segments() {
         if s.start >= 400 {
             assert_eq!(
                 s.wallets.get(&A),
@@ -2185,7 +2185,7 @@ fn new2_checkpoint_owner_change_matches_the_live_event() {
     let rg = run_with(&cfg, &refs, &gap, 250);
 
     fn seg(r: &ReplayReport) -> &Segment {
-        r.segments.iter().find(|s| s.start == 170).unwrap()
+        r.segments().iter().find(|s| s.start == 170).unwrap()
     }
     assert_eq!(seg(&rl).status, IntervalStatus::Verified);
     assert_eq!(seg(&rg).status, IntervalStatus::Verified);

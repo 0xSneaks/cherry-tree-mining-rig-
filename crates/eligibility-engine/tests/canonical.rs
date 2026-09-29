@@ -268,7 +268,7 @@ fn t23_flash_loan_sized_intra_transaction_balance_has_zero_weight() {
     let r = run(&skr_cfg(), &t, END);
     assert_eq!(r.wallet(&B).unit_seconds, 0);
     assert_eq!(r.wallet(&B).equity_seconds, 0);
-    assert!(r.segments.iter().all(|s| s.start == s.end
+    assert!(r.segments().iter().all(|s| s.start == s.end
         || !matches!(
             s.wallets.get(&B),
             Some(Eligibility::Verified { units, .. }) if *units > 0

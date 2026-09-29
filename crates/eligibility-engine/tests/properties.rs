@@ -174,7 +174,7 @@ proptest! {
         let start = 1_000i64;
         let end = t.events.last().unwrap().unix_timestamp;
         let mut total_unit_seconds: u128 = 0;
-        for s in r.segments.iter().filter(|s| s.status == IntervalStatus::Verified) {
+        for s in r.segments().iter().filter(|s| s.status == IntervalStatus::Verified) {
             let mut units_now: u128 = 0;
             for e in s.wallets.values() {
                 if let Eligibility::Verified { units, gross_lamports, debt_lamports, x_lamports } = *e {
@@ -236,7 +236,7 @@ proptest! {
         t.slot(last.key.slot + 1, last.unix_timestamp + 1_000).close();
         let r = run(&cfg(), &t, i64::MAX / 4);
         prop_assert_eq!(r.wallet(&C).equity_seconds, 0);
-        for s in &r.segments {
+        for s in r.segments() {
             let verified = matches!(s.wallets.get(&C), Some(Eligibility::Verified { .. }));
             prop_assert!(!verified);
         }
@@ -411,7 +411,7 @@ proptest! {
         let r = run(&cfg, &t, ts + 1_000);
         prop_assert!(r.pool.iter().all(|p| p.status == IntervalStatus::Verified));
         let pending: u64 = shadow.stakes.values().map(|p| p.pending_unstake).sum();
-        let last = r.segments.iter().rev().find(|s| s.end > s.start).unwrap();
+        let last = r.segments().iter().rev().find(|s| s.end > s.start).unwrap();
         let counted: u64 = last.wallets.values().map(|e| match e {
             Eligibility::Verified { units, .. } => *units,
             _ => 0,

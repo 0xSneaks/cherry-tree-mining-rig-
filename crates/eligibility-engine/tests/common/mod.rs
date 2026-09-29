@@ -371,7 +371,7 @@ pub fn run_with(
 }
 
 pub fn x_at(r: &ReplayReport, wallet: &Addr, t: i64) -> Option<Eligibility> {
-    r.segments
+    r.segments()
         .iter()
         .find(|s| s.start <= t && t < s.end)
         .and_then(|s| s.wallets.get(wallet).copied())

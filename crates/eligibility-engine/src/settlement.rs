@@ -336,6 +336,15 @@ impl SeedTimeline {
             .map(|(_, s)| *s)
     }
 
+    /// The lowest seed count of `wallet` anywhere in `[a, b)`: its count at
+    /// `a` and every observation strictly inside. `None` when the count at
+    /// `a` is unknown (fail closed).
+    pub fn min_within(&self, wallet: &Addr, a: i64, b: i64) -> Option<u64> {
+        let first = self.at(wallet, a)?;
+        let obs = self.by_wallet.get(wallet)?;
+        Some(obs.range(a + 1..b).map(|(_, s)| *s).fold(first, u64::min))
+    }
+
     /// Timestamps strictly inside `(a, b)` at which any of `wallets`
     /// changes its seed observation.
     fn changes_within<'a>(

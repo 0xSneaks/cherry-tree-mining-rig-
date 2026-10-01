@@ -41,6 +41,7 @@ pub mod consent;
 pub mod debt;
 pub mod error;
 pub mod ledger;
+pub mod lock_alloc;
 pub mod lots;
 pub mod pricing;
 pub mod rational;
@@ -50,6 +51,8 @@ pub mod settlement;
 pub mod types;
 pub mod valuation;
 
+#[cfg(test)]
+mod lock_alloc_tests;
 #[cfg(test)]
 mod settlement_kernel_tests;
 
@@ -64,6 +67,10 @@ pub use consent::{
 pub use debt::{DebtBook, DebtPending, DebtReading, DebtRegistry, RegistryEntry, WalletDebt};
 pub use error::{EligibilityError, EligibilityResult};
 pub use ledger::{Inconsistent, Ledger, StakePosition, TokenAccount};
+pub use lock_alloc::{
+    lock_snapshot, lock_vesting, LockAward, LockRequest, LockSnapshot, LockVest, LockVesting,
+    LockWeight,
+};
 pub use lots::{Lot, LotBasis, LotLedger};
 pub use pricing::{
     commit_reference, min_price, EpochReferences, PriceSample, ReferenceCommit, ReferenceValidation,

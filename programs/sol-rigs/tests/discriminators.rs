@@ -65,6 +65,63 @@ fn discriminators_match_the_typescript_client() {
             "migrateV3",
             hex(sol_rigs::instruction::MigrateV3::DISCRIMINATOR),
         ),
+        // Lock Season (§8, Pass #7)
+        (
+            "commitLockPool",
+            hex(sol_rigs::instruction::CommitLockPool::DISCRIMINATOR),
+        ),
+        (
+            "registerLock",
+            hex(sol_rigs::instruction::RegisterLock::DISCRIMINATOR),
+        ),
+        (
+            "cancelLock",
+            hex(sol_rigs::instruction::CancelLock::DISCRIMINATOR),
+        ),
+        (
+            "postLockWeights",
+            hex(sol_rigs::instruction::PostLockWeights::DISCRIMINATOR),
+        ),
+        (
+            "sealLockWeights",
+            hex(sol_rigs::instruction::SealLockWeights::DISCRIMINATOR),
+        ),
+        (
+            "awardLockRegistrations",
+            hex(sol_rigs::instruction::AwardLockRegistrations::DISCRIMINATOR),
+        ),
+        (
+            "sealLockAwards",
+            hex(sol_rigs::instruction::SealLockAwards::DISCRIMINATOR),
+        ),
+        (
+            "vetoLockAllocation",
+            hex(sol_rigs::instruction::VetoLockAllocation::DISCRIMINATOR),
+        ),
+        (
+            "finalizeLockAllocation",
+            hex(sol_rigs::instruction::FinalizeLockAllocation::DISCRIMINATOR),
+        ),
+        (
+            "postLockRoot",
+            hex(sol_rigs::instruction::PostLockRoot::DISCRIMINATOR),
+        ),
+        (
+            "finalizeLockRoot",
+            hex(sol_rigs::instruction::FinalizeLockRoot::DISCRIMINATOR),
+        ),
+        (
+            "resolveLockPoolTerminal",
+            hex(sol_rigs::instruction::ResolveLockPoolTerminal::DISCRIMINATOR),
+        ),
+        (
+            "claimLock",
+            hex(sol_rigs::instruction::ClaimLock::DISCRIMINATOR),
+        ),
+        (
+            "closeLockPool",
+            hex(sol_rigs::instruction::CloseLockPool::DISCRIMINATOR),
+        ),
         // accounts
         ("Config", hex(sol_rigs::state::Config::DISCRIMINATOR)),
         ("Miner", hex(sol_rigs::state::Miner::DISCRIMINATOR)),
@@ -72,6 +129,14 @@ fn discriminators_match_the_typescript_client() {
         (
             "ReferralLedger",
             hex(sol_rigs::state::ReferralLedger::DISCRIMINATOR),
+        ),
+        (
+            "LockSeason",
+            hex(sol_rigs::fruit_state::LockSeason::DISCRIMINATOR),
+        ),
+        (
+            "LockRegistration",
+            hex(sol_rigs::fruit_state::LockRegistration::DISCRIMINATOR),
         ),
     ];
 
@@ -94,12 +159,29 @@ fn discriminators_match_the_typescript_client() {
         ("scheduleFeeChange", "4117d76e1094f993"),
         ("cancelFeeChange", "a52beb3f1f674984"),
         ("migrateV3", "f5aa677c90bb1566"),
+        ("commitLockPool", "c1ba6df208b5e124"),
+        ("registerLock", "52880400d0cab4c7"),
+        ("cancelLock", "139c6c7fbaef5f8a"),
+        ("postLockWeights", "2a99e134b1a77b54"),
+        ("sealLockWeights", "81f2808f1292f69d"),
+        ("awardLockRegistrations", "c9ed2b56f8bd4d2d"),
+        ("sealLockAwards", "31ebece092c7b362"),
+        ("vetoLockAllocation", "4c01759c354469be"),
+        ("finalizeLockAllocation", "cd059b8bf32a3cbe"),
+        ("postLockRoot", "3be6c66b30087f4e"),
+        ("finalizeLockRoot", "b7f122446573734e"),
+        ("resolveLockPoolTerminal", "1784afc44d7773e8"),
+        ("claimLock", "1b6cc228c82ef1d2"),
+        ("closeLockPool", "72625957d9a931b6"),
         ("Config", "9b0caae01efacc82"),
         ("Miner", "df710f367b7a8c64"),
         ("Vault", "d308e82b02987577"),
         ("ReferralLedger", "a30861cf910b5b80"),
+        ("LockSeason", "e1527c8e3d57ca84"),
+        ("LockRegistration", "55d00114b6413c41"),
     ];
 
+    assert_eq!(pairs.len(), expected.len());
     for ((name, actual), (ename, eexpected)) in pairs.iter().zip(expected) {
         assert_eq!(name, ename);
         assert_eq!(

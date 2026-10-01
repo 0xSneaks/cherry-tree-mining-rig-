@@ -41,6 +41,15 @@ export const SEEDS = {
   skrBind: new TextEncoder().encode('skr_bind'),
   /** Referral ledger (architecture §7): `["referral", referrer]`. */
   referral: new TextEncoder().encode('referral'),
+  // Fruit ledger (§10a) and lock Season (§8, Pass #7).
+  fruitConfig: new TextEncoder().encode('fruit_config'),
+  fruitLedger: new TextEncoder().encode('fruit_ledger'),
+  fruitVault: new TextEncoder().encode('fruit_vault'),
+  fruitPool: new TextEncoder().encode('fruit_pool'),
+  fruitRoot: new TextEncoder().encode('fruit_root'),
+  fruitClaim: new TextEncoder().encode('fruit_claim'),
+  lockSeason: new TextEncoder().encode('lock_season'),
+  lockReg: new TextEncoder().encode('lock_reg'),
 } as const;
 
 // --- protocol fees (architecture §7a) — program constants, mirrored ---
@@ -81,6 +90,23 @@ export const IX_DISCRIMINATOR = {
   scheduleFeeChange: fromHex('4117d76e1094f993'),
   cancelFeeChange: fromHex('a52beb3f1f674984'),
   migrateV3: fromHex('f5aa677c90bb1566'),
+  // Lock Season (§8, Pass #7). Wallet: register / cancel / claim.
+  registerLock: fromHex('52880400d0cab4c7'),
+  cancelLock: fromHex('139c6c7fbaef5f8a'),
+  claimLock: fromHex('1b6cc228c82ef1d2'),
+  // Permissionless tally / settlement steps.
+  sealLockWeights: fromHex('81f2808f1292f69d'),
+  awardLockRegistrations: fromHex('c9ed2b56f8bd4d2d'),
+  sealLockAwards: fromHex('31ebece092c7b362'),
+  finalizeLockAllocation: fromHex('cd059b8bf32a3cbe'),
+  finalizeLockRoot: fromHex('b7f122446573734e'),
+  closeLockPool: fromHex('72625957d9a931b6'),
+  // Operator-only (admin / root poster / veto set).
+  commitLockPool: fromHex('c1ba6df208b5e124'),
+  postLockWeights: fromHex('2a99e134b1a77b54'),
+  postLockRoot: fromHex('3be6c66b30087f4e'),
+  vetoLockAllocation: fromHex('4c01759c354469be'),
+  resolveLockPoolTerminal: fromHex('1784afc44d7773e8'),
 } as const;
 
 export const ACCOUNT_DISCRIMINATOR = {
@@ -88,6 +114,8 @@ export const ACCOUNT_DISCRIMINATOR = {
   miner: fromHex('df710f367b7a8c64'),
   vault: fromHex('d308e82b02987577'),
   referralLedger: fromHex('a30861cf910b5b80'),
+  lockSeason: fromHex('e1527c8e3d57ca84'),
+  lockRegistration: fromHex('55d00114b6413c41'),
 } as const;
 
 /** Byte length of each account, discriminator included. */

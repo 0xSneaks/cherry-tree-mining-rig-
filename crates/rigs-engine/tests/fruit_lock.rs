@@ -1015,7 +1015,7 @@ fn generic_root_and_terminal_paths_reject_lock_pools() {
 fn rounding_dust_returns_entirely_to_z_never_to_treasury() {
     let (mut l, mut pool) = season(B);
     let ells = [123_456_789u64; 10];
-    let a = finalized(&mut pool, &ells);
+    let (a, regs) = finalized_regs(&mut pool, &ells);
     let dust = a.rounding_dust();
     assert!(dust > 0, "fixture must produce dust");
     assert_eq!(dust, a.gross_allocatable - a.assigned_total);
@@ -1048,7 +1048,7 @@ fn rounding_dust_returns_entirely_to_z_never_to_treasury() {
     finalize_root(&mut l, &mut pool, &mut r, te + WINDOW).unwrap();
     let mut vault = B;
     let mut c = 0;
-    vault -= claim(&mut l, &mut pool, &mut c, total / 10).unwrap();
+    vault -= claim_lock(&mut l, &mut pool, &regs[0], &mut c, total / 10).unwrap();
     let out = close_pool(&mut l, &mut pool, te + WINDOW).unwrap();
     assert_eq!(out.treasury_release, 0);
     assert_eq!(out.released, B - total);
@@ -1261,7 +1261,7 @@ fn full_season_lifecycle_releases_once_and_splits_forfeit() {
     let vault = B;
     // Three registrants; wallet 2 halves its weight (voluntary shortfall).
     let ells = [LOCK_KMAX_LAMPORTS, SOL, 500_000_000];
-    let a = finalized(&mut pool, &ells);
+    let (a, regs) = finalized_regs(&mut pool, &ells);
     solvent(vault, &l);
     assert_eq!((l.committed, l.reserve), (B, 0));
     let awards: Vec<u64> = ells
@@ -1304,7 +1304,17 @@ fn full_season_lifecycle_releases_once_and_splits_forfeit() {
     let mut vault = vault;
     let mut claimed = [0u64; 3];
     for i in 0..3 {
-        let paid = claim(&mut l, &mut pool, &mut claimed[i], vested[i]).unwrap();
+        // A claim above the wallet's own award is refused (P7-D).
+        assert_eq!(
+            claim_lock(&mut l, &mut pool, &regs[i], &mut claimed[i], awards[i] + 1),
+            Err(EngineError::LockClaimAboveAward)
+        );
+        // The generic claim path refuses lock pools.
+        assert_eq!(
+            claim(&mut l, &mut pool, &mut claimed[i], vested[i]),
+            Err(EngineError::InvalidLedgerKind)
+        );
+        let paid = claim_lock(&mut l, &mut pool, &regs[i], &mut claimed[i], vested[i]).unwrap();
         vault -= paid;
         solvent(vault, &l);
     }
@@ -1407,7 +1417,7 @@ proptest! {
         forfeit_frac in 0u64..=100,
     ) {
         let (mut l, mut pool) = season(budget);
-        let a = finalized(&mut pool, &ells);
+        let (a, regs) = finalized_regs(&mut pool, &ells);
         prop_assert_eq!((l.committed, l.reserve), (budget, 0));
         let mut total = 0u64;
         let mut forfeited = 0u64;
@@ -1440,9 +1450,9 @@ proptest! {
         finalize_root(&mut l, &mut pool, &mut r, te + WINDOW).unwrap();
         let mut vault = budget;
         prop_assert!(vault >= l.obligations().unwrap());
-        for v in vested {
+        for (r, v) in regs.iter().zip(vested) {
             let mut c = 0;
-            vault -= claim(&mut l, &mut pool, &mut c, v).unwrap();
+            vault -= claim_lock(&mut l, &mut pool, r, &mut c, v).unwrap();
             prop_assert!(vault >= l.obligations().unwrap());
         }
         let out = close_pool(&mut l, &mut pool, te + WINDOW).unwrap();

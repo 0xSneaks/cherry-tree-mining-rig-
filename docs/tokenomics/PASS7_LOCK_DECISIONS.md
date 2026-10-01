@@ -157,6 +157,34 @@ registrations become immutable. Accounting:
   veto set.
 - D-B5: deferred to P7-C / P7-D.
 
+## P7-D — lock settlement (roots, claims, terminal resolution, close)
+
+Date: 2026-10-01. Implemented under the founder's instruction to finish
+Pass #7; each item below enforces an existing frozen rule, none adds one.
+
+- **B-1, one lock pool per Season (§8 "one immutable lock election per
+  wallet per Season").** `commit_lock_pool` requires `pool_id == FRUIT_T0`
+  of the Season, so a second lock pool for the same Season resolves to the
+  same pool PDA and cannot be created; one wallet can hold at most one
+  registration per Season.
+- Lock roots, root finalization, terminal resolution, claims and close go
+  only through `post_lock_root`, `finalize_lock_root`,
+  `resolve_lock_pool_terminal`, `claim_lock` and `close_lock_pool`, which load
+  the Season's Final allocation. The generic Fruit instructions refuse lock
+  pools (`claim_fruit` included); vetoes use `veto_fruit_root`.
+- A lock claim is bounded by the wallet's own Final award `A_i` (its
+  registration account), so even a faulty or malicious root cannot pay a
+  wallet more than its award, a cancelled wallet anything, or a wallet with
+  no registration anything.
+- Capacity is the cliff only: the safety-release path stays disabled because
+  the EXTREME dwell period is unset and no instruction can set it (D-B5).
+- Close releases `B_lock - final_total` from `U` to `Z` exactly once and then
+  `floor(0.80 forfeited)` from `Z` to the Protocol Treasury
+  (`config.fee_recipient`); unallocated capacity and dust stay 100% in `Z`.
+- Open (founder): B-2 — the allocation tally advances only when the root
+  poster posts weights; there is no veto-quorum fallback for the allocation.
+  A stalled tally keeps `B_lock` reserved in `U` (fail closed).
+
 ## Allocation lifecycle (engine, pool-owned)
 
 Since P7-B the lifecycle is a tally, stored on the lock pool (on-chain: the

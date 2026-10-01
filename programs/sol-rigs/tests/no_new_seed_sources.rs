@@ -130,8 +130,13 @@ const FRUIT_INSTRUCTIONS: &[&str] = &[
 const LOCK_INSTRUCTIONS: &[&str] = &[
     "award_lock_registrations",
     "cancel_lock",
+    "claim_lock",
+    "close_lock_pool",
     "commit_lock_pool",
     "finalize_lock_allocation",
+    "finalize_lock_root",
+    "post_lock_root",
+    "resolve_lock_pool_terminal",
     "post_lock_weights",
     "register_lock",
     "seal_lock_awards",

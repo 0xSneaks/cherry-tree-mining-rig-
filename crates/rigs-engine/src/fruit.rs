@@ -618,7 +618,25 @@ pub(crate) fn terminal_resolution_unchecked(
 /// Pays `max(0, cumulative - claimed_cum)`, then
 /// `claimed_cum = max(claimed_cum, cumulative)`. A duplicate or lower leaf
 /// pays 0 and claws nothing back. Returns the payment.
+///
+/// Refuses [`LedgerKind::Lock`] pools: a lock claim is also bounded by the
+/// wallet's own award, so it goes only through
+/// [`crate::fruit_lock::claim_lock`].
 pub fn claim(
+    ledger: &mut FruitLedger,
+    pool: &mut FruitPool,
+    claimed_cum: &mut u64,
+    cumulative: u64,
+) -> EngineResult<u64> {
+    if pool.kind == LedgerKind::Lock {
+        return Err(EngineError::InvalidLedgerKind);
+    }
+    claim_unchecked(ledger, pool, claimed_cum, cumulative)
+}
+
+/// [`claim`] without the ledger-kind gate (lock path only, after its
+/// per-wallet award bound).
+pub(crate) fn claim_unchecked(
     ledger: &mut FruitLedger,
     pool: &mut FruitPool,
     claimed_cum: &mut u64,

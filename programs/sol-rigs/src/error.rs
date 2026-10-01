@@ -215,6 +215,10 @@ pub enum RigsError {
     DuplicateLockRegistration,
     #[msg("Lock batch weights and registration accounts do not match")]
     LockBatchMismatch,
+    #[msg("Lock claim exceeds the wallet's award")]
+    LockClaimAboveAward,
+    #[msg("Lock pool id must be the Season's FRUIT_T0 (one lock pool per Season)")]
+    LockPoolIdMismatch,
 }
 
 impl From<EngineError> for RigsError {
@@ -284,6 +288,7 @@ impl From<EngineError> for RigsError {
             EngineError::LockAllocationNotFinal => RigsError::LockAllocationNotFinal,
             EngineError::LockTallyInvalid => RigsError::LockTallyInvalid,
             EngineError::LockSafetyReleaseDisabled => RigsError::LockSafetyReleaseDisabled,
+            EngineError::LockClaimAboveAward => RigsError::LockClaimAboveAward,
         }
     }
 }

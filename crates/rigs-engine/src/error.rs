@@ -145,6 +145,8 @@ pub enum EngineError {
     LockTallyInvalid,
     /// Safety release while the EXTREME dwell period is unset.
     LockSafetyReleaseDisabled,
+    /// A lock claim's cumulative leaf exceeds the wallet's Final award.
+    LockClaimAboveAward,
 }
 
 impl fmt::Display for EngineError {
@@ -224,6 +226,7 @@ impl fmt::Display for EngineError {
             EngineError::LockSafetyReleaseDisabled => {
                 "lock safety release is disabled until the EXTREME dwell is set"
             }
+            EngineError::LockClaimAboveAward => "lock claim exceeds the wallet's award",
         };
         f.write_str(s)
     }

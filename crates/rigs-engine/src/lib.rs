@@ -49,7 +49,7 @@ pub use fruit::{
     P_REF_LAMPORTS, QMAX_DEN, QMAX_NUM,
 };
 pub use fruit_lock::{
-    award_lock_registration, cancel_lock, commit_lock_pool, finalize_lock_allocation,
+    award_lock_registration, cancel_lock, claim_lock, commit_lock_pool, finalize_lock_allocation,
     lock_allocation, lock_award, lock_capacity, lock_final_allocation, lock_h,
     lock_registration_open, lock_safety_vest, lock_season_start, lock_vest_at_maturity,
     post_lock_root, post_lock_weight, register_lock, root_capacity, seal_lock_awards,

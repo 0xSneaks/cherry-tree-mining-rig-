@@ -114,6 +114,8 @@ export const ANCHOR_ERROR_NAMES = [
   'LockRegistrationMismatch',
   'DuplicateLockRegistration',
   'LockBatchMismatch',
+  'LockClaimAboveAward',
+  'LockPoolIdMismatch',
 ] as const;
 
 export type AnchorErrorName = (typeof ANCHOR_ERROR_NAMES)[number];

@@ -10,6 +10,8 @@ use crate::fruit_state::{require_version, ClaimRecord, FruitVault, Ledger, Pool}
 use crate::instructions::fruit_ledger::check_solvent;
 use crate::vault::move_lamports;
 
+const LOCK_LEDGER_KIND: u8 = rigs_engine::LedgerKind::Lock as u8;
+
 #[derive(Accounts)]
 pub struct ClaimFruit<'info> {
     /// The claimant: signs, pays the claim record's rent, and is the only
@@ -82,6 +84,11 @@ pub fn claim_fruit(
     );
 
     let pool = &ctx.accounts.pool;
+    // Lock claims are also bounded by the wallet's award: `claim_lock` only.
+    require!(
+        pool.ledger_kind != LOCK_LEDGER_KIND,
+        RigsError::InvalidLedgerKind
+    );
     require!(pool.final_version != 0, RigsError::NoFinalRoot);
     let leaf = fruit_merkle::leaf(
         &crate::ID,

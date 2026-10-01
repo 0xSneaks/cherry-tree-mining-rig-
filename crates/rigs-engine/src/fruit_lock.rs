@@ -48,9 +48,9 @@
 
 use crate::error::{EngineError, EngineResult};
 use crate::fruit::{
-    commit_pool, post_root_unchecked, scheduled_capacity, terminal_resolution_unchecked,
-    wallet_cap, FruitLedger, FruitPool, FruitRoot, LedgerKind, PoolStatus, FRUIT_M, P_REF_LAMPORTS,
-    QMAX_DEN,
+    claim_unchecked, commit_pool, post_root_unchecked, scheduled_capacity,
+    terminal_resolution_unchecked, wallet_cap, FruitLedger, FruitPool, FruitRoot, LedgerKind,
+    PoolStatus, FRUIT_M, P_REF_LAMPORTS, QMAX_DEN,
 };
 use crate::fruit_schedule::DAY_SECONDS;
 
@@ -793,4 +793,28 @@ pub fn terminal_lock_resolution(
         return Err(EngineError::RootExceedsCapacity);
     }
     terminal_resolution_unchecked(ledger, pool, version, checkpoint_time, total, now)
+}
+
+/// CLAIM on a lock pool: against the pool's latest Final root, with the
+/// wallet's cumulative leaf also bounded by its own Final award `A_i`
+/// (never above `floor(B/5)`). A cancelled registration, or one without an
+/// award in the Final generation, can claim nothing.
+pub fn claim_lock(
+    ledger: &mut FruitLedger,
+    pool: &mut FruitPool,
+    reg: &LockRegistrationState,
+    claimed_cum: &mut u64,
+    cumulative: u64,
+) -> EngineResult<u64> {
+    if pool.kind != LedgerKind::Lock {
+        return Err(EngineError::InvalidLedgerKind);
+    }
+    let a = lock_final_allocation(pool)?;
+    if reg.cancelled {
+        return Err(EngineError::LockRegistrationCancelled);
+    }
+    if cumulative > reg.award_for(a.generation) {
+        return Err(EngineError::LockClaimAboveAward);
+    }
+    claim_unchecked(ledger, pool, claimed_cum, cumulative)
 }

@@ -77,10 +77,8 @@ pub fn post_fruit_root(
             || LedgerKind::from_u8(ctx.accounts.pool.ledger_kind).anchor()? == LedgerKind::Lock,
         RigsError::ForfeitOnlyOnLockLedger
     );
-    // Lock forfeiture is bounded by `sum A_i - final_total` (architecture
-    // §8, test 89). `sum A_i` comes from lock registration, which this
-    // program version does not have, so no forfeiture can be authenticated:
-    // fail closed until the lock engine writes it.
+    // Lock roots (and so all forfeiture) go through `post_lock_root`, which
+    // loads the Season's Final allocation; the generic path never carries it.
     require!(forfeited == 0, RigsError::LockPoolsNotImplemented);
     let window = fc.challenge_window_secs;
     let now = Clock::get()?.unix_timestamp;

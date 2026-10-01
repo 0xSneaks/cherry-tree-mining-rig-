@@ -394,6 +394,63 @@ pub mod sol_rigs {
         instructions::fruit_lock::finalize_lock_allocation(ctx)
     }
 
+    /// Post a lock root against the Final allocation (cliff capacity).
+    pub fn post_lock_root(
+        ctx: Context<PostLockRoot>,
+        version: u64,
+        merkle_root: [u8; 32],
+        checkpoint_time: i64,
+        total: u64,
+        complete: bool,
+        forfeited: u64,
+    ) -> Result<()> {
+        instructions::fruit_lock::post_lock_root(
+            ctx,
+            version,
+            merkle_root,
+            checkpoint_time,
+            total,
+            complete,
+            forfeited,
+        )
+    }
+
+    /// Finalize a lock root after its window. Permissionless.
+    pub fn finalize_lock_root(ctx: Context<FinalizeLockRoot>) -> Result<()> {
+        instructions::fruit_lock::finalize_lock_root(ctx)
+    }
+
+    /// Veto-quorum terminal settlement of a lock pool after `t_end`.
+    pub fn resolve_lock_pool_terminal<'info>(
+        ctx: Context<'_, '_, 'info, 'info, ResolveLockPoolTerminal<'info>>,
+        version: u64,
+        merkle_root: [u8; 32],
+        checkpoint_time: i64,
+        total: u64,
+    ) -> Result<()> {
+        instructions::fruit_lock::resolve_lock_pool_terminal(
+            ctx,
+            version,
+            merkle_root,
+            checkpoint_time,
+            total,
+        )
+    }
+
+    /// Cumulative lock claim, bounded by the wallet's own award.
+    pub fn claim_lock(
+        ctx: Context<ClaimLock>,
+        cumulative_amount: u64,
+        proof: Vec<[u8; 32]>,
+    ) -> Result<()> {
+        instructions::fruit_lock::claim_lock(ctx, cumulative_amount, proof)
+    }
+
+    /// Reconciled lock-pool close; 80% of forfeiture to the treasury.
+    pub fn close_lock_pool(ctx: Context<CloseLockPool>) -> Result<()> {
+        instructions::fruit_lock::close_lock_pool(ctx)
+    }
+
     /// Pause or resume one Fruit ledger (pools, roots, finalize, close).
     pub fn set_fruit_paused(ctx: Context<FruitAdminOnly>, kind: u8, paused: bool) -> Result<()> {
         instructions::fruit_ledger::set_fruit_paused(ctx, kind, paused)

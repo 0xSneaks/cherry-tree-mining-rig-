@@ -11,27 +11,36 @@
 //! `assigned_total` is never an input (V-1 / V-2 closed by construction):
 //! the poster posts only `ell_i <= requested_i` per active registration, and
 //! the permissionless award pass computes each `A_i` and adds it exactly once
-//! per generation. Lock roots, claims, terminal resolution and close are
-//! wired in P7-D; until then the generic paths keep refusing lock pools.
+//! per generation.
+//!
+//! P7-D: lock roots, finalization, terminal resolution, claims and close go
+//! through the lock instructions below, which load the Season; the generic
+//! Fruit instructions refuse lock pools. Vetoes on lock roots use the
+//! generic `veto_fruit_root`.
 
 use anchor_lang::prelude::*;
 use rigs_engine::{
-    award_lock_registration, cancel_lock, commit_lock_pool as engine_commit_lock_pool,
-    finalize_lock_allocation as engine_finalize_lock_allocation, fruit_t0, post_lock_weight,
+    award_lock_registration, cancel_lock, claim_lock as engine_claim_lock, close_pool,
+    commit_lock_pool as engine_commit_lock_pool,
+    finalize_lock_allocation as engine_finalize_lock_allocation, finalize_root, fruit_t0,
+    post_lock_root as engine_post_lock_root, post_lock_weight,
     register_lock as engine_register_lock, seal_lock_awards as engine_seal_lock_awards,
-    seal_lock_weights as engine_seal_lock_weights,
+    seal_lock_weights as engine_seal_lock_weights, terminal_lock_resolution,
     veto_lock_allocation as engine_veto_lock_allocation, FruitPool, LedgerKind,
-    LockRegistrationState, DAY_SECONDS,
+    LockRegistrationState, SafetyRelease, DAY_SECONDS,
 };
 
 use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
 use crate::events::*;
+use crate::fruit_merkle;
 use crate::fruit_state::{
-    require_version, FruitConfig, FruitVault, Ledger, LockRegistration, LockSeason, Pool,
+    require_version, ClaimRecord, FruitConfig, FruitVault, Ledger, LockRegistration, LockSeason,
+    Pool, Root,
 };
 use crate::instructions::fruit_ledger::check_solvent;
 use crate::state::Config;
+use crate::vault::{move_lamports, require_external_destination};
 
 const LOCK_KIND: u8 = LedgerKind::Lock as u8;
 
@@ -147,6 +156,10 @@ pub fn commit_lock_pool(
         .checked_add(DAY_SECONDS)
         .ok_or(error!(RigsError::MathOverflow))?;
     debug_assert_eq!(season_t0, fruit_t0(launch_t0));
+    // B-1: one lock pool per Season. The pool id is the Season's FRUIT_T0,
+    // so a second lock pool for the same Season hits the same PDA (`init`
+    // fails) and one wallet can make only one election per Season (§8).
+    require!(pool_id == season_t0 as u64, RigsError::LockPoolIdMismatch);
     let now = Clock::get()?.unix_timestamp;
 
     let mut acct = ctx.accounts.ledger.accounting();
@@ -530,5 +543,475 @@ pub fn finalize_lock_allocation(ctx: Context<LockTallyStep>) -> Result<()> {
         assigned_total: a.assigned_total,
         rounding_dust: a.rounding_dust(),
     });
+    Ok(())
+}
+
+// =================================================================== P7-D: settlement
+
+/// Safety release stays disabled: the EXTREME minimum-dwell period is unset
+/// and no instruction can set it (D-B5, deferred). Lock capacity is the
+/// cliff only.
+const LOCK_SAFETY: SafetyRelease = SafetyRelease::Disabled;
+
+#[derive(Accounts)]
+#[instruction(version: u64)]
+pub struct PostLockRoot<'info> {
+    #[account(mut)]
+    pub poster: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_CONFIG_SEED],
+        bump = fruit_config.bump,
+        constraint = fruit_config.root_poster == poster.key() @ RigsError::UnauthorizedRootPoster,
+    )]
+    pub fruit_config: Box<Account<'info, FruitConfig>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_POOL_SEED, &[pool.ledger_kind], &pool.pool_id.to_le_bytes()],
+        bump = pool.bump,
+    )]
+    pub pool: Box<Account<'info, Pool>>,
+
+    #[account(seeds = [LOCK_SEASON_SEED, pool.key().as_ref()], bump = season.bump)]
+    pub season: Box<Account<'info, LockSeason>>,
+
+    #[account(
+        init,
+        payer = poster,
+        space = 8 + Root::INIT_SPACE,
+        seeds = [FRUIT_ROOT_SEED, pool.key().as_ref(), &version.to_le_bytes()],
+        bump,
+    )]
+    pub root: Box<Account<'info, Root>>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// POST LOCK ROOT (root poster): against the pool's Final allocation, with
+/// the lock cliff capacity (`0` before `t_s + 5 days`, `assigned_total`
+/// from it) and `forfeited <= assigned_total - total` on a complete root.
+pub fn post_lock_root(
+    ctx: Context<PostLockRoot>,
+    version: u64,
+    merkle_root: [u8; 32],
+    checkpoint_time: i64,
+    total: u64,
+    complete: bool,
+    forfeited: u64,
+) -> Result<()> {
+    require_lock_unpaused(&ctx.accounts.fruit_config)?;
+    let window = ctx.accounts.fruit_config.challenge_window_secs;
+    let now = Clock::get()?.unix_timestamp;
+    let mut p = load(&ctx.accounts.pool, &ctx.accounts.season)?;
+    let root_state = engine_post_lock_root(
+        &mut p,
+        version,
+        checkpoint_time,
+        total,
+        complete,
+        forfeited,
+        now,
+        window,
+        LOCK_SAFETY,
+    )
+    .anchor()?;
+
+    let pool_key = ctx.accounts.pool.key();
+    ctx.accounts.pool.write_accounting(&p);
+    let fc = &mut ctx.accounts.fruit_config;
+    fc.pending_roots = fc
+        .pending_roots
+        .checked_add(1)
+        .ok_or(error!(RigsError::MathOverflow))?;
+    let root = &mut ctx.accounts.root;
+    root.state_version = FRUIT_STATE_VERSION;
+    root.pool = pool_key;
+    root.merkle_root = merkle_root;
+    root.veto_bitmap = 0;
+    root.terminal = false;
+    root.bump = ctx.bumps.root;
+    root.write_accounting(&root_state);
+
+    emit!(FruitRootPosted {
+        pool: pool_key,
+        version,
+        merkle_root,
+        checkpoint_time,
+        total,
+        complete,
+        final_after: root_state.final_after,
+    });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct FinalizeLockRoot<'info> {
+    #[account(mut, seeds = [FRUIT_CONFIG_SEED], bump = fruit_config.bump)]
+    pub fruit_config: Box<Account<'info, FruitConfig>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_POOL_SEED, &[pool.ledger_kind], &pool.pool_id.to_le_bytes()],
+        bump = pool.bump,
+    )]
+    pub pool: Box<Account<'info, Pool>>,
+
+    #[account(seeds = [LOCK_SEASON_SEED, pool.key().as_ref()], bump = season.bump)]
+    pub season: Box<Account<'info, LockSeason>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_ROOT_SEED, pool.key().as_ref(), &root.version.to_le_bytes()],
+        bump = root.bump,
+        constraint = root.pool == pool.key() @ RigsError::FruitAccountMismatch,
+    )]
+    pub root: Box<Account<'info, Root>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_LEDGER_SEED, &[LOCK_KIND]],
+        bump = ledger.bump,
+        has_one = vault @ RigsError::FruitAccountMismatch,
+    )]
+    pub ledger: Account<'info, Ledger>,
+
+    #[account(seeds = [FRUIT_VAULT_SEED, &[LOCK_KIND]], bump = ledger.vault_bump)]
+    pub vault: Account<'info, FruitVault>,
+}
+
+/// FINALIZE LOCK ROOT (permissionless) after its window: `U -= Δ; L += Δ`,
+/// re-capped at the Final `assigned_total`. Vetoes use `veto_fruit_root`.
+pub fn finalize_lock_root(ctx: Context<FinalizeLockRoot>) -> Result<()> {
+    require_lock_unpaused(&ctx.accounts.fruit_config)?;
+    require_version(ctx.accounts.root.state_version)?;
+    require_version(ctx.accounts.ledger.state_version)?;
+    let now = Clock::get()?.unix_timestamp;
+    let mut acct = ctx.accounts.ledger.accounting();
+    let mut p = load(&ctx.accounts.pool, &ctx.accounts.season)?;
+    let mut root_state = ctx.accounts.root.accounting()?;
+    let established = finalize_root(&mut acct, &mut p, &mut root_state, now).anchor()?;
+    check_solvent(&ctx.accounts.vault.to_account_info(), &acct)?;
+
+    let merkle_root = ctx.accounts.root.merkle_root;
+    ctx.accounts.ledger.write_accounting(&acct);
+    let pool = &mut ctx.accounts.pool;
+    pool.write_accounting(&p);
+    pool.final_root = merkle_root;
+    ctx.accounts.root.write_accounting(&root_state);
+    let fc = &mut ctx.accounts.fruit_config;
+    fc.pending_roots = fc.pending_roots.saturating_sub(1);
+
+    emit!(FruitRootFinalized {
+        pool: ctx.accounts.pool.key(),
+        version: root_state.version,
+        total: root_state.total,
+        established,
+        complete: root_state.complete,
+        terminal: false,
+    });
+    Ok(())
+}
+
+#[derive(Accounts)]
+#[instruction(version: u64)]
+pub struct ResolveLockPoolTerminal<'info> {
+    /// Pays for the root account. Carries no authority by itself.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(seeds = [FRUIT_CONFIG_SEED], bump = fruit_config.bump)]
+    pub fruit_config: Box<Account<'info, FruitConfig>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_POOL_SEED, &[pool.ledger_kind], &pool.pool_id.to_le_bytes()],
+        bump = pool.bump,
+    )]
+    pub pool: Box<Account<'info, Pool>>,
+
+    #[account(seeds = [LOCK_SEASON_SEED, pool.key().as_ref()], bump = season.bump)]
+    pub season: Box<Account<'info, LockSeason>>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + Root::INIT_SPACE,
+        seeds = [FRUIT_ROOT_SEED, pool.key().as_ref(), &version.to_le_bytes()],
+        bump,
+    )]
+    pub root: Box<Account<'info, Root>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_LEDGER_SEED, &[LOCK_KIND]],
+        bump = ledger.bump,
+        has_one = vault @ RigsError::FruitAccountMismatch,
+    )]
+    pub ledger: Account<'info, Ledger>,
+
+    #[account(seeds = [FRUIT_VAULT_SEED, &[LOCK_KIND]], bump = ledger.vault_bump)]
+    pub vault: Account<'info, FruitVault>,
+
+    pub system_program: Program<'info, System>,
+    // remaining_accounts: distinct veto signers, each a transaction signer,
+    // at least `veto_threshold` of them.
+}
+
+/// §10 terminal resolution of a lock pool: veto quorum, after `t_end`,
+/// against the Final allocation, `total <= assigned_total`, no forfeiture.
+pub fn resolve_lock_pool_terminal<'info>(
+    ctx: Context<'_, '_, 'info, 'info, ResolveLockPoolTerminal<'info>>,
+    version: u64,
+    merkle_root: [u8; 32],
+    checkpoint_time: i64,
+    total: u64,
+) -> Result<()> {
+    let fc = &ctx.accounts.fruit_config;
+    require_lock_unpaused(fc)?;
+    require_version(ctx.accounts.ledger.state_version)?;
+    let mut seen = 0u8;
+    for ai in ctx.remaining_accounts {
+        require!(ai.is_signer, RigsError::TerminalQuorumNotMet);
+        require_keys_neq!(*ai.key, fc.root_poster, RigsError::NotVetoSigner);
+        let index = fc
+            .veto_index(ai.key)
+            .ok_or(error!(RigsError::NotVetoSigner))?;
+        let bit = 1u8 << index;
+        require!(seen & bit == 0, RigsError::DuplicateVeto);
+        seen |= bit;
+    }
+    require!(
+        seen.count_ones() >= u32::from(fc.veto_threshold),
+        RigsError::TerminalQuorumNotMet
+    );
+    let now = Clock::get()?.unix_timestamp;
+
+    let mut acct = ctx.accounts.ledger.accounting();
+    let mut p = load(&ctx.accounts.pool, &ctx.accounts.season)?;
+    let (root_state, established) =
+        terminal_lock_resolution(&mut acct, &mut p, version, checkpoint_time, total, now)
+            .anchor()?;
+    check_solvent(&ctx.accounts.vault.to_account_info(), &acct)?;
+
+    let pool_key = ctx.accounts.pool.key();
+    ctx.accounts.ledger.write_accounting(&acct);
+    let pool = &mut ctx.accounts.pool;
+    pool.write_accounting(&p);
+    pool.final_root = merkle_root;
+    let root = &mut ctx.accounts.root;
+    root.state_version = FRUIT_STATE_VERSION;
+    root.pool = pool_key;
+    root.merkle_root = merkle_root;
+    root.veto_bitmap = seen;
+    root.terminal = true;
+    root.bump = ctx.bumps.root;
+    root.write_accounting(&root_state);
+
+    emit!(FruitRootFinalized {
+        pool: pool_key,
+        version,
+        total,
+        established,
+        complete: true,
+        terminal: true,
+    });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct ClaimLock<'info> {
+    /// The claimant: signs, pays the claim record's rent, receives the
+    /// payment, and is bound into the leaf and the registration PDA.
+    #[account(mut)]
+    pub wallet: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_POOL_SEED, &[pool.ledger_kind], &pool.pool_id.to_le_bytes()],
+        bump = pool.bump,
+    )]
+    pub pool: Box<Account<'info, Pool>>,
+
+    #[account(seeds = [LOCK_SEASON_SEED, pool.key().as_ref()], bump = season.bump)]
+    pub season: Box<Account<'info, LockSeason>>,
+
+    #[account(
+        seeds = [LOCK_REG_SEED, pool.key().as_ref(), wallet.key().as_ref()],
+        bump = registration.bump,
+        constraint = registration.pool == pool.key() @ RigsError::LockRegistrationMismatch,
+        constraint = registration.wallet == wallet.key() @ RigsError::LockRegistrationMismatch,
+    )]
+    pub registration: Box<Account<'info, LockRegistration>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_LEDGER_SEED, &[LOCK_KIND]],
+        bump = ledger.bump,
+        has_one = vault @ RigsError::FruitAccountMismatch,
+    )]
+    pub ledger: Account<'info, Ledger>,
+
+    #[account(mut, seeds = [FRUIT_VAULT_SEED, &[LOCK_KIND]], bump = ledger.vault_bump)]
+    pub vault: Account<'info, FruitVault>,
+
+    #[account(
+        init_if_needed,
+        payer = wallet,
+        space = 8 + ClaimRecord::INIT_SPACE,
+        seeds = [FRUIT_CLAIM_SEED, pool.key().as_ref(), wallet.key().as_ref()],
+        bump,
+    )]
+    pub claim_record: Box<Account<'info, ClaimRecord>>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// CLAIM LOCK: cumulative, replay-protected, against the latest Final root,
+/// and never above the wallet's own Final award `A_i`. Not gated by pause.
+pub fn claim_lock(
+    ctx: Context<ClaimLock>,
+    cumulative_amount: u64,
+    proof: Vec<[u8; 32]>,
+) -> Result<()> {
+    require_version(ctx.accounts.ledger.state_version)?;
+    require_version(ctx.accounts.registration.state_version)?;
+    require!(
+        proof.len() <= MAX_FRUIT_PROOF_LEN,
+        RigsError::FruitProofTooLong
+    );
+    let wallet = ctx.accounts.wallet.key();
+    let pool_key = ctx.accounts.pool.key();
+    let record = &mut ctx.accounts.claim_record;
+    if record.state_version == 0 {
+        record.state_version = FRUIT_STATE_VERSION;
+        record.pool = pool_key;
+        record.wallet = wallet;
+        record.claimed_cum = 0;
+        record.bump = ctx.bumps.claim_record;
+    }
+    require_version(record.state_version)?;
+    require!(
+        record.pool == pool_key && record.wallet == wallet,
+        RigsError::FruitAccountMismatch
+    );
+
+    let pool = &ctx.accounts.pool;
+    require!(pool.final_version != 0, RigsError::NoFinalRoot);
+    let leaf = fruit_merkle::leaf(
+        &crate::ID,
+        pool.ledger_kind,
+        pool.pool_id,
+        &wallet,
+        cumulative_amount,
+    );
+    require!(
+        fruit_merkle::verify(&proof, &pool.final_root, leaf),
+        RigsError::InvalidMerkleProof
+    );
+
+    let mut acct = ctx.accounts.ledger.accounting();
+    let mut p = load(&ctx.accounts.pool, &ctx.accounts.season)?;
+    let reg = ctx.accounts.registration.state();
+    let mut claimed = ctx.accounts.claim_record.claimed_cum;
+    let payment =
+        engine_claim_lock(&mut acct, &mut p, &reg, &mut claimed, cumulative_amount).anchor()?;
+
+    let vault_ai = ctx.accounts.vault.to_account_info();
+    move_lamports(&vault_ai, &ctx.accounts.wallet.to_account_info(), payment)?;
+    check_solvent(&vault_ai, &acct)?;
+
+    ctx.accounts.ledger.write_accounting(&acct);
+    ctx.accounts.pool.write_accounting(&p);
+    ctx.accounts.claim_record.claimed_cum = claimed;
+
+    emit!(FruitClaimed {
+        pool: pool_key,
+        wallet,
+        cumulative_amount,
+        payment,
+        claimed_cum: claimed,
+    });
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct CloseLockPool<'info> {
+    #[account(seeds = [FRUIT_CONFIG_SEED], bump = fruit_config.bump)]
+    pub fruit_config: Box<Account<'info, FruitConfig>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_POOL_SEED, &[pool.ledger_kind], &pool.pool_id.to_le_bytes()],
+        bump = pool.bump,
+    )]
+    pub pool: Box<Account<'info, Pool>>,
+
+    #[account(seeds = [LOCK_SEASON_SEED, pool.key().as_ref()], bump = season.bump)]
+    pub season: Box<Account<'info, LockSeason>>,
+
+    #[account(
+        mut,
+        seeds = [FRUIT_LEDGER_SEED, &[LOCK_KIND]],
+        bump = ledger.bump,
+        has_one = vault @ RigsError::FruitAccountMismatch,
+    )]
+    pub ledger: Account<'info, Ledger>,
+
+    #[account(mut, seeds = [FRUIT_VAULT_SEED, &[LOCK_KIND]], bump = ledger.vault_bump)]
+    pub vault: Account<'info, FruitVault>,
+
+    /// Base config, read-only: names the Protocol Treasury.
+    #[account(seeds = [CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, Config>>,
+
+    /// CHECK: only credited, pinned to `config.fee_recipient`, and must not be
+    /// program-owned (checked in the handler).
+    #[account(
+        mut,
+        constraint = treasury.key() == config.fee_recipient @ RigsError::FeeRecipientMismatch,
+    )]
+    pub treasury: UncheckedAccount<'info>,
+}
+
+/// CLOSE LOCK POOL (permissionless): after `t_end`, no Pending root, a
+/// complete Final root, against the Final allocation: `U -= B - final_total;
+/// Z += B - final_total` exactly once (P7-L2), then `floor(0.80 forfeited)`
+/// from `Z` to the Protocol Treasury. Unallocated capacity and rounding dust
+/// stay 100% in `Z`.
+pub fn close_lock_pool(ctx: Context<CloseLockPool>) -> Result<()> {
+    require_lock_unpaused(&ctx.accounts.fruit_config)?;
+    require_version(ctx.accounts.ledger.state_version)?;
+    let now = Clock::get()?.unix_timestamp;
+    let mut acct = ctx.accounts.ledger.accounting();
+    let mut p = load(&ctx.accounts.pool, &ctx.accounts.season)?;
+    let out = close_pool(&mut acct, &mut p, now).anchor()?;
+    let vault_ai = ctx.accounts.vault.to_account_info();
+    if out.treasury_release > 0 {
+        require_external_destination(&ctx.accounts.treasury.to_account_info(), ctx.program_id)?;
+        move_lamports(
+            &vault_ai,
+            &ctx.accounts.treasury.to_account_info(),
+            out.treasury_release,
+        )?;
+    }
+    check_solvent(&vault_ai, &acct)?;
+    ctx.accounts.ledger.write_accounting(&acct);
+    ctx.accounts.pool.write_accounting(&p);
+
+    emit!(FruitPoolClosed {
+        pool: ctx.accounts.pool.key(),
+        final_total: p.final_total,
+        released: out.released,
+    });
+    if out.treasury_release > 0 {
+        emit!(LockForfeitReleased {
+            pool: ctx.accounts.pool.key(),
+            forfeited: p.final_forfeited,
+            treasury_release: out.treasury_release,
+            treasury: ctx.accounts.treasury.key(),
+        });
+    }
     Ok(())
 }

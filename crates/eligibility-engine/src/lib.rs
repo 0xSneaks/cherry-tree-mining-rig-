@@ -43,6 +43,7 @@ pub mod error;
 pub mod ledger;
 pub mod lock_alloc;
 pub mod lots;
+pub mod loyalty;
 pub mod pricing;
 pub mod rational;
 pub mod replay;
@@ -53,6 +54,8 @@ pub mod valuation;
 
 #[cfg(test)]
 mod lock_alloc_tests;
+#[cfg(test)]
+mod loyalty_tests;
 #[cfg(test)]
 mod settlement_kernel_tests;
 
@@ -72,6 +75,10 @@ pub use lock_alloc::{
     LockWeight,
 };
 pub use lots::{Lot, LotBasis, LotLedger};
+pub use loyalty::{
+    settle_loyalty_epoch, tenure_schedule, DayOutcome, LoyaltyConfig, LoyaltySettlement,
+    TenureSchedule, TENURE_DAY_CAP, TENURE_DAY_SECONDS,
+};
 pub use pricing::{
     commit_reference, min_price, EpochReferences, PriceSample, ReferenceCommit, ReferenceValidation,
 };

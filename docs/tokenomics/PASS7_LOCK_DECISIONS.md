@@ -185,6 +185,38 @@ Pass #7; each item below enforces an existing frozen rule, none adds one.
   poster posts weights; there is no veto-quorum fallback for the allocation.
   A stalled tally keeps `B_lock` reserved in `U` (fail closed).
 
+## P7-E — off-chain lock allocation
+
+`eligibility-engine::lock_alloc`: `ell_i = min(requested_i, w_i(t_s))` from
+the Season replay at `t_s` (posted by the root poster); the `t_s` snapshot is
+Pending (nothing posted, `B_lock` reserved) on an unreconciled segment, a
+PENDING or INELIGIBLE registrant, or an unknown seed count. Vesting uses the
+low-water mark of verified weight over `[t_s, t_end)` (seed drops inside a
+segment included; no resurrection); `forfeited = A_i - vested` for verified
+voluntary shortfall only. Unknown or involuntary history (PENDING,
+INELIGIBLE, unreconciled) holds the wallet — never forfeiture — until the
+replay resolves it or §10 terminal resolution settles it.
+
+## P7-C — loyalty (DQ-1)
+
+`eligibility-engine::loyalty` implements frozen DQ-1. Cause-table mapping of
+the replay's states (implementation of §6, no new rule):
+
+| Replay state during a tenure day | Outcome |
+|---|---|
+| Verified, `w >= w_tenure_min` the whole day | qualifies (`d + 1`) |
+| Verified with `w < w_tenure_min`, or absent from the Fruit selection, or a penalized base claim in the day | voluntary: reset |
+| INELIGIBLE (any reason); PENDING `RouteHalted`, `AdapterProgramUnknown`, `StakeUnverified`, `NavUnverified` | involuntary: freeze |
+| Unreconciled segment, day not covered; PENDING `UnresolvedHistory`, `NotReconciled`, `Debt`, `DebtUnpriced`, `AdditionUnpriced`; unknown seed count | data gap: pending (no tenure until resolved) |
+
+Precedence within one day: gap > reset > freeze > qualify. Settlement uses
+`11 v_i = w_i min(d_i, 11)` over `11 * 12.5 SOL`, so `Q_i <= B_loy/5` and
+`sum Q <= B_loy`; an interval with a qualifying wallet of unknown tenure
+reserves as a whole. While `w_tenure_min` is unset (or 0) loyalty is
+Inactive: no leaves; `B_loy` must stay 0. On-chain enforcement of that
+(a loyalty-root refusal while unset) is part of D-B5 and remains open;
+until then the operator rule is `B_loy = 0`.
+
 ## Allocation lifecycle (engine, pool-owned)
 
 Since P7-B the lifecycle is a tally, stored on the lock pool (on-chain: the

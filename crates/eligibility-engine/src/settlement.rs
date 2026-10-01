@@ -513,9 +513,24 @@ pub fn settle_epoch(
     if t_end <= t_start {
         return Err(EligibilityError::InvariantViolation("empty epoch window"));
     }
+    let intervals = derive_intervals(t_start, t_end, report.segments(), seeds, &[])?;
+    settle_intervals(budget, t_start, t_end, &intervals)
+}
+
+/// Derive the settlement intervals of `[t_start, t_end)` from replayed
+/// segments: clip, require exact coverage, split at every seed change of a
+/// segment's wallets and at each `extra_cuts` timestamp, classify each piece
+/// ([`classify_segment`]) and attach its weight inputs ([`weight_inputs`]).
+pub(crate) fn derive_intervals(
+    t_start: i64,
+    t_end: i64,
+    segments: &[Segment],
+    seeds: &SeedTimeline,
+    extra_cuts: &[i64],
+) -> EligibilityResult<Vec<EpochInterval>> {
     let mut intervals: Vec<EpochInterval> = Vec::new();
     let mut cursor = t_start;
-    for seg in report.segments() {
+    for seg in segments {
         let (a, b) = (seg.start.max(t_start), seg.end.min(t_end));
         if a >= b {
             continue;
@@ -526,6 +541,7 @@ pub fn settle_epoch(
             ));
         }
         let mut cuts: Vec<i64> = seeds.changes_within(seg.wallets.keys(), a, b).collect();
+        cuts.extend(extra_cuts.iter().copied().filter(|&c| a < c && c < b));
         cuts.sort_unstable();
         cuts.dedup();
         cuts.push(b);
@@ -557,7 +573,7 @@ pub fn settle_epoch(
             "replay does not cover the settlement window",
         ));
     }
-    settle_intervals(budget, t_start, t_end, &intervals)
+    Ok(intervals)
 }
 
 /// The settlement kernel: settle already-derived intervals. CRATE-PRIVATE
@@ -580,6 +596,32 @@ pub(crate) fn settle_intervals(
     t_start: i64,
     t_end: i64,
     intervals: &[EpochInterval],
+) -> EligibilityResult<EpochSettlement> {
+    settle_intervals_weighted(
+        budget,
+        t_start,
+        t_end,
+        intervals,
+        DENOMINATOR_FLOOR,
+        &|_, p| Ok(recognized_weight(p.seeds, p.x_lamports)),
+    )
+}
+
+/// Per-interval participant weight for [`settle_intervals_weighted`]:
+/// `(interval index, participant) -> weight`.
+pub(crate) type WeightFn<'a> = dyn Fn(usize, &Participant) -> EligibilityResult<u128> + 'a;
+
+/// The kernel with a caller-defined weight and denominator floor: core
+/// Fruit uses `w_i` and `Hfloor` ([`settle_intervals`]); loyalty uses
+/// `11 v_i = w_i min(d_i, 11)` and `11 Hfloor`, which gives exactly
+/// `v_i / max(sum v, Hfloor)` (P7-C). Every other property is shared.
+pub(crate) fn settle_intervals_weighted(
+    budget: u64,
+    t_start: i64,
+    t_end: i64,
+    intervals: &[EpochInterval],
+    floor: u128,
+    weight: &WeightFn<'_>,
 ) -> EligibilityResult<EpochSettlement> {
     if budget == 0 {
         return Err(EligibilityError::InvariantViolation("zero-budget epoch"));
@@ -610,7 +652,7 @@ pub(crate) fn settle_intervals(
     let mut reserve_claims: Vec<(i64, i64)> = Vec::new(); // timeline order
     let mut not_earned_claims: Vec<(i64, i64)> = Vec::new();
 
-    for iv in intervals {
+    for (idx, iv) in intervals.iter().enumerate() {
         let dt = u128::try_from(iv.end - iv.start).map_err(|_| EligibilityError::MathOverflow)?;
         match iv.verdict {
             IntervalVerdict::Settle => {
@@ -627,7 +669,7 @@ pub(crate) fn settle_intervals(
                             "duplicate wallet in one interval",
                         ));
                     }
-                    let w = recognized_weight(p.seeds, p.x_lamports);
+                    let w = weight(idx, p)?;
                     cw = cw.checked_add(w).ok_or(EligibilityError::MathOverflow)?;
                     if p.seeds >= SEED_THRESHOLD_T {
                         cn_seeds = cn_seeds
@@ -636,7 +678,7 @@ pub(crate) fn settle_intervals(
                     }
                     weights.push((p.wallet, w));
                 }
-                let h = shared_denominator(cw);
+                let h = cw.max(floor);
                 // acc_seg = floor(E · Δt · SCALE / (D · H_seg)), downward
                 // only (P6-D5); drift ≤ 1/SCALE per segment.
                 let acc_seg = (u128::from(budget)
@@ -731,7 +773,7 @@ pub(crate) fn settle_intervals(
         .checked_mul(DAY_SECONDS)
         .and_then(|v| v.checked_div(duration))
         .ok_or(EligibilityError::MathOverflow)?;
-    let (cw, h, cn) = last_settle_observation.unwrap_or((0, DENOMINATOR_FLOOR, 0));
+    let (cw, h, cn) = last_settle_observation.unwrap_or((0, floor, 0));
     let apr = EpochApr {
         weight: apr_weight(r_per_day, h)?,
         pool: apr_pool(r_per_day, cw, h, cn)?,

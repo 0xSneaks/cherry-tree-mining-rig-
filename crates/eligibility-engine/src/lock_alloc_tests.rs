@@ -239,6 +239,169 @@ fn unknown_or_involuntary_history_is_held_not_forfeited() {
     assert!(vesting_segments(&[seg(TS, TE, &[])], &s, TS, &[award(A, 0, 1)]).is_err());
 }
 
+// ------------------------------------------------- P7-ADJ-1 zero-award locker
+
+/// P7-ADJ-1 (canonical regression): `0 < requested <= Kmax` has no minimum,
+/// so at the canonical Season budget a valid positive `ell` can round to a
+/// zero award (`A_i = floor(B * 5 * ell_i / H_lock)` against the 62.5
+/// SOL-day floor; `ell <= 29` gives `A_i = 0`). The on-chain engine accepts
+/// that state, so the off-chain vesting path must settle the wallet at zero
+/// instead of invalidating the Season — while still refusing a zero weight
+/// with a positive award, a weight above Kmax, and any claim above the
+/// registration's actual award.
+#[test]
+fn zero_award_locker_settles_at_zero_canonically() {
+    assert_eq!(BUDGET, 428_082_192, "canonical Season budget");
+    let x = |l: u64| ver(u128::from(l));
+    // Wallet A at Kmax; wallet D registered for the minimum of 1 lamport.
+    let segs = [seg(TS, TE, &[(A, x(5 * SOL)), (D, x(5 * SOL))])];
+    let s = seeds(&[(A, 250), (D, 250)]);
+    let regs = [req(A, rigs::LOCK_KMAX_LAMPORTS), req(D, 1)];
+    let snap = match snapshot_segments(&segs, &s, TS, &regs).unwrap() {
+        LockSnapshot::Ready(v) => v,
+        p => panic!("{p:?}"),
+    };
+    assert_eq!(
+        snap.iter().map(|w| w.ell).collect::<Vec<_>>(),
+        vec![rigs::LOCK_KMAX_LAMPORTS, 1]
+    );
+    // The real on-chain tally at the canonical budget: commit, register,
+    // weigh, seal, award, seal, finalize.
+    let mut l = rigs::FruitLedger::default();
+    l.fund(BUDGET).unwrap();
+    let fruit_t0 = TS - rigs::LOCK_SEASON_OFFSET;
+    let mut pool = rigs::commit_lock_pool(&mut l, BUDGET, fruit_t0, TS - 1).unwrap();
+    let mut chain: Vec<rigs::LockRegistrationState> = regs
+        .iter()
+        .map(|r| rigs::register_lock(&mut pool, r.requested, fruit_t0).unwrap())
+        .collect();
+    for (c, w) in chain.iter_mut().zip(&snap) {
+        rigs::post_lock_weight(&mut pool, c, w.ell, TS).unwrap();
+    }
+    rigs::seal_lock_weights(&mut pool, TS).unwrap();
+    for c in chain.iter_mut() {
+        rigs::award_lock_registration(&mut pool, c).unwrap();
+    }
+    rigs::seal_lock_awards(&mut pool, TS, 60).unwrap();
+    let fin = rigs::finalize_lock_allocation(&mut pool, TS + 60).unwrap();
+    // D's canonical award IS zero; A's is a normal positive award.
+    assert_eq!(fin.h_lock, rigs::LOCK_H_FLOOR_LAMPORT_DAYS);
+    assert_eq!(chain[0].award_for(fin.generation), 85_616_438);
+    assert_eq!(chain[1].award_for(fin.generation), 0);
+    assert_eq!(
+        lock_alloc::lock_award(BUDGET, 1, fin.h_lock).unwrap(),
+        0,
+        "ell = 1 rounds to zero at the canonical budget"
+    );
+    // A zero-award wallet cannot extract anything, whatever the leaf.
+    let mut claimed = 0;
+    assert!(rigs::claim_lock(&mut l, &mut pool, &chain[1], &mut claimed, 1).is_err());
+    // Off-chain vesting accepts (ell > 0, award == 0): no InvariantViolation.
+    let awards = [
+        award(
+            A,
+            rigs::LOCK_KMAX_LAMPORTS,
+            chain[0].award_for(fin.generation),
+        ),
+        award(D, 1, chain[1].award_for(fin.generation)),
+    ];
+    let (vests, total, forfeited) = ready(vesting_segments(&segs, &s, TS, &awards).unwrap());
+    assert_eq!(
+        vests
+            .iter()
+            .map(|v| (v.ell_surv, v.vested, v.forfeited))
+            .collect::<Vec<_>>(),
+        vec![(rigs::LOCK_KMAX_LAMPORTS, 85_616_438, 0), (1, 0, 0)],
+        "D is a valid zero-award participant"
+    );
+    assert_eq!((total, forfeited), (85_616_438, 0));
+    // Per-wallet and pool conservation stays exact.
+    for (v, a) in vests.iter().zip(&awards) {
+        assert!(v.vested <= a.award && v.forfeited <= a.award);
+        assert_eq!(v.vested + v.forfeited, a.award);
+    }
+    assert_eq!(
+        total + forfeited,
+        awards.iter().map(|a| a.award).sum::<u64>()
+    );
+    // A zero-award participant cannot increase the pool payout: the same
+    // Season without D settles to the same totals.
+    let only_a = [awards[0]];
+    let (_, total_alone, forfeited_alone) =
+        ready(vesting_segments(&segs, &s, TS, &only_a).unwrap());
+    assert_eq!((total, forfeited), (total_alone, forfeited_alone));
+    // The Season still produces its normal settlement result end to end:
+    // complete root, finalize, claims, close with full conservation.
+    let mut r = rigs::post_lock_root(
+        &mut pool,
+        1,
+        TE,
+        total,
+        true,
+        forfeited,
+        TE,
+        60,
+        rigs::SafetyRelease::Disabled,
+    )
+    .unwrap();
+    rigs::finalize_root(&mut l, &mut pool, &mut r, TE + 60).unwrap();
+    let mut vault = BUDGET;
+    for (v, c) in vests.iter().zip(&chain) {
+        let mut claimed = 0;
+        vault -= rigs::claim_lock(&mut l, &mut pool, c, &mut claimed, v.vested).unwrap();
+    }
+    let out = rigs::close_pool(&mut l, &mut pool, TE + 60).unwrap();
+    vault -= out.treasury_release;
+    assert_eq!(out.treasury_release, 0);
+    assert_eq!(out.released, BUDGET - total);
+    assert_eq!(vault, l.obligations().unwrap());
+    assert_eq!((l.committed, l.liabilities), (0, 0));
+    // Genuinely inconsistent records stay refused.
+    let zero_weight_positive_award = [award(D, 0, 1)];
+    assert!(vesting_segments(&segs, &s, TS, &zero_weight_positive_award).is_err());
+    let above_kmax = [award(D, rigs::LOCK_KMAX_LAMPORTS + 1, 1)];
+    assert!(vesting_segments(&segs, &s, TS, &above_kmax).is_err());
+    let zero_zero = [award(D, 0, 0)];
+    let (v2, t2, f2) = ready(vesting_segments(&segs, &s, TS, &zero_zero).unwrap());
+    assert_eq!((v2[0].vested, v2[0].forfeited, t2, f2), (0, 0, 0, 0));
+}
+
+/// The canonical rounding transition, derived from the real formula:
+/// `floor(B * 5 * ell / H) > 0` first at `ell = ceil(H / (5 * B))`, which is
+/// 30 at the canonical budget (29 -> 0, 30 -> 1 lamport).
+#[test]
+fn canonical_award_rounding_boundary() {
+    assert_eq!(BUDGET, 428_082_192);
+    let h = lock_alloc::lock_h(30).unwrap();
+    assert_eq!(h, lock_alloc::LOCK_H_FLOOR_LAMPORT_DAYS);
+    let ell_min = h.div_ceil(5 * BUDGET);
+    assert_eq!(ell_min, 30, "derived rounding transition at B_lock");
+    assert_eq!(lock_alloc::lock_award(BUDGET, ell_min - 1, h).unwrap(), 0);
+    let one = lock_alloc::lock_award(BUDGET, ell_min, h).unwrap();
+    assert_eq!(one, 1);
+    // Both sides of the boundary settle through the real vesting path.
+    let segs = [seg(
+        TS,
+        TE,
+        &[(A, ver(u128::from(5 * SOL))), (B, ver(u128::from(5 * SOL)))],
+    )];
+    let s = seeds(&[(A, 250), (B, 250)]);
+    let awards = [award(A, ell_min - 1, 0), award(B, ell_min, one)];
+    let (vests, total, forfeited) = ready(vesting_segments(&segs, &s, TS, &awards).unwrap());
+    assert_eq!(
+        vests
+            .iter()
+            .map(|v| (v.ell_surv, v.vested, v.forfeited))
+            .collect::<Vec<_>>(),
+        vec![(ell_min - 1, 0, 0), (ell_min, 1, 0)]
+    );
+    assert_eq!((total, forfeited), (1, 0));
+    assert_eq!(
+        total + forfeited,
+        awards.iter().map(|a| a.award).sum::<u64>()
+    );
+}
+
 // ------------------------------------------------------------ parity, end to end
 
 /// The snapshot's weights, posted to the real engine tally, produce awards

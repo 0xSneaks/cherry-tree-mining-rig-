@@ -239,7 +239,12 @@ pub(crate) fn vesting_segments(
     let mut vests = Vec::with_capacity(awards.len());
     let mut pending = Vec::new();
     for a in awards {
-        if (a.ell == 0) != (a.award == 0) || a.ell > LOCK_KMAX_LAMPORTS {
+        // P7-ADJ-1: a positive weight may legitimately round to a zero award
+        // (`A_i = floor(B * 5 * ell_i / H_lock)` against the denominator
+        // floor — at the canonical Season budget, `ell <= 29` gives
+        // `A_i = 0`), so only a zero weight carrying a positive award, or a
+        // weight above Kmax, is inconsistent.
+        if (a.ell == 0 && a.award > 0) || a.ell > LOCK_KMAX_LAMPORTS {
             return Err(EligibilityError::InvariantViolation("invalid lock award"));
         }
         let mut surv = u128::from(a.ell);

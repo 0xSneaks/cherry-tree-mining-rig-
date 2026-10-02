@@ -59,10 +59,11 @@ Description:
   fee vault are separate program-owned accounts; only the fee vault is
   withdrawable by the program authority.
 
-Deployment URL:      https://phantomcapai.github.io/cherry-tree-mining-rig-/
-Origin:              https://phantomcapai.github.io
-  (see §3 — this origin covers Cherry MOBILE only. A header-capable host is
-   needed for Cherry WEB, and that URL will replace this one.)
+Deployment URL:      https://cherry-tree-mining-rig.vercel.app
+Origin:              https://cherry-tree-mining-rig.vercel.app
+  (see §3 — Vercel is the CURRENT production host: a Node host serves
+   `frame-ancestors` for Cherry WEB and every `/api/*` route the mini-app
+   backend needs. The former GitHub Pages origin is historical only.)
 
 Icon:                Cherry Tree logo, square PNG, transparent background.
                      Supply at 512×512 and 1024×1024.
@@ -151,22 +152,27 @@ tag by specification. This is a real constraint, not a preference.
 
 ### Where that leaves the current deployment
 
+**Current production host: Vercel — `https://cherry-tree-mining-rig.vercel.app`.**
+It is a Node host, so `src/proxy.ts` serves the nonce CSP (with
+`frame-ancestors` for Cherry web) on every HTML response and every `/api/*`
+route the mini-app backend needs (launch-token session, room leaderboard,
+blink SSR, chat embed) runs there. This is the URL and origin registered with
+Cherry (§1).
+
 | Host | Cherry mobile | Cherry web | Why |
 |---|---|---|---|
-| GitHub Pages (current) | yes | **no** | Pages cannot send custom response headers, at all. There is no configuration that changes this. |
+| **Vercel (current production)** | yes | yes | `src/proxy.ts` serves the nonce CSP and headers directly; full Node `/api/*` |
 | Cloudflare Pages | yes | yes | reads the `_headers` file the build already emits |
 | Netlify | yes | yes | reads the same `_headers` file |
-| Vercel / any Node host | yes | yes | `next.config.ts` serves the headers directly |
+| GitHub Pages (historical) | yes | **no** | Pages cannot send custom response headers, at all. There is no configuration that changes this. |
 
-The static build now writes `out/_headers` from the same
-`app/src/lib/csp.ts` that `next.config.ts` serves, so pointing Cloudflare Pages
-or Netlify at this repository is the whole change — no code edit, no second
-copy of the policy to drift.
-
-Recommended: **Cloudflare Pages**, free tier, connected to this repo with build
-command `npm run build && npm run emit:headers` in `app/`, output directory
-`app/out`, and `STATIC_EXPORT=1`. Then register that origin with Cherry instead
-of the Pages one.
+GitHub Pages is retained only as historical/secondary information: the
+`pages.yml` workflow still publishes the static export there, but that origin
+cannot serve `frame-ancestors` (Cherry web) or any `/api` route, and it is not
+the registered submission URL. The static build writes `out/_headers` from the
+same `app/src/lib/csp.ts` that the Node deployment serves, so pointing
+Cloudflare Pages or Netlify at this repository would be the whole change — no
+code edit, no second copy of the policy to drift.
 
 ---
 
@@ -267,9 +273,10 @@ static export has none — the Pages workflow deletes `src/app/api` outright.
 `next.config.ts` therefore **fails the build** when `STATIC_EXPORT=1` and the
 chat ids are set, rather than shipping a chat whose every sign-in 404s.
 
-So: GitHub Pages can serve the mine, but not the chat. The chat needs a host
-that runs Node — which is the same host §3 already wants for Cherry web's
-`frame-ancestors` header.
+So: the static export (GitHub Pages) can serve the mine, but not the chat. The
+chat needs a host that runs Node — which is the current production host
+already: Vercel (§3), the same host that serves Cherry web's `frame-ancestors`
+header.
 
 ### The embed is opt-in twice over
 

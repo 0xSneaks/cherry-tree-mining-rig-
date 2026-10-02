@@ -34,13 +34,14 @@ CHERRY_APP_ID PASS.
 
 ## 3. Exact external founder actions
 
-1. **Choose the production host** — must send headers for Cherry web (`frame-ancestors`):
-   Vercel / Node host (also required for `/api/*`, the chat embed and the new growth APIs).
-   GitHub Pages cannot serve any of it (CHERRY.md §3).
+1. **Choose the production host — DONE. Vercel is the chosen and deployed production host**
+   (`https://cherry-tree-mining-rig.vercel.app`): it sends the headers Cherry web needs
+   (`frame-ancestors` via `src/proxy.ts`) and runs `/api/*`, the chat embed and the growth
+   APIs. GitHub Pages cannot serve any of it and is historical only (CHERRY.md §3).
 2. **Register the mini-app at https://portal.cherry.fun** using the packet in `CHERRY.md` §1,
-   with the production URL/origin, permissions `wallet:connect` + `inline:render`, and **mainnet**
-   network details at the time of registration (the packet currently says devnet only — update
-   it when mainnet is real).
+   with the production URL/origin (`https://cherry-tree-mining-rig.vercel.app`), permissions
+   `wallet:connect` + `inline:render`, and network details at the time of registration
+   (the packet currently says devnet only — update it if/when mainnet is real).
 3. Copy the issued id into `CHERRY_APP_ID` on the host; set `CHERRY_EXPECTED_ORIGIN`.
 4. Add the production origin to the chat embed's **Allowed origins** (if the chat is used).
 5. Ask Cherry the open questions in §4 and record the answers.

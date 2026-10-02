@@ -23,6 +23,27 @@ export async function minerPda(owner: Address): Promise<Address> {
   return pda;
 }
 
+/**
+ * Day-1 `.skr` binding PDA for a domain's ANS name account:
+ * `["skr_bind", name_account]`. One domain opens Day-1 access for one wallet.
+ */
+export async function skrBindingPda(nameAccount: Address): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PROGRAM_ID,
+    seeds: [SEEDS.skrBind, getAddressEncoder().encode(nameAccount)],
+  });
+  return pda;
+}
+
+/** Referral ledger PDA for a referrer: `["referral", referrer]` (§7). */
+export async function referralPda(referrer: Address): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: PROGRAM_ID,
+    seeds: [SEEDS.referral, getAddressEncoder().encode(referrer)],
+  });
+  return pda;
+}
+
 export async function capitalVaultPda(): Promise<Address> {
   const [pda] = await getProgramDerivedAddress({
     programAddress: PROGRAM_ID,
@@ -43,6 +64,23 @@ export async function feeVaultPda(): Promise<Address> {
   const [pda] = await getProgramDerivedAddress({
     programAddress: PROGRAM_ID,
     seeds: [SEEDS.feeVault],
+  });
+  return pda;
+}
+
+/** BPF upgradeable loader. Owns every upgradeable program's ProgramData. */
+export const BPF_LOADER_UPGRADEABLE_ID =
+  'BPFLoaderUpgradeab1e11111111111111111111111' as Address;
+
+/**
+ * The program's ProgramData account: PDA([program id], upgradeable loader).
+ * `initialize` reads the upgrade authority from it and refuses any other
+ * signer.
+ */
+export async function programDataPda(): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({
+    programAddress: BPF_LOADER_UPGRADEABLE_ID,
+    seeds: [getAddressEncoder().encode(PROGRAM_ID)],
   });
   return pda;
 }

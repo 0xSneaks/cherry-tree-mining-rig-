@@ -7,6 +7,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+echo "==> qualification operation guards (offline)"
+./scripts/tests/qualification-guards.sh
+./scripts/tests/qualification-upgrade.sh
+
 echo "==> cargo fmt --check"
 cargo fmt --all -- --check
 
@@ -15,7 +19,7 @@ echo "==> cargo clippy"
 # the filter below fails the run on anything originating in our own code.
 cargo clippy --workspace --all-targets 2>&1 \
   | grep -E '^(warning|error)' \
-  | grep -vE 'anchor-debug|custom-panic|custom-heap|condition value: .solana|deprecated method|generated [0-9]+ warning' \
+  | grep -vE 'anchor-debug|custom-panic|custom-heap|condition value: .solana|deprecated method|generated [0-9]+ warning|following packages contain code that will be rejected by a future version of Rust' \
   && { echo "!! clippy findings in first-party code"; exit 1; }
 echo "    clean"
 
@@ -30,6 +34,15 @@ RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
 RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
   --exact emit_accrual_vectors --nocapture 2>/dev/null \
   | sed -n '/---ACCRUAL---/,/---END---/p' > app/tests/fixtures/accrual-vectors.txt
+RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
+  --exact emit_yield_vectors --nocapture 2>/dev/null \
+  | sed -n '/---APR---/,/---END---/p' > app/tests/fixtures/yield-vectors.txt
+RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
+  --exact emit_launch_vectors --nocapture 2>/dev/null \
+  | sed -n '/---LAUNCH---/,/---END---/p' > app/tests/fixtures/launch-vectors.txt
+RUST_LOG=error cargo test -p rigs-engine --test vectors -- \
+  --exact emit_penalty_vectors --nocapture 2>/dev/null \
+  | sed -n '/---PENALTY---/,/---END---/p' > app/tests/fixtures/penalty-vectors.txt
 git diff --quiet app/tests/fixtures || {
   echo "!! fixtures drifted — the TypeScript port is out of step with the engine"
   exit 1
@@ -41,6 +54,9 @@ cd "$ROOT/app"
 echo "==> tsc --noEmit"
 npx tsc --noEmit
 
+echo "==> eslint"
+npm run lint
+
 echo "==> vitest"
 npx vitest run 2>&1 | tail -12
 
@@ -48,8 +64,12 @@ echo "==> next build"
 npx next build 2>&1 | tail -3
 
 echo "==> playwright"
-PLAYWRIGHT_CHROMIUM_PATH="${PLAYWRIGHT_CHROMIUM_PATH:-/opt/pw-browsers/chromium}" \
-  npx playwright test 2>&1 | tail -6
+# An explicit override wins; otherwise use the pinned Chromium only where it
+# exists, else let Playwright launch its own installed browser.
+if [ -z "${PLAYWRIGHT_CHROMIUM_PATH:-}" ] && [ -x /opt/pw-browsers/chromium ]; then
+  export PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium
+fi
+npx playwright test 2>&1 | tail -6
 
 cd "$ROOT"
 echo "==> deploy readiness"

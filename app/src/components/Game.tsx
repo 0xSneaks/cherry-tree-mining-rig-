@@ -4,25 +4,65 @@
  * The game. Identical in both modes — everything mode-specific arrives through
  * the `host` prop, so there is exactly one implementation of the loop.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Address } from '@solana/kit';
 
 import { buyRigs, claim, compound } from '../lib/actions';
 import { PRODUCT_NAME, PRODUCT_NAME_SHORT } from '../lib/brand';
 import { rpc } from '../lib/chain';
-import { formatCount, formatSol } from '../lib/format';
+import { CLUSTER } from '../lib/env';
+import { explainActionError } from '../lib/errors';
+import { formatCount } from '../lib/format';
 import { estimatedOutputPerDay } from '../lib/program/accrual';
+import { quoteClaim } from '../lib/program/penalty';
 import { rigsAffordable } from '../lib/program/pricing';
+import { discoverIdentity } from '../lib/program/identity';
+import {
+  accessPhase,
+  genesisAllowance,
+  purchaseAllowed,
+  type Identity,
+} from '../lib/program/launch';
 import { useLiveAccrual } from '../hooks/useLiveAccrual';
 import { useRigsState, type LifecycleSource } from '../hooks/useRigsState';
 import type { RigsSigner } from '../lib/signer';
 import { BuyPanel } from './BuyPanel';
-import { OreBin } from './OreBin';
-import { Readout } from './Readout';
-import { RigVisual } from './RigVisual';
+import { ClaimConfirm } from './ClaimConfirm';
+import { GroveRecord } from './GroveRecord';
+import { GroveJourney, RigVisual } from './RigVisual';
 import { RoomLeaderboard } from './RoomLeaderboard';
-import { ShareCard, type SharePayload } from './ShareCard';
+import { ProgressShareCard, ShareCard, type SharePayload } from './ShareCard';
 import { TransparencyPanel } from './TransparencyPanel';
+import { FounderActivation } from './FounderActivation';
+import { LaunchPanel } from './LaunchPanel';
+import { YieldPanel } from './YieldPanel';
+import { DilutionPanel } from './DilutionPanel';
+import { DistributionPanel } from './DistributionPanel';
+import { GroveStatus } from './GroveStatus';
+import { MilestonesPanel } from './MilestonesPanel';
+import { CommissionPanel } from './CommissionPanel';
+import { ReferralPanel } from './ReferralPanel';
+import { MinerCockpit } from './MinerCockpit';
+import { ActivityHistory } from './ActivityHistory';
+import { usePlanterStatus } from '../hooks/usePlanterStatus';
+import {
+  OFFICIAL_REFERRER,
+  referralCandidates,
+  referralDisclosure,
+  referrerToSend,
+  resolveReferral,
+  suppliedReferral,
+} from '../lib/growth/referral';
+
+/**
+ * `?ref=<wallet>` — a proposed referrer, nothing more. The program decides
+ * whether it binds (first purchase only, an existing planter, not yourself);
+ * `lib/growth/referral.ts` decides what the app proposes and discloses.
+ */
+function suppliedFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  return suppliedReferral(window.location.search);
+}
 
 export type CherryRoomInfo = { id: string; title: string; memberCount: number };
 
@@ -41,8 +81,51 @@ export type Host = {
   connectSlot?: React.ReactNode;
 };
 
+/**
+ * The boxes a person can "be in". Tapping or focusing inside one marks it
+ * active (a blossom arc runs round its edge, see globals.css) until another
+ * box is chosen or the person taps outside every box. Purely presentational:
+ * nothing reads the mark.
+ */
+const CARD_SELECTOR = [
+  '.grove-visual',
+  '.cockpit',
+  '.plant',
+  '.yield',
+  '.launch',
+  '.panel',
+  '.progress-card',
+  '[data-testid="grove-status"]',
+].join(', ');
+
+function useActiveCard() {
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    let active: Element | null = null;
+    const select = (e: Event) => {
+      const card = e.target instanceof Element ? e.target.closest(CARD_SELECTOR) : null;
+      const next = card && root.contains(card) ? card : null;
+      if (next === active) return;
+      active?.removeAttribute('data-active');
+      next?.setAttribute('data-active', 'true');
+      active = next;
+    };
+    root.addEventListener('pointerdown', select);
+    root.addEventListener('focusin', select);
+    return () => {
+      root.removeEventListener('pointerdown', select);
+      root.removeEventListener('focusin', select);
+      active?.removeAttribute('data-active');
+    };
+  }, []);
+  return ref;
+}
+
 /** A claim worth offering to share, rather than nagging on every dust claim. */
 const LARGE_CLAIM_LAMPORTS = 50_000_000n; // 0.05 SOL
+const CLAIM_ACTION_LABEL = 'Claim SOL';
 
 export function Game({ host }: { host: Host }) {
   const { snapshot, loading, error, live, refresh } = useRigsState(
@@ -50,9 +133,30 @@ export function Game({ host }: { host: Host }) {
     host.lifecycle,
   );
   const { claimable, chainTime } = useLiveAccrual(snapshot, live);
+  const shellRef = useActiveCard();
+
+  // The name record this wallet can present. Display and account selection
+  // only: the program re-verifies it on every purchase.
+  const [identity, setIdentity] = useState<Identity | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setIdentity(null);
+    if (!host.address) return;
+    void discoverIdentity(rpc(), host.address).then((p) => {
+      if (!cancelled) setIdentity(p.kind);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [host.address]);
 
   const [busy, setBusy] = useState<null | 'buy' | 'claim' | 'compound'>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // Kept with the action that failed, so the message renders beside the
+  // button the user just pressed rather than somewhere else on the page.
+  const [actionError, setActionError] = useState<
+    null | { kind: 'buy' | 'claim' | 'compound'; message: string }
+  >(null);
+  const [confirmingClaim, setConfirmingClaim] = useState(false);
   const [walletLamports, setWalletLamports] = useState<bigint | null>(null);
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
 
@@ -96,13 +200,55 @@ export function Game({ host }: { host: Host }) {
   // read-only state on screen. State is never unmounted.
   const canAct = host.walletConnected && !!host.signer && !paused && busy === null;
 
+  // Planting follows the launch phase. Before T0 nobody plants through the
+  // app — the founder activation is the one deliberate first-buy procedure
+  // (app/scripts/ops/first-buy.ts), with preflight and explicit confirmation.
+  const phase = config ? accessPhase(config.launchT0, chainTime) : 'preLaunch';
+  const plantOpen = phase !== 'preLaunch' && purchaseAllowed(phase, identity ?? 'none');
+  const genesisRemaining = config
+    ? genesisAllowance(
+        config.launchT0,
+        chainTime,
+        miner?.lifetimeRigsBought ?? 0n,
+        config.genesisCapRigs,
+      )
+    : null;
+  const freshBuyOpen = plantOpen && (genesisRemaining === null || genesisRemaining > 0n);
+  // Referral: explicit link wins; the official fallback only with no link and
+  // no position, verified on chain first. Nothing binds on a later purchase.
+  const [supplied] = useState<string | null>(suppliedFromUrl);
+  const hasPosition = !!miner;
+  const candidates = referralCandidates({
+    supplied,
+    self: host.address,
+    hasPosition,
+    official: OFFICIAL_REFERRER,
+  });
+  const suppliedIsPlanter = usePlanterStatus(snap ? candidates.supplied : null);
+  const officialIsPlanter = usePlanterStatus(snap ? candidates.official : null);
+  const referral = snap
+    ? resolveReferral({
+        supplied,
+        self: host.address,
+        hasPosition,
+        boundReferrer: miner?.referrer ?? null,
+        official: OFFICIAL_REFERRER,
+        suppliedIsPlanter,
+        officialIsPlanter,
+      })
+    : null;
+  const referrer = referral ? referrerToSend(referral) : null;
+  const referralNote = referral ? referralDisclosure(referral) : null;
+  const claimQuote = miner ? quoteClaim(claimable, miner.lastPlantedAt, chainTime) : null;
+
   const compoundPreview = useMemo(() => {
     if (!config) return 0n;
     try {
+      // Compound is priced at the compound fee (architecture §7a item 2).
       return rigsAffordable(
         claimable,
         config.rigPriceLamports,
-        BigInt(config.purchaseFeeBps),
+        BigInt(config.compoundFeeBps),
       );
     } catch {
       return 0n;
@@ -119,7 +265,11 @@ export function Game({ host }: { host: Host }) {
         // Reconcile against the chain before anything on screen moves.
         await refresh();
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : String(e));
+        // Expected protocol errors are said in product language on screen;
+        // the raw error stays in the developer console, never hidden.
+        const explained = explainActionError(e);
+        console.error(`[cherry-tree] ${kind} failed:`, explained.raw);
+        setActionError({ kind, message: explained.message });
       } finally {
         setBusy(null);
       }
@@ -128,11 +278,13 @@ export function Game({ host }: { host: Host }) {
   );
 
   const onBuy = (count: bigint) =>
-    void run('buy', () => buyRigs(host.signer!, count));
+    void run('buy', () =>
+      buyRigs(host.signer!, count, { referrer, boundReferrer: miner?.referrer ?? null }),
+    );
 
   const onClaim = () =>
     void run('claim', async () => {
-      const amount = claimable;
+      const amount = claimQuote?.net ?? 0n;
       await claim(host.signer!);
       if (host.share && amount >= LARGE_CLAIM_LAMPORTS) {
         setSharePayload({ kind: 'claim', rigs: rigs.toString(), claimed: amount.toString() });
@@ -142,7 +294,7 @@ export function Game({ host }: { host: Host }) {
   const onCompound = () =>
     void run('compound', async () => {
       const minted = compoundPreview;
-      await compound(host.signer!);
+      await compound(host.signer!, { boundReferrer: miner?.referrer ?? null });
       if (host.share && minted > 0n) {
         setSharePayload({
           kind: 'compound',
@@ -152,30 +304,87 @@ export function Game({ host }: { host: Host }) {
       }
     });
 
+  const preLaunch = !!config && phase === 'preLaunch';
   const statusClass = !live
     ? 'status status--offline'
-    : paused || !scheduleLive
+    : paused || !scheduleLive || preLaunch
       ? 'status status--paused'
       : 'status status--live';
   const statusLabel = !live
     ? 'Paused'
     : paused
       ? 'Halted'
-      : scheduleLive
-        ? 'Live'
-        : 'Unfunded';
+      : preLaunch
+        ? 'Pre-launch'
+        : scheduleLive
+          ? 'Live'
+          : 'Unfunded';
+
+  const buyError = actionError?.kind === 'buy' ? actionError.message : null;
+  const positionError = actionError && actionError.kind !== 'buy' ? actionError.message : null;
+
+  // The position (cockpit + claim confirmation) and the opportunity (yield)
+  // swap places by whether this wallet already holds seeds: see the page
+  // order below.
+  const positionBlock =
+    config && snap ? (
+      <>
+        <MinerCockpit
+          config={config}
+          miner={miner}
+          claimable={claimable}
+          rewardVaultLamports={snap.rewardVaultDistributable}
+          chainTime={chainTime}
+          currentOutputPerDay={outputPerDay}
+          canAct={canAct}
+          busy={busy}
+          onReplant={onCompound}
+          onHarvest={() => setConfirmingClaim(true)}
+          claimLabel={CLAIM_ACTION_LABEL}
+          error={positionError}
+        />
+        {confirmingClaim && claimQuote ? (
+          <ClaimConfirm
+            quote={claimQuote}
+            compoundFeeBps={config.compoundFeeBps}
+            busy={busy === 'claim'}
+            onConfirm={() => {
+              setConfirmingClaim(false);
+              onClaim();
+            }}
+            onCancel={() => setConfirmingClaim(false)}
+          />
+        ) : null}
+      </>
+    ) : null;
+  const opportunityBlock =
+    config && snap ? (
+      <YieldPanel
+        config={config}
+        miner={miner}
+        rewardVaultLamports={snap.rewardVaultDistributable}
+        chainTime={chainTime}
+        snapshotTime={snap.chainTimeSeconds}
+      />
+    ) : null;
 
   return (
-    <main className="shell">
+    <main className="shell" ref={shellRef}>
+      {/* 1 · What this is, which network, whether it is live. */}
       <header className="masthead">
         <h1 className="wordmark">{PRODUCT_NAME}</h1>
         {host.mode === 'standalone' ? host.connectSlot : null}
       </header>
       <div className="subhead">
-        <span>Mining status</span>
+        <span>Grove status</span>
         <span className={statusClass}>
           <span className="status-dot" />
           {statusLabel}
+        </span>
+        {/* The cluster this build talks to, from the environment — during
+            rehearsal that is Devnet, and the screen says so. */}
+        <span className="cluster" data-testid="cluster">
+          {CLUSTER.toUpperCase()}
         </span>
       </div>
 
@@ -183,6 +392,31 @@ export function Game({ host }: { host: Host }) {
         <p className="note" style={{ marginTop: 6 }}>
           {host.room.title} · {formatCount(host.room.memberCount)} members
         </p>
+      ) : null}
+
+      <GroveJourney />
+
+      <p className="lede">
+        Plant seeds with SOL to grow your own cherry tree. Your seeds earn a
+        share of a funded SOL reward pool at a variable rate. Harvest your SOL
+        or replant it to grow a bigger tree.
+      </p>
+      <p className="lede-more">Scroll down for the full details.</p>
+
+      {/* State-wide conditions that change what every button below does.
+          "Disconnected" only when there is a wallet to reconnect — a
+          first-time standalone visitor has the connect button above. */}
+      {!host.walletConnected && host.address !== null ? (
+        <div className="banner">
+          Wallet disconnected. Your grove keeps growing — reconnect to claim,
+          replant or plant.
+        </div>
+      ) : null}
+      {paused ? (
+        <div className="banner banner--alert">
+          The program is halted by its authority. Existing state is
+          unaffected; actions resume when it is unhalted.
+        </div>
       ) : null}
 
       <hr className="rule" />
@@ -199,94 +433,137 @@ export function Game({ host }: { host: Host }) {
         </div>
       ) : (
         <>
-          <Readout label="My hashpower" value={formatCount(rigs)} unit="RIGS" rigs />
-          <Readout
-            label="Current output"
-            value={`≈ ${formatSol(outputPerDay, 5)}`}
-            unit="SOL / DAY"
-          />
-          <OreBin lamports={claimable} />
-
-          <p className="note">
-            Based on the current funded reward schedule and total rig count.
-            Changes when hashpower or reward funding changes.
-          </p>
-
-          {!host.walletConnected ? (
-            <div className="banner">
-              Wallet disconnected. Your mine keeps running — reconnect to claim,
-              compound or hire.
-            </div>
-          ) : null}
-          {paused ? (
-            <div className="banner banner--alert">
-              The program is halted by its authority. Existing state is
-              unaffected; actions resume when it is unhalted.
-            </div>
-          ) : null}
-          {actionError ? (
-            <div className="banner banner--alert">{actionError}</div>
-          ) : null}
-
-          <div className="actions">
-            <button type="button" onClick={onCompound} disabled={!canAct || compoundPreview === 0n}>
-              {busy === 'compound'
-                ? 'Compounding…'
-                : compoundPreview > 0n
-                  ? `Compound · ${formatCount(compoundPreview)}`
-                  : 'Compound'}
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={onClaim}
-              disabled={!canAct || claimable === 0n}
-            >
-              {busy === 'claim' ? 'Claiming…' : 'Claim SOL'}
-            </button>
-          </div>
-
+          {/* The grove itself, from the real seed count. */}
           <RigVisual rigs={rigs} running={scheduleLive && !paused} />
 
-          <hr className="rule" />
+          {/* 2 · A returning planter sees their own grove and its two
+              actions first — the daily loop is claim or replant, not a
+              re-read of the pitch. A first-time visitor sees the
+              opportunity instead, and the cockpit waits below Plant. */}
+          {hasPosition ? positionBlock : opportunityBlock}
 
-          <BuyPanel
+          {/* 3 · The rules that decide whether and how this wallet can plant. */}
+          <LaunchPanel
             config={config}
-            walletLamports={walletLamports}
-            disabled={!canAct}
-            busy={busy === 'buy'}
-            onBuy={onBuy}
+            chainTime={chainTime}
+            wallet={host.address}
+            identity={identity}
+            lifetimeRigsBought={miner?.lifetimeRigsBought ?? 0n}
+          />
+          <GroveStatus
+            config={config}
+            rewardVaultLamports={snap.rewardVaultDistributable}
+            chainTime={chainTime}
           />
 
-          {host.room ? (
-            <>
-              <hr className="rule" />
-              <RoomLeaderboard
-                roomId={host.room.id}
-                roomTitle={host.room.title}
-                launchToken={host.launchToken}
-                viewer={host.address}
-                onOpenProfile={host.openProfile}
-              />
-            </>
+          {phase === 'preLaunch' &&
+          host.address !== null &&
+          host.address === config.founder &&
+          host.signer ? (
+            <FounderActivation founder={host.address} signer={host.signer} onDone={refresh} />
           ) : null}
+
+          {/* 4 · Planting, SOL first. */}
+          <BuyPanel
+            config={config}
+            chainTime={chainTime}
+            walletLamports={walletLamports}
+            disabled={!canAct || !freshBuyOpen}
+            closedReason={
+              freshBuyOpen
+                ? null
+                : genesisRemaining === 0n
+                  ? 'This wallet has used its Genesis fresh-buy allowance. Replanting remains available.'
+                : phase === 'preLaunch'
+                  ? 'Planting opens when the founder activates the grove.'
+                  : 'Planting is not open to this wallet in the current access phase.'
+            }
+            genesisRemaining={genesisRemaining}
+            referralNote={referralNote}
+            officialFallback={referral?.kind === 'official'}
+            hasPosition={hasPosition}
+            accruedRewardLamports={claimable}
+            busy={busy === 'buy'}
+            onBuy={onBuy}
+            error={buyError}
+          />
+
+          {hasPosition ? opportunityBlock : positionBlock}
 
           <hr className="rule" />
 
+          {/* 5 · Yours: the record, history, milestones, sharing, dilution. */}
+          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
+          <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
+          {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          <ProgressShareCard
+            wallet={host.address}
+            miner={miner}
+            chainTime={chainTime}
+            onShare={host.share}
+          />
+          <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
+          {host.address ? (
+            <CommissionPanel
+              wallet={host.address}
+              signer={host.walletConnected ? host.signer : null}
+              paused={paused}
+              onClaimed={() => void refresh()}
+            />
+          ) : null}
+          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
+
+          <hr className="rule" />
+
+          {/* 6 · Everyone's: the room, the grove-wide distribution. */}
+          {host.room ? (
+            <RoomLeaderboard
+              roomId={host.room.id}
+              roomTitle={host.room.title}
+              launchToken={host.launchToken}
+              viewer={host.address}
+              onOpenProfile={host.openProfile}
+            />
+          ) : null}
+          <DistributionPanel viewer={host.address} />
+
+          <hr className="rule" />
+
+          {/* 7 · Verification: vaults, accounts, authorities. */}
           <TransparencyPanel
             config={config}
             miner={miner}
             rewardVaultLamports={snap.rewardVaultDistributable}
             rewardVaultAddress={snap.rewardVaultAddress}
+            capitalVaultLamports={snap.capitalVaultDistributable ?? 0n}
+            capitalVaultAddress={snap.capitalVaultAddress ?? null}
+            feeVaultLamports={snap.feeVaultDistributable ?? 0n}
+            feeVaultAddress={snap.feeVaultAddress ?? null}
             chainTime={chainTime}
           />
 
+          <hr className="rule" />
+
+          {/* 8 · What comes next. Planned only: no dates or terms on screen. */}
+          <section className="roadmap" data-testid="roadmap">
+            <p className="trust-kicker">Roadmap · Phase 2</p>
+            <h2 className="section-title">Coming next: stock baskets</h2>
+            <p>
+              The second phase brings stock baskets: the same grove you plant and
+              grow, with rewards paid in tokenized stocks on Solana instead of
+              SOL. Plant seeds, grow your tree and harvest a share of a funded
+              pool of stock tokens. Stock baskets are planned, not live. Which
+              stocks, when it opens and how its rewards are funded will be
+              announced before launch.
+            </p>
+          </section>
+
           <p className="disclosure">
-            {PRODUCT_NAME_SHORT} is a mining <em>simulation</em>. SOL is not proof-of-work
-            mined: rigs do not participate in Solana consensus and do not
+            {PRODUCT_NAME_SHORT} is a planting <em>simulation</em>. SOL is not proof-of-work
+            mined: seeds do not participate in Solana consensus and do not
             cryptographically produce new SOL. Rewards are paid from a funded
-            reward vault, are denominated in SOL, and vary with total hashpower
-            and funding. Rig purchases are non-redeemable.
+            reward vault, are denominated in SOL, and vary with total seeds planted
+            and funding. Seed purchases are non-redeemable.
           </p>
         </>
       )}

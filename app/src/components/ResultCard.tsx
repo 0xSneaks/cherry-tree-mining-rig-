@@ -12,6 +12,9 @@ export type ResultParams = {
   rigs?: string;
   compounded?: string;
   claimed?: string;
+  rooted?: string;
+  milestone?: string;
+  ref?: string;
 };
 
 function safeBigInt(v: string | undefined): bigint | null {
@@ -25,15 +28,22 @@ function safeBigInt(v: string | undefined): bigint | null {
 
 export function ResultCard({ params }: { params: ResultParams }) {
   const rigs = safeBigInt(params.rigs);
+  const seedCount = rigs;
   const compounded = safeBigInt(params.compounded);
   const claimed = safeBigInt(params.claimed);
+  const milestone = params.milestone && /^[a-zA-Z0-9 .'-]{1,40}$/.test(params.milestone)
+    ? params.milestone
+    : null;
+  const rooted = params.rooted === 'yes';
 
   const headline =
     compounded !== null
-      ? `+${formatCount(compounded)} RIGS`
+      ? `+${formatCount(compounded)} SEEDS REPLANTED`
       : claimed !== null
         ? `${formatSol(claimed, 4)} SOL CLAIMED`
-        : PRODUCT_NAME;
+        : params.kind === 'progress' && seedCount !== null
+          ? `${formatCount(seedCount)} SEEDS · ${rooted ? 'ROOTED' : 'TENDING'}`
+          : PRODUCT_NAME;
 
   return (
     <main
@@ -42,7 +52,7 @@ export function ResultCard({ params }: { params: ResultParams }) {
     >
       <div className="panel">
         <p className="section-title" style={{ marginBottom: 6 }}>
-          {PRODUCT_NAME} · MINE REPORT
+          {PRODUCT_NAME} · GROVE REPORT
         </p>
         <p
           style={{
@@ -55,15 +65,27 @@ export function ResultCard({ params }: { params: ResultParams }) {
           {headline}
         </p>
         <div className="readout">
-          <span className="readout-label">Hashpower</span>
+          <span className="readout-label">Grove</span>
           <span className="readout-value">
             {rigs !== null ? formatCount(rigs) : '—'}
-            <span className="unit">RIGS</span>
+            <span className="unit">SEEDS</span>
           </span>
         </div>
+        {params.kind === 'progress' ? (
+          <>
+            <div className="readout">
+              <span className="readout-label">Milestone</span>
+              <span className="readout-value">{milestone ?? 'Not available'}</span>
+            </div>
+            <div className="readout">
+              <span className="readout-label">Referral</span>
+              <span className="readout-value">{params.ref ? 'Available from planter' : 'Not included'}</span>
+            </div>
+          </>
+        ) : null}
         <p className="note" style={{ marginTop: 10 }}>
-          Mining simulation with SOL-denominated rewards paid from a funded
-          reward vault. Read-only snapshot.
+          Planting simulation with SOL-denominated rewards paid from a funded
+          reward vault. Read-only snapshot of public position progress; no return estimate.
         </p>
       </div>
     </main>

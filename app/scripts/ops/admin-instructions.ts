@@ -1,8 +1,9 @@
 /**
- * Instruction builders for the two operator-only instructions.
+ * Instruction builders for the operator-only instructions.
  *
- * Deliberately NOT in `src/lib/program/instructions.ts`: `initialize` and
- * `fund_rewards` have no business being reachable from the browser bundle.
+ * Deliberately NOT in `src/lib/program/instructions.ts`: `initialize`,
+ * `fund_rewards`, `set_fee_recipient` and `withdraw_fees` have no business
+ * being reachable from the browser bundle.
  *
  * Account order and writability mirror the `#[derive(Accounts)]` structs in
  * `programs/sol-rigs/src/instructions/`.
@@ -34,14 +35,35 @@ function concat(...parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-/** `initialize(rig_price_lamports, purchase_fee_bps, reward_funder)`. */
+/**
+ * `initialize(rig_price_lamports, purchase_fee_bps, reward_funder,
+ * fee_recipient, founder, genesis_cap_rigs, compound_fee_bps)`.
+ *
+ * `compoundFeeBps` (architecture §7a) must not exceed `purchaseFeeBps`; the
+ * program refuses otherwise. Both are the only fee values set without the
+ * 72-hour timelock.
+ *
+ * `founder` is pinned for this program version: the only wallet whose purchase
+ * can activate launch. There is no setter.
+ *
+ * `feeRecipient` is a payout destination pinned into config, not a signer:
+ * `withdraw_fees` may pay it and nothing else, and it never has to sign.
+ *
+ * `authority` must be the program's upgrade authority: the program reads it
+ * from `programData` (see `programDataPda`) and refuses any other signer.
+ */
 export function initializeInstruction(
   authority: Address,
   pdas: ProgramAddresses,
+  programData: Address,
   args: {
     rigPriceLamports: bigint;
     purchaseFeeBps: number;
     rewardFunder: Address;
+    feeRecipient: Address;
+    founder: Address;
+    genesisCapRigs: bigint;
+    compoundFeeBps: number;
   },
 ): Instruction {
   return {
@@ -53,12 +75,146 @@ export function initializeInstruction(
       { address: pdas.rewardVault, role: AccountRole.WRITABLE },
       { address: pdas.feeVault, role: AccountRole.WRITABLE },
       { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+      { address: programData, role: AccountRole.READONLY },
     ],
     data: concat(
       IX_DISCRIMINATOR.initialize,
       new Uint8Array(getU64Encoder().encode(args.rigPriceLamports)),
       new Uint8Array(getU16Encoder().encode(args.purchaseFeeBps)),
       new Uint8Array(getAddressEncoder().encode(args.rewardFunder)),
+      new Uint8Array(getAddressEncoder().encode(args.feeRecipient)),
+      new Uint8Array(getAddressEncoder().encode(args.founder)),
+      new Uint8Array(getU64Encoder().encode(args.genesisCapRigs)),
+      new Uint8Array(getU16Encoder().encode(args.compoundFeeBps)),
+    ),
+  };
+}
+
+/**
+ * Raw-account `migrate_v3()`: V2 (329 bytes) → current (375), compound fee
+ * = legacy purchase fee. Authority-only and one-shot.
+ */
+export function migrateV3Instruction(authority: Address, config: Address): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.WRITABLE_SIGNER },
+      { address: config, role: AccountRole.WRITABLE },
+      { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    ],
+    data: IX_DISCRIMINATOR.migrateV3,
+  };
+}
+
+/**
+ * `schedule_fee_change(purchase_fee_bps, compound_fee_bps)`. Authority only;
+ * applies no earlier than 72 hours later, via the permissionless
+ * `apply_fee_change`.
+ */
+export function scheduleFeeChangeInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+  purchaseFeeBps: number,
+  compoundFeeBps: number,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.scheduleFeeChange,
+      new Uint8Array(getU16Encoder().encode(purchaseFeeBps)),
+      new Uint8Array(getU16Encoder().encode(compoundFeeBps)),
+    ),
+  };
+}
+
+/** `cancel_fee_change()`. Authority only. */
+export function cancelFeeChangeInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+    ],
+    data: IX_DISCRIMINATOR.cancelFeeChange,
+  };
+}
+
+/**
+ * Raw-account `migrate_v2(genesis_cap_rigs)`: V1 (321 bytes) → current
+ * (375), authority-only and one-shot.
+ */
+export function migrateV2Instruction(
+  authority: Address,
+  config: Address,
+  genesisCapRigs: bigint,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.WRITABLE_SIGNER },
+      { address: config, role: AccountRole.WRITABLE },
+      { address: SYSTEM_PROGRAM_ID, role: AccountRole.READONLY },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.migrateV2,
+      new Uint8Array(getU64Encoder().encode(genesisCapRigs)),
+    ),
+  };
+}
+
+/**
+ * `set_fee_recipient(fee_recipient)`. Authority only.
+ *
+ * The incoming recipient is an argument, not an account — it does not sign and
+ * is not even passed in, so moving the payout address never requires the new
+ * recipient's key to be online.
+ */
+export function setFeeRecipientInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+  feeRecipient: Address,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.setFeeRecipient,
+      new Uint8Array(getAddressEncoder().encode(feeRecipient)),
+    ),
+  };
+}
+
+/**
+ * `withdraw_fees(amount)`. Authority signs; the destination is constrained
+ * on chain to `config.fee_recipient`, so passing anything else fails.
+ */
+export function withdrawFeesInstruction(
+  authority: Address,
+  pdas: ProgramAddresses,
+  feeRecipient: Address,
+  amountLamports: bigint,
+): Instruction {
+  return {
+    programAddress: PROGRAM_ID,
+    accounts: [
+      { address: authority, role: AccountRole.READONLY_SIGNER },
+      { address: pdas.config, role: AccountRole.WRITABLE },
+      { address: pdas.feeVault, role: AccountRole.WRITABLE },
+      { address: feeRecipient, role: AccountRole.WRITABLE },
+    ],
+    data: concat(
+      IX_DISCRIMINATOR.withdrawFees,
+      new Uint8Array(getU64Encoder().encode(amountLamports)),
     ),
   };
 }

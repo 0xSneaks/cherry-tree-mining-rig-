@@ -21,20 +21,70 @@
 
 pub mod accumulator;
 pub mod error;
+pub mod fees;
+pub mod fruit;
+pub mod fruit_lock;
+pub mod fruit_schedule;
+pub mod launch;
+pub mod penalty;
 pub mod position;
 pub mod pricing;
+pub mod referral;
+pub mod yield_curve;
 
 pub use accumulator::{
     assert_fully_funded, RewardGlobals, RewardLedger, MAX_REWARD_DURATION_SECONDS,
-    MAX_REWARD_RATE_LAMPORTS_PER_SECOND, PRECISION, ZERO_RIG_POLICY,
+    MAX_REWARD_RATE_LAMPORTS_PER_SECOND, PRECISION, WEIGHT_BASE, WEIGHT_REFERRED, ZERO_RIG_POLICY,
 };
 pub use error::{EngineError, EngineResult};
+pub use fees::{
+    early_claim_fee_split, referral_commission, validate_fee_pair, FeeSchedule,
+    EARLY_CLAIM_TREASURY_BPS, FEE_CHANGE_TIMELOCK_SECONDS, REFERRAL_COMMISSION_BPS,
+    REFERRAL_RETAINED_MARGIN_BPS,
+};
+pub use fruit::{
+    close_pool, commit_pool, finalize_root, lock_forfeit_treasury_release, post_root,
+    scheduled_capacity, terminal_resolution, veto_vote, wallet_cap, CloseOutcome, FruitLedger,
+    FruitPool, FruitRoot, LedgerKind, PoolStatus, RootStatus, FRUIT_M, LOCK_FORFEIT_TREASURY_BPS,
+    P_REF_LAMPORTS, QMAX_DEN, QMAX_NUM,
+};
+pub use fruit_lock::{
+    award_lock_registration, cancel_lock, claim_lock, commit_lock_pool, finalize_lock_allocation,
+    lock_allocation, lock_award, lock_capacity, lock_final_allocation, lock_h,
+    lock_registration_open, lock_safety_vest, lock_season_start, lock_vest_at_maturity,
+    post_lock_root, post_lock_weight, register_lock, root_capacity, seal_lock_awards,
+    seal_lock_weights, terminal_lock_resolution, validate_lock_window, veto_lock_allocation,
+    LockAllocation, LockAllocationStatus, LockRegistrationState, LockState, SafetyRelease,
+    LOCK_DAYS, LOCK_DURATION_SECONDS, LOCK_HFLOOR_LAMPORTS, LOCK_H_FLOOR_LAMPORT_DAYS,
+    LOCK_KMAX_LAMPORTS, LOCK_SEASON_OFFSET,
+};
+pub use fruit_schedule::{
+    fruit_t0, plan_fruit, validate_plan, EpochKind, FruitEpoch, FruitPlan, PlanKind,
+    CONTINUATION_BUDGET_R, CORE_END_OFFSET, CORE_START_OFFSETS, DAY_SECONDS,
+    HARVEST_BUDGET_LAMPORTS, SEASON_BUDGET_LAMPORTS, STORM_CEILING_LAMPORTS,
+    SUPERFRUIT_BUDGET_LAMPORTS,
+};
+pub use launch::{
+    access_phase, gate_purchase, genesis_cap_check, purchase_allowed, seconds_to_next_phase,
+    skr_day1_binding, t0_after_success, validate_genesis_cap, AccessPhase, ProvenIdentity,
+    PurchaseContext, PurchaseGate, SkrBindAction, ACCESS_WINDOW_SECONDS, GENESIS_CAP_RIGS,
+    NOT_ACTIVATED,
+};
+pub use penalty::{claim_penalty_bps, penalty_amount, PENALTY_WINDOW_SECONDS};
 pub use position::{
-    buy_rigs, claim, compound, estimated_output_per_second, CompoundOutcome, MinerPosition,
+    buy_rigs, claim, compound, estimated_output_per_second, ClaimOutcome, CompoundOutcome,
+    MinerPosition,
 };
 pub use pricing::{
-    quote_purchase, rigs_affordable, validate_pricing, PurchaseQuote, BPS_DENOMINATOR,
-    MAX_PURCHASE_FEE_BPS, MAX_RIGS_PER_PURCHASE, MAX_TOTAL_RIGS,
+    quote_purchase, rigs_affordable, validate_pricing, wallet_headroom, PurchaseQuote,
+    BPS_DENOMINATOR, MAX_PURCHASE_FEE_BPS, MAX_RIGS_PER_PURCHASE, MAX_TOTAL_RIGS, MAX_WALLET_RIGS,
+};
+pub use referral::{referral_weight, ReferrerCheck};
+
+pub use yield_curve::{
+    apr_bps, apr_bps_weighted, current_phase, effective_rate_bps, next_threshold,
+    project_compounding, required_annual_emission, NextThreshold, Projection, YieldInputs,
+    YieldPhase, MAX_PROJECTION_STEPS, SECONDS_PER_YEAR,
 };
 
 /// Lamports per SOL. Display helper only.

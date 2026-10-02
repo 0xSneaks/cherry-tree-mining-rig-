@@ -5,6 +5,8 @@
 
 #![allow(dead_code)]
 
+use std::str::FromStr;
+
 use anchor_lang::{InstructionData, ToAccountMetas};
 use solana_program_test::{processor, ProgramTest, ProgramTestContext};
 use solana_sdk::{
@@ -23,10 +25,181 @@ use sol_rigs::constants::*;
 pub const SOL: u64 = LAMPORTS_PER_SOL;
 pub const RIG_PRICE: u64 = SOL / 100; // 0.01 SOL — test fixture only
 pub const FEE_BPS: u16 = 300; // 3.00%
+/// Genesis fresh-purchase cap: the only value `initialize` accepts (250),
+/// equal to the permanent wallet cap.
+pub const GENESIS_CAP: u64 = rigs_engine::GENESIS_CAP_RIGS;
+/// Permanent per-wallet seed cap.
+pub const WALLET_CAP: u64 = rigs_engine::MAX_WALLET_RIGS;
+
+/// THE CHERRY TREE protocol fee recipient — the canonical fee / treasury wallet.
+///
+/// A public address and nothing more: it never signs, holds no role in the
+/// program beyond being the one account `withdraw_fees` may pay, and no
+/// private key for it exists anywhere in this repository or its CI.
+pub const FEE_RECIPIENT: &str = "4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF";
+
+pub fn fee_recipient() -> Pubkey {
+    Pubkey::from_str(FEE_RECIPIENT).expect("FEE_RECIPIENT is not a valid base58 pubkey")
+}
+
+/// Raw bytes of an ANS (AllDomains) name record header.
+pub fn ans_record(parent: &Pubkey, owner: &Pubkey, expires_at: u64) -> Vec<u8> {
+    let mut d = vec![0u8; 200 + 32];
+    d[..8].copy_from_slice(&ANS_NAME_RECORD_DISCRIMINATOR);
+    d[8..40].copy_from_slice(parent.as_ref());
+    d[40..72].copy_from_slice(owner.as_ref());
+    d[104..112].copy_from_slice(&expires_at.to_le_bytes());
+    d
+}
+
+/// Raw bytes of an SNS name record header.
+pub fn sns_record(parent: &Pubkey, owner: &Pubkey) -> Vec<u8> {
+    let mut d = vec![0u8; 96 + 32];
+    d[..32].copy_from_slice(parent.as_ref());
+    d[32..64].copy_from_slice(owner.as_ref());
+    d
+}
+
+/// AllDomains Name House `NftRecord` bytes.
+pub fn ans_nft_record(tag: u8, name: &Pubkey, mint: &Pubkey) -> Vec<u8> {
+    let mut d = vec![0u8; 8 + 1 + 1 + 32 * 4];
+    d[..8].copy_from_slice(&ANS_NFT_RECORD_DISCRIMINATOR);
+    d[8] = tag;
+    d[10..42].copy_from_slice(name.as_ref());
+    d[74..106].copy_from_slice(mint.as_ref());
+    d
+}
+
+/// SNS tokenizer `NftRecord` bytes.
+pub fn sns_nft_record(tag: u8, name: &Pubkey, mint: &Pubkey) -> Vec<u8> {
+    let mut d = vec![0u8; 1 + 1 + 32 * 3];
+    d[0] = tag;
+    d[2..34].copy_from_slice(name.as_ref());
+    d[66..98].copy_from_slice(mint.as_ref());
+    d
+}
+
+/// SPL token account bytes (165).
+pub fn token_account(mint: &Pubkey, owner: &Pubkey, amount: u64, state: u8) -> Vec<u8> {
+    let mut d = vec![0u8; 165];
+    d[..32].copy_from_slice(mint.as_ref());
+    d[32..64].copy_from_slice(owner.as_ref());
+    d[64..72].copy_from_slice(&amount.to_le_bytes());
+    d[108] = state;
+    d
+}
+
+pub fn program_owned(owner_program: Pubkey, data: Vec<u8>) -> Account {
+    Account {
+        lamports: SOL,
+        data,
+        owner: owner_program,
+        ..Account::default()
+    }
+}
+
+/// The ways a test wallet can hold (or not hold) a domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Domain {
+    SkrDirect,
+    SkrWrapped,
+    SnsDirect,
+    SnsTokenized,
+}
+
+pub fn skr_wrapped_record_key(name: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(
+        &[b"nft_record", SKR_NAME_HOUSE.as_ref(), name.as_ref()],
+        &ANS_NAME_HOUSE_PROGRAM_ID,
+    )
+    .0
+}
+
+pub fn sns_tokenized_record_key(name: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"nft_record", name.as_ref()], &SNS_NAME_TOKENIZER_ID).0
+}
+
+/// Plant a domain for `wallet`; returns the identity accounts to pass.
+pub fn plant_domain(pt: &mut ProgramTest, wallet: &Pubkey, kind: Domain) -> Vec<Pubkey> {
+    let name = Pubkey::new_unique();
+    match kind {
+        Domain::SkrDirect => {
+            pt.add_account(
+                name,
+                program_owned(ANS_PROGRAM_ID, ans_record(&SKR_TLD_PARENT, wallet, 0)),
+            );
+            vec![name]
+        }
+        Domain::SnsDirect => {
+            pt.add_account(
+                name,
+                program_owned(SNS_NAME_PROGRAM_ID, sns_record(&SNS_TLD_ROOT, wallet)),
+            );
+            vec![name]
+        }
+        Domain::SkrWrapped => {
+            let record = skr_wrapped_record_key(&name);
+            let (mint, token) = (Pubkey::new_unique(), Pubkey::new_unique());
+            pt.add_account(
+                name,
+                program_owned(ANS_PROGRAM_ID, ans_record(&SKR_TLD_PARENT, &record, 0)),
+            );
+            pt.add_account(
+                record,
+                program_owned(ANS_NAME_HOUSE_PROGRAM_ID, ans_nft_record(1, &name, &mint)),
+            );
+            pt.add_account(
+                token,
+                program_owned(SPL_TOKEN_PROGRAM_ID, token_account(&mint, wallet, 1, 1)),
+            );
+            vec![name, record, token]
+        }
+        Domain::SnsTokenized => {
+            let record = sns_tokenized_record_key(&name);
+            let (mint, token) = (Pubkey::new_unique(), Pubkey::new_unique());
+            pt.add_account(
+                name,
+                program_owned(SNS_NAME_PROGRAM_ID, sns_record(&SNS_TLD_ROOT, &record)),
+            );
+            pt.add_account(
+                record,
+                program_owned(SNS_NAME_TOKENIZER_ID, sns_nft_record(2, &name, &mint)),
+            );
+            pt.add_account(
+                token,
+                program_owned(SPL_TOKEN_PROGRAM_ID, token_account(&mint, wallet, 1, 1)),
+            );
+            vec![name, record, token]
+        }
+    }
+}
 
 pub struct Env {
     pub ctx: ProgramTestContext,
     pub authority: Keypair,
+    /// Pinned as `config.founder`. Alias of `alice`, so every legacy test's
+    /// first buy is the activation. Also holds a direct `.skr`, so her later
+    /// purchases pass the genesis gate like any `.skr` holder's.
+    pub founder: Keypair,
+    /// bob: wrapped `.skr` (AllDomains NFT). carol: direct `.skr`.
+    pub carol: Keypair,
+    /// Tokenized `.sns` only.
+    pub dave: Keypair,
+    /// Holds no domain at all.
+    pub erin: Keypair,
+    /// Direct `.sns` only.
+    pub frank: Keypair,
+    /// wallet → identity accounts passed with its purchases.
+    pub identities: std::collections::HashMap<Pubkey, Vec<Pubkey>>,
+    /// wallet → its `.skr` name account, for wallets planted with a `.skr`.
+    /// `buy_ix` appends that domain's binding PDA, as the client does.
+    pub skr_names: std::collections::HashMap<Pubkey, Pubkey>,
+    /// wallet → the referrer it last named. `buy_ix` / `compound_ix` append
+    /// that referrer's referral ledger, as the client does for a referred
+    /// position.
+    pub referrers: std::cell::RefCell<std::collections::HashMap<Pubkey, Pubkey>>,
+    /// Where fees are configured to land. Not a signer — see [`FEE_RECIPIENT`].
+    pub fee_recipient: Pubkey,
     pub funder: Keypair,
     pub alice: Keypair,
     pub bob: Keypair,
@@ -46,6 +219,44 @@ pub fn reward_vault_pda() -> Pubkey {
 }
 pub fn fee_vault_pda() -> Pubkey {
     Pubkey::find_program_address(&[FEE_VAULT_SEED], &sol_rigs::ID).0
+}
+/// Day-1 `.skr` binding PDA for a domain's ANS name account.
+pub fn referral_pda(referrer: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[REFERRAL_SEED, referrer.as_ref()], &sol_rigs::ID).0
+}
+
+pub fn skr_binding_pda(name: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[SKR_BIND_SEED, name.as_ref()], &sol_rigs::ID).0
+}
+
+/// The loader-derived ProgramData address of the program: what a real
+/// `anchor deploy` / `solana program deploy` creates, and the only account
+/// `initialize` accepts as proof of the upgrade authority.
+pub fn program_data_pda() -> Pubkey {
+    Pubkey::find_program_address(
+        &[sol_rigs::ID.as_ref()],
+        &solana_sdk::bpf_loader_upgradeable::ID,
+    )
+    .0
+}
+
+/// Bincode `UpgradeableLoaderState::ProgramData { slot, upgrade_authority }`
+/// header, byte for byte what the upgradeable loader writes (45 bytes), owned
+/// by that loader. Built by hand so the test pins the wire format itself.
+pub fn program_data_account(upgrade_authority: Option<Pubkey>) -> Account {
+    let mut data = vec![0u8; 45];
+    data[..4].copy_from_slice(&3u32.to_le_bytes()); // ProgramData variant
+                                                    // slot (u64) stays 0
+    if let Some(a) = upgrade_authority {
+        data[12] = 1;
+        data[13..45].copy_from_slice(a.as_ref());
+    }
+    Account {
+        lamports: SOL,
+        data,
+        owner: solana_sdk::bpf_loader_upgradeable::ID,
+        ..Account::default()
+    }
 }
 
 /// `solana-program-test` wants a processor whose account-slice lifetime is
@@ -76,21 +287,71 @@ fn funded(pt: &mut ProgramTest, lamports: u64) -> Keypair {
 
 impl Env {
     pub async fn new() -> Env {
+        Env::with(|_| {}).await
+    }
+
+    /// Build an environment, letting a test plant extra accounts first.
+    pub async fn with(extra: impl FnOnce(&mut ProgramTest)) -> Env {
         let mut pt = ProgramTest::new("sol_rigs", sol_rigs::ID, processor!(entry_shim));
         pt.set_compute_max_units(400_000);
 
         let authority = funded(&mut pt, 1_000 * SOL);
+        // The deployer is the upgrade authority, as `devnet-deploy.sh` leaves it.
+        pt.add_account(
+            program_data_pda(),
+            program_data_account(Some(authority.pubkey())),
+        );
         let fundr = funded(&mut pt, 10_000 * SOL);
         let alice = funded(&mut pt, 10_000 * SOL);
         let bob = funded(&mut pt, 10_000 * SOL);
+        let carol = funded(&mut pt, 10_000 * SOL);
+        let dave = funded(&mut pt, 10_000 * SOL);
+        let erin = funded(&mut pt, 10_000 * SOL);
+        let frank = funded(&mut pt, 10_000 * SOL);
+
+        let mut identities = std::collections::HashMap::new();
+        let mut skr_names = std::collections::HashMap::new();
+        for (who, kind) in [
+            (&alice, Domain::SkrDirect),
+            (&bob, Domain::SkrWrapped),
+            (&carol, Domain::SkrDirect),
+            (&dave, Domain::SnsTokenized),
+            (&frank, Domain::SnsDirect),
+        ] {
+            let accounts = plant_domain(&mut pt, &who.pubkey(), kind);
+            if matches!(kind, Domain::SkrDirect | Domain::SkrWrapped) {
+                skr_names.insert(who.pubkey(), accounts[0]);
+            }
+            identities.insert(who.pubkey(), accounts);
+        }
+        extra(&mut pt);
+
+        // Give the recipient an existing account so a withdrawal is a plain
+        // credit, the way it will be on devnet.
+        pt.add_account(
+            fee_recipient(),
+            Account {
+                lamports: SOL,
+                ..Account::default()
+            },
+        );
 
         let ctx = pt.start_with_context().await;
         Env {
             ctx,
             authority,
+            fee_recipient: fee_recipient(),
             funder: fundr,
+            founder: alice.insecure_clone(),
             alice,
             bob,
+            carol,
+            dave,
+            erin,
+            frank,
+            identities,
+            skr_names,
+            referrers: Default::default(),
         }
     }
 
@@ -140,6 +401,12 @@ impl Env {
         T::try_deserialize(&mut acc.data.as_slice()).unwrap()
     }
 
+    /// Set the on-chain clock to exactly `unix_timestamp`.
+    pub async fn set_time(&mut self, unix_timestamp: i64) {
+        let now = self.clock().await.unix_timestamp;
+        self.warp(unix_timestamp - now).await;
+    }
+
     pub async fn clock(&mut self) -> Clock {
         self.ctx.banks_client.get_sysvar::<Clock>().await.unwrap()
     }
@@ -157,26 +424,83 @@ impl Env {
     // ---------------------------------------------------------- instructions
 
     pub async fn initialize(&mut self) -> Result<(), TransportError> {
-        let ix = Instruction {
+        self.initialize_with_cap(GENESIS_CAP).await
+    }
+
+    /// `initialize` with an explicit Genesis cap, so cap-specific tests can
+    /// pin tight values.
+    pub async fn initialize_with_cap(
+        &mut self,
+        genesis_cap_rigs: u64,
+    ) -> Result<(), TransportError> {
+        let mut ix = self.initialize_ix(&self.authority.pubkey(), program_data_pda());
+        ix.data = sol_rigs::instruction::Initialize {
+            rig_price_lamports: RIG_PRICE,
+            purchase_fee_bps: FEE_BPS,
+            reward_funder: self.funder.pubkey(),
+            fee_recipient: self.fee_recipient,
+            founder: self.founder.pubkey(),
+            genesis_cap_rigs,
+            compound_fee_bps: FEE_BPS,
+        }
+        .data();
+        let auth = self.authority.insecure_clone();
+        self.send(ix, &[&auth]).await
+    }
+
+    /// `initialize` with explicit purchase and compound fees (architecture
+    /// §7a), otherwise the fixture's values.
+    pub async fn initialize_with_fees(
+        &mut self,
+        purchase_fee_bps: u16,
+        compound_fee_bps: u16,
+    ) -> Result<(), TransportError> {
+        let mut ix = self.initialize_ix(&self.authority.pubkey(), program_data_pda());
+        ix.data = sol_rigs::instruction::Initialize {
+            rig_price_lamports: RIG_PRICE,
+            purchase_fee_bps,
+            reward_funder: self.funder.pubkey(),
+            fee_recipient: self.fee_recipient,
+            founder: self.founder.pubkey(),
+            genesis_cap_rigs: GENESIS_CAP,
+            compound_fee_bps,
+        }
+        .data();
+        let auth = self.authority.insecure_clone();
+        self.send(ix, &[&auth]).await
+    }
+
+    /// Canonical `initialize` with the fixture's config values, signed by
+    /// `signer` and naming `program_data` as the upgrade-authority proof.
+    pub fn initialize_ix(&self, signer: &Pubkey, program_data: Pubkey) -> Instruction {
+        Instruction {
             program_id: sol_rigs::ID,
             accounts: sol_rigs::accounts::Initialize {
-                authority: self.authority.pubkey(),
+                authority: *signer,
                 config: config_pda(),
                 capital_vault: capital_vault_pda(),
                 reward_vault: reward_vault_pda(),
                 fee_vault: fee_vault_pda(),
                 system_program: solana_sdk::system_program::ID,
+                program_data,
             }
             .to_account_metas(None),
             data: sol_rigs::instruction::Initialize {
                 rig_price_lamports: RIG_PRICE,
                 purchase_fee_bps: FEE_BPS,
                 reward_funder: self.funder.pubkey(),
+                fee_recipient: self.fee_recipient,
+                founder: self.founder.pubkey(),
+                genesis_cap_rigs: GENESIS_CAP,
+                compound_fee_bps: FEE_BPS,
             }
             .data(),
-        };
-        let auth = self.authority.insecure_clone();
-        self.send(ix, &[&auth]).await
+        }
+    }
+
+    /// Raw on-chain account bytes (or `None`), for layout-level assertions.
+    pub async fn account_raw(&mut self, key: Pubkey) -> Option<solana_sdk::account::Account> {
+        self.ctx.banks_client.get_account(key).await.unwrap()
     }
 
     pub fn fund_rewards_ix(&self, funder: &Pubkey, amount: u64, duration: u64) -> Instruction {
@@ -199,7 +523,81 @@ impl Env {
         self.send(ix, &[&f]).await
     }
 
+    /// `buy_rigs` with the buyer's planted identity (none for erin) and no
+    /// referrer. A `.skr` identity carries its binding PDA, as the client
+    /// sends it; the program only consults it during Day 1.
     pub fn buy_ix(&self, owner: &Pubkey, count: u64) -> Instruction {
+        let identity = self.identities.get(owner).cloned().unwrap_or_default();
+        self.buy_ix_with(owner, count, identity, None)
+    }
+
+    /// `buy_rigs` with explicit identity accounts followed by a writable
+    /// binding account, and no referrer.
+    pub fn buy_ix_bound(
+        &self,
+        owner: &Pubkey,
+        count: u64,
+        identity: Vec<Pubkey>,
+        binding: Pubkey,
+    ) -> Instruction {
+        let mut ix = self.buy_ix_unbound(owner, count, identity, None);
+        ix.accounts
+            .push(solana_sdk::instruction::AccountMeta::new(binding, false));
+        ix
+    }
+
+    /// `buy_rigs` with explicit remaining accounts: identity accounts, the
+    /// `.skr` binding PDA when the identity is a planted `.skr` domain (as the
+    /// client sends it), then `(referrer, referrer_miner)` if given.
+    pub fn buy_ix_with(
+        &self,
+        owner: &Pubkey,
+        count: u64,
+        identity: Vec<Pubkey>,
+        referrer: Option<(Pubkey, Pubkey)>,
+    ) -> Instruction {
+        let binding = identity
+            .first()
+            .filter(|name| self.skr_names.values().any(|n| n == *name))
+            .map(skr_binding_pda);
+        let mut ix = self.buy_ix_unbound(owner, count, identity, referrer.map(|r| r.0));
+        use solana_sdk::instruction::AccountMeta;
+        if let Some(b) = binding {
+            ix.accounts.push(AccountMeta::new(b, false));
+        }
+        if let Some((referrer_key, referrer_miner)) = referrer {
+            ix.accounts
+                .push(AccountMeta::new_readonly(referrer_miner, false));
+            // The referral ledger travels last whenever the position is
+            // referred (architecture §7). Remember the named referrer so
+            // later buys / compounds by this wallet carry the ledger too.
+            ix.accounts
+                .push(AccountMeta::new(referral_pda(&referrer_key), false));
+            self.referrers.borrow_mut().insert(*owner, referrer_key);
+        } else if let Some(r) = self.referrers.borrow().get(owner) {
+            ix.accounts.push(AccountMeta::new(referral_pda(r), false));
+        }
+        ix
+    }
+
+    /// `buy_rigs` with exactly the identity accounts given — no binding
+    /// appended, no referrer account (the referrer arg is still encoded).
+    pub fn buy_ix_unbound(
+        &self,
+        owner: &Pubkey,
+        count: u64,
+        identity: Vec<Pubkey>,
+        referrer: Option<Pubkey>,
+    ) -> Instruction {
+        let mut ix = self.buy_ix_raw(owner, count, referrer);
+        use solana_sdk::instruction::AccountMeta;
+        for key in identity {
+            ix.accounts.push(AccountMeta::new_readonly(key, false));
+        }
+        ix
+    }
+
+    pub fn buy_ix_raw(&self, owner: &Pubkey, count: u64, referrer: Option<Pubkey>) -> Instruction {
         Instruction {
             program_id: sol_rigs::ID,
             accounts: sol_rigs::accounts::BuyRigs {
@@ -212,7 +610,7 @@ impl Env {
                 system_program: solana_sdk::system_program::ID,
             }
             .to_account_metas(None),
-            data: sol_rigs::instruction::BuyRigs { count }.data(),
+            data: sol_rigs::instruction::BuyRigs { count, referrer }.data(),
         }
     }
 
@@ -230,6 +628,7 @@ impl Env {
                 config: config_pda(),
                 miner,
                 reward_vault: reward_vault_pda(),
+                fee_vault: fee_vault_pda(),
             }
             .to_account_metas(None),
             data: sol_rigs::instruction::Claim {}.data(),
@@ -243,7 +642,7 @@ impl Env {
     }
 
     pub fn compound_ix(&self, owner: &Pubkey) -> Instruction {
-        Instruction {
+        let mut ix = Instruction {
             program_id: sol_rigs::ID,
             accounts: sol_rigs::accounts::CompoundRewards {
                 owner: *owner,
@@ -252,10 +651,18 @@ impl Env {
                 reward_vault: reward_vault_pda(),
                 capital_vault: capital_vault_pda(),
                 fee_vault: fee_vault_pda(),
+                system_program: solana_sdk::system_program::ID,
             }
             .to_account_metas(None),
             data: sol_rigs::instruction::Compound {}.data(),
+        };
+        if let Some(r) = self.referrers.borrow().get(owner) {
+            ix.accounts.push(solana_sdk::instruction::AccountMeta::new(
+                referral_pda(r),
+                false,
+            ));
         }
+        ix
     }
 
     pub async fn compound(&mut self, who: &Keypair) -> Result<(), TransportError> {
@@ -276,6 +683,18 @@ impl Env {
         };
         let a = self.authority.insecure_clone();
         self.send(ix, &[&a]).await
+    }
+
+    pub fn set_fee_recipient_ix(&self, authority: &Pubkey, fee_recipient: Pubkey) -> Instruction {
+        Instruction {
+            program_id: sol_rigs::ID,
+            accounts: sol_rigs::accounts::AdminOnly {
+                authority: *authority,
+                config: config_pda(),
+            }
+            .to_account_metas(None),
+            data: sol_rigs::instruction::SetFeeRecipient { fee_recipient }.data(),
+        }
     }
 
     pub fn withdraw_fees_ix(

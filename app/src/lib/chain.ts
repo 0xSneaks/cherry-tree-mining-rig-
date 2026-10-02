@@ -14,8 +14,16 @@ import {
 } from '@solana/kit';
 
 import { RPC_URL } from './env';
-import { decodeConfig, decodeMiner, type Config, type Miner } from './program/accounts';
-import { minerPda, programAddresses } from './program/pdas';
+import {
+  decodeConfig,
+  decodeMiner,
+  decodeReferralLedger,
+  type Config,
+  type Miner,
+  type ReferralLedger,
+} from './program/accounts';
+import { PROGRAM_ID } from './program/constants';
+import { minerPda, programAddresses, referralPda } from './program/pdas';
 import type { ChainSnapshot } from './program/accrual';
 
 export type RigsRpc = Rpc<SolanaRpcApi>;
@@ -34,9 +42,9 @@ function decodeBase64(data: string): Uint8Array {
 /**
  * One round trip for everything the main screen needs.
  *
- * `getMultipleAccounts` keeps config, miner and the reward vault on the same
- * slot, so the claimable figure and the backing behind it can never be read
- * from two different points in time.
+ * `getMultipleAccounts` keeps config, miner and all three economic vaults on
+ * the same slot, so claimable/backing and the trust panel never combine
+ * values from different points in time.
  */
 export async function fetchSnapshot(
   owner: Address | null,
@@ -45,7 +53,12 @@ export async function fetchSnapshot(
   const pdas = await programAddresses();
   const miner = owner ? await minerPda(owner) : null;
 
-  const keys: Address[] = [pdas.config, pdas.rewardVault];
+  const keys: Address[] = [
+    pdas.config,
+    pdas.rewardVault,
+    pdas.capitalVault,
+    pdas.feeVault,
+  ];
   if (miner) keys.push(miner);
 
   const [accounts, blockTime] = await Promise.all([
@@ -59,14 +72,18 @@ export async function fetchSnapshot(
   const config: Config = decodeConfig(decodeBase64(configAccount.data[0]));
 
   const rewardVaultAccount = accounts.value[1];
-  const rewardVaultLamports = rewardVaultAccount
-    ? BigInt(rewardVaultAccount.lamports)
+  const capitalVaultAccount = accounts.value[2];
+  const feeVaultAccount = accounts.value[3];
+  const representativeVault = rewardVaultAccount ?? capitalVaultAccount ?? feeVaultAccount;
+  const vaultRent = representativeVault
+    ? await rentExemptMinimum(BigInt(representativeVault.space ?? 0n), client)
     : 0n;
-  const rewardVaultRent = rewardVaultAccount
-    ? await rentExemptMinimum(BigInt(rewardVaultAccount.space ?? 0n), client)
-    : 0n;
+  const distributable = (account: typeof rewardVaultAccount): bigint => {
+    const balance = account ? BigInt(account.lamports) : 0n;
+    return balance > vaultRent ? balance - vaultRent : 0n;
+  };
 
-  const minerAccount = miner ? accounts.value[2] : null;
+  const minerAccount = miner ? accounts.value[4] : null;
   const minerState: Miner | null = minerAccount
     ? decodeMiner(decodeBase64(minerAccount.data[0]))
     : null;
@@ -74,9 +91,12 @@ export async function fetchSnapshot(
   return {
     config,
     miner: minerState,
-    rewardVaultDistributable:
-      rewardVaultLamports > rewardVaultRent ? rewardVaultLamports - rewardVaultRent : 0n,
+    rewardVaultDistributable: distributable(rewardVaultAccount),
     rewardVaultAddress: pdas.rewardVault,
+    capitalVaultDistributable: distributable(capitalVaultAccount),
+    feeVaultDistributable: distributable(feeVaultAccount),
+    capitalVaultAddress: pdas.capitalVault,
+    feeVaultAddress: pdas.feeVault,
     chainTimeSeconds: blockTime,
     fetchedAtMs: nowMs(),
   };
@@ -138,4 +158,22 @@ export async function confirmSignature(
     }
     await new Promise((r) => setTimeout(r, 750));
   }
+}
+
+/**
+ * The referral commission ledger of `referrer`, read from its canonical PDA
+ * (`["referral", referrer]`). `null` when no ledger exists yet. The account
+ * must be owned by the program; anything else is refused rather than shown.
+ */
+export async function fetchReferralLedger(
+  referrer: Address,
+  client: RigsRpc = rpc(),
+): Promise<ReferralLedger | null> {
+  const key = await referralPda(referrer);
+  const { value } = await client.getAccountInfo(key, { encoding: 'base64' }).send();
+  if (!value) return null;
+  if (value.owner !== PROGRAM_ID) {
+    throw new Error(`referral ledger ${key} is not owned by the program`);
+  }
+  return decodeReferralLedger(decodeBase64(value.data[0]));
 }

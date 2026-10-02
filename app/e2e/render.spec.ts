@@ -5,16 +5,35 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { stubCherryHost, stubRpc, WALLET } from './fixtures';
+import { decodeConfig } from '../src/lib/program/accounts';
+import {
+  PHASE_LABEL,
+  aprBps,
+  formatAprBps,
+  phaseFromAprBps,
+  yieldInputs,
+} from '../src/lib/program/yield';
+import {
+  configBytes,
+  stubCherryHost,
+  stubCherryInlineHost,
+  stubRpc,
+  WALLET,
+} from './fixtures';
 
-/** Spec §10: banned copy. None of this may appear anywhere on the screen. */
+/**
+ * Spec §10: banned copy. None of this may appear anywhere on the screen.
+ *
+ * APR / APY were on this list until the genesis yield panel. They are now
+ * allowed only as a rate computed from program state and only beside the
+ * variable-rate disclosure — asserted wherever this list is checked. Promise
+ * language stays banned.
+ */
 const BANNED = [
   /guaranteed\s+(daily|apy|apr|return)/i,
   /\bguaranteed\b/i,
   /\bfixed returns?\b/i,
   /\bROI\b/,
-  /\bAPY\b/i,
-  /\bAPR\b/i,
   /\bevery day\b/i,
   /risk[- ]free/i,
 ];
@@ -32,29 +51,79 @@ test.describe('standalone path', () => {
   });
 });
 
+test.describe('referral link', () => {
+  const REF = 'US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx';
+
+  /**
+   * App side of `?ref=`: once the launch URL reaches the app with the query
+   * intact, embedded mode reads it exactly as standalone does. Whether Cherry
+   * forwards the query into the mini-app launch is a host behaviour this
+   * suite cannot observe — see LAUNCH.md, "Referral links inside Cherry".
+   */
+  test('embedded: a new wallet sees the referrer from ?ref=', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { withMiner: false });
+    await page.goto(`/?ref=${REF}&cherry_embed=1`);
+    await expect(page.getByText(/Referred by US51…ELFx/)).toBeVisible();
+  });
+
+  test('embedded: self-referral and junk are ignored', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { withMiner: false });
+    await page.goto(`/?ref=${WALLET}`);
+    await expect(page.getByTestId('cockpit-empty')).toBeVisible();
+    await expect(page.getByText(/Referred by/)).toHaveCount(0);
+    await page.goto('/?ref=not-an-address');
+    await expect(page.getByTestId('cockpit-empty')).toBeVisible();
+    await expect(page.getByText(/Referred by/)).toHaveCount(0);
+  });
+
+  test('embedded: an existing planter never shows a referrer', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto(`/?ref=${REF}`);
+    await expect(page.getByText('My grove')).toBeVisible();
+    await expect(page.getByText(/Referred by/)).toHaveCount(0);
+  });
+});
+
 test.describe('embedded path', () => {
   test.beforeEach(async ({ page }) => {
     await stubCherryHost(page);
     await stubRpc(page);
   });
 
-  /** §12.21 — first paint shows the user's rigs, with no user action. */
-  test('reaches the mining operation with no interaction', async ({ page }) => {
+  /** §12.21 — first paint shows the user's seeds, with no user action. */
+  test('reaches the grove with no interaction', async ({ page }) => {
     await page.goto('/');
 
-    await expect(page.getByText('My hashpower')).toBeVisible();
-    // 42 rigs, straight out of the Rust-serialised miner fixture.
+    await expect(page.getByText('My grove')).toBeVisible();
+    // 42 seeds, straight out of the Rust-serialised miner fixture.
     await expect(
-      page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
-    await expect(page.getByText('Ore bin · unclaimed SOL')).toBeVisible();
+      page.locator('.readout', { hasText: 'My grove' }).locator('.readout-value'),
+    ).toHaveText('42SEEDS');
+    await expect(page.getByText('Ready to harvest · unclaimed SOL')).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeVisible();
+  });
+
+  /** Early-claim fee from the chain clock and `Miner.last_planted_at` (30h → 20%). */
+  test('shows the early-claim fee, gross and net before claiming', async ({ page }) => {
+    await page.goto('/');
+    const note = page.getByTestId('claim-penalty');
+    await expect(note).toContainText('early-claim fee now 20%');
+    await expect(note).toContainText(/SOL gross/);
+    await expect(note).toContainText(/SOL net/);
+    await expect(note).toContainText(/drops in 1[78]h/);
+    await expect(note).toContainText('60% of the fee goes to the Protocol Treasury, 40% to the other planters.');
+    // The compound fee is disclosed, never presented as free (§7a item 2).
+    await expect(note).toContainText('Replanting does not pay the early-claim fee, but the 3% replant (compound) fee applies.');
+    await expect(note).not.toContainText('never charged');
   });
 
   /** §12.21 — zero connect-wallet UI in the embed. */
   test('renders no connect-wallet UI at all', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
 
     const text = (await page.locator('body').innerText()).toLowerCase();
     expect(text).not.toContain('connect wallet');
@@ -69,30 +138,46 @@ test.describe('embedded path', () => {
     // heading — so both are asserted explicitly rather than by substring.
     await expect(page.getByText('Mine Shaft · 412 members')).toBeVisible();
     await expect(page.getByText('This room')).toBeVisible();
-    await expect(page.getByText('Top miners in Mine Shaft')).toBeVisible();
+    await expect(page.getByText('Top planters in Mine Shaft')).toBeVisible();
   });
 
   /** §10 — the buy quote adds up on screen, fee included and disclosed. */
   test('quotes cost, fee and total, and they add up', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('Buy more hashpower')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Plant seeds' })).toBeVisible();
 
     const value = async (label: string) => {
       const row = page.locator('.quote .readout', { hasText: label }).first();
       return (await row.locator('.readout-value').innerText()).replace(/[^\d.]/g, '');
     };
 
-    // Default 10 rigs at 0.01 SOL with a 3.00% fee.
-    expect(await value('Cost')).toBe('0.1000');
-    expect(await value('Fee')).toBe('0.0030');
-    expect(await value('Total')).toBe('0.1030');
+    // SOL first: the default 0.1 SOL buys 9 whole seeds at 0.01 SOL + 3.00%
+    // fee; the quote is exactly those 9 seeds, and what is left stays put.
+    await expect(page.getByLabel('Amount in SOL')).toHaveValue('0.1');
+    await expect(page.getByTestId('plant-seeds-preview')).toContainText('9 seeds');
+    expect(await value('Cost')).toBe('0.0900');
+    expect(await value('Fee')).toBe('0.0027');
+    expect(await value('Total')).toBe('0.0927');
+    await expect(page.getByTestId('plant-seeds-preview')).toContainText('0.0073 SOL stays in your wallet');
     await expect(page.getByText('Fee · 3.00%')).toBeVisible();
   });
 
   test('the quick-select buttons change the quote', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Hire 25 rigs/i })).toBeVisible();
+    await page.getByRole('button', { name: '0.25 SOL', exact: true }).click();
+    await expect(page.getByRole('button', { name: /Review · 0\.2472 SOL for 24 seeds/i })).toBeVisible();
+  });
+
+  test('a typed SOL amount sets the seeds, and too little says the minimum', async ({ page }) => {
+    await page.goto('/');
+    const amount = page.getByLabel('Amount in SOL');
+    await amount.fill('1');
+    await expect(page.getByRole('button', { name: /Review · 0\.9991 SOL for 97 seeds/i })).toBeVisible();
+    await amount.fill('0.005');
+    await expect(page.getByTestId('plant-seeds-preview')).toContainText(
+      'One seed needs at least 0.0103 SOL',
+    );
+    await expect(page.getByRole('button', { name: 'Plant seeds' })).toBeDisabled();
   });
 
   /** §2, §10 — honesty constraints and banned copy. */
@@ -100,22 +185,31 @@ test.describe('embedded path', () => {
     page,
   }) => {
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
 
     const text = await page.locator('body').innerText();
 
-    expect(text).toMatch(/mining\s+simulation/i);
+    expect(text).toMatch(/planting\s+simulation/i);
     expect(text).toMatch(/not proof-of-work mined/i);
     expect(text).toMatch(/non-redeemable/i);
     expect(text).toMatch(/funded reward vault/i);
     // The mandated sentence under the output estimate.
     expect(text).toMatch(
-      /Based on the current funded reward schedule and total rig count/i,
+      /Based on the current funded reward schedule and seeds planted/i,
     );
 
     for (const pattern of BANNED) {
       expect(text, `banned copy matched ${pattern}`).not.toMatch(pattern);
     }
+    if (/\bAP[RY]\b/.test(text)) {
+      expect(text, 'a rate is shown without the variable-rate disclosure').toMatch(
+        /Variable rate/,
+      );
+      expect(text).toMatch(/not a promise of future returns/i);
+    }
+    // Terminology guard: the product plants seeds. The program still says
+    // `rig` internally; the screen never does.
+    expect(text, 'mining-rig terminology on screen').not.toMatch(/\brigs?\b|hashpower/i);
     // Deposit language is banned outright.
     expect(text).not.toMatch(/\bwithdraw your (stake|deposit|principal)\b/i);
   });
@@ -124,16 +218,19 @@ test.describe('embedded path', () => {
     page,
   }) => {
     await page.goto('/');
-    await expect(page.getByText('Global mine')).toBeVisible();
+    await expect(page.getByText('Global grove')).toBeVisible();
     const panel = page.locator('.panel').filter({ hasText: 'Reward vault' });
     for (const label of [
       'Reward vault',
       'Current distribution',
       'Funded until',
       'Funded runway',
-      'Global rigs',
+      'Seeds planted',
       'Your share',
-      'Protocol fee',
+      // §7a: both independent fee rates and the reserved commissions.
+      'Purchase fee',
+      'Replant (compound) fee',
+      'Reserved referral commissions',
     ]) {
       await expect(panel.getByText(label, { exact: true })).toBeVisible();
     }
@@ -156,7 +253,7 @@ test.describe('embedded path', () => {
     page,
   }) => {
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeEnabled();
 
     await page.evaluate(() =>
@@ -167,14 +264,14 @@ test.describe('embedded path', () => {
 
     await expect(page.getByText(/Wallet disconnected/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /^Compound/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /Hire /i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Replant/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
 
     // Read-only state survives: the position is still rendered, not unmounted.
     await expect(
-      page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
-    await expect(page.getByText('Global mine')).toBeVisible();
+      page.locator('.readout', { hasText: 'My grove' }).locator('.readout-value'),
+    ).toHaveText('42SEEDS');
+    await expect(page.getByText('Global grove')).toBeVisible();
     await expect(page.locator('.readout-value--hero')).toBeVisible();
   });
 
@@ -185,10 +282,10 @@ test.describe('embedded path', () => {
 
     await expect(page.getByText(/halted by its authority/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /^Compound/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /Hire /i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Replant/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
     // Read-only state stays on screen.
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
   });
 
   /**
@@ -236,17 +333,151 @@ test.describe('embedded path', () => {
 test.describe('blink result card', () => {
   test('renders purely from its params', async ({ page }) => {
     await page.goto('/result?kind=compound&rigs=54&compounded=12');
-    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    await expect(page.getByText('+12 SEEDS REPLANTED')).toBeVisible();
     await expect(page.getByText('54')).toBeVisible();
     await expect(page.getByText(/read-only snapshot/i)).toBeVisible();
   });
 
   test('ignores junk params rather than rendering them', async ({ page }) => {
     await page.goto('/result?rigs=<script>alert(1)</script>&compounded=NaN');
-    await expect(page.getByText('THE CHERRY TREE · MINE REPORT')).toBeVisible();
+    await expect(page.getByText('THE CHERRY TREE 🌸 · GROVE REPORT')).toBeVisible();
     const text = await page.locator('body').innerText();
     expect(text).not.toContain('alert(1)');
     expect(text).not.toContain('NaN');
+  });
+});
+
+/**
+ * The shared blink.
+ *
+ * `share()` is called with `previewable: true`, which tells the Cherry host
+ * this route renders correctly from `route` + `params` alone — no message id,
+ * no room, no chain read. The host then shows a real preview in the share
+ * picker instead of a skeleton. These assert that promise holds: the snapshot
+ * has to come from the blink context the host supplies over the bridge, not
+ * from the query string.
+ */
+test.describe('blink snapshot from the Cherry host', () => {
+  test('an inline render shows the host-supplied snapshot', async ({ page }) => {
+    await stubCherryInlineHost(page, {
+      params: { kind: 'compound', rigs: '77', compounded: '19' },
+    });
+    await page.goto('/result?mode=inline&token=stub');
+
+    await expect(page.getByText('+19 SEEDS REPLANTED')).toBeVisible();
+    await expect(page.getByText('77')).toBeVisible();
+  });
+
+  test('a share-picker preview renders from params with no message id', async ({
+    page,
+  }) => {
+    await stubCherryInlineHost(page, {
+      messageId: '',
+      roomId: '',
+      params: { kind: 'claim', rigs: '31', claimed: '250000000' },
+    });
+    await page.goto('/result?mode=preview&token=stub');
+
+    await expect(page.getByText(/0\.2500 SOL CLAIMED/)).toBeVisible();
+    await expect(page.getByText('31')).toBeVisible();
+  });
+
+  test('the signed snapshot wins over a tampered query string', async ({ page }) => {
+    await stubCherryInlineHost(page, {
+      params: { kind: 'compound', rigs: '77', compounded: '19' },
+    });
+    // Everything after `token` is attacker-controlled in a shared URL.
+    await page.goto('/result?mode=inline&token=stub&rigs=999999&compounded=888888');
+
+    await expect(page.getByText('+19 SEEDS REPLANTED')).toBeVisible();
+    const text = await page.locator('body').innerText();
+    // `formatCount` groups digits, so match the rendered form too.
+    expect(text).not.toMatch(/999,?999|888,?888/);
+  });
+
+  /** Regression of `1e25925`: an omitted signed field must stay blank. */
+  for (const mode of ['inline', 'preview'] as const) {
+    test(`${mode}: the query cannot fill a field the host omitted`, async ({ page }) => {
+      await stubCherryInlineHost(page, {
+        ...(mode === 'preview' ? { messageId: '', roomId: '' } : {}),
+        params: { kind: 'progress', rigs: '77' },
+      });
+      await page.goto(
+        `/result?mode=${mode}&token=stub&compounded=888888&claimed=777777000&milestone=Forged&ref=attacker&rooted=yes`,
+      );
+
+      await expect(page.getByText('77 SEEDS · TENDING')).toBeVisible();
+      await expect(page.getByText('Not available')).toBeVisible();
+      await expect(page.getByText('Not included')).toBeVisible();
+      const text = await page.locator('body').innerText();
+      expect(text).not.toMatch(/888,?888|777/);
+      expect(text).not.toContain('REPLANTED');
+      expect(text).not.toContain('CLAIMED');
+      expect(text).not.toContain('Forged');
+      expect(text).not.toContain('ROOTED');
+    });
+  }
+
+  test('a query-only inline mode outside Cherry renders nothing from the query', async ({
+    page,
+  }) => {
+    await page.goto('/result?mode=inline&token=stub&rigs=999999&compounded=888888');
+
+    await expect(page.getByText('THE CHERRY TREE 🌸 · GROVE REPORT')).toBeVisible();
+    await expect(page.locator('.readout-value').first()).toHaveText(/^—/);
+    const text = await page.locator('body').innerText();
+    // `formatCount` groups digits, so match the rendered form too.
+    expect(text).not.toMatch(/999,?999|888,?888/);
+  });
+
+  test('conflicting launch modes fail closed', async ({ page }) => {
+    await stubCherryInlineHost(page, {
+      params: { kind: 'compound', rigs: '77', compounded: '19' },
+    });
+    await page.goto('/result?mode=standalone&mode=inline&token=stub&rigs=999999&compounded=888888');
+
+    await expect(page.getByText('THE CHERRY TREE 🌸 · GROVE REPORT')).toBeVisible();
+    await expect(page.locator('.readout-value').first()).toHaveText(/^—/);
+    const text = await page.locator('body').innerText();
+    // `formatCount` groups digits, so match the rendered form too.
+    expect(text).not.toMatch(/999,?999|888,?888/);
+    expect(text).not.toContain('+19');
+    expect(text).not.toContain('REPLANTED');
+  });
+});
+
+/**
+ * The Cherry Chat embed is a second, opposite-facing Cherry surface: Cherry
+ * chat inside THE CHERRY TREE, rather than THE CHERRY TREE inside Cherry.
+ *
+ * This build configures no embed, which is the point of these: unconfigured,
+ * the app must load no frame at all and must look exactly as it did before the
+ * embed existed. The enabled path's decisions (config gating, the exact
+ * `frame-src`, the palette) are covered in `tests/cherryChat.test.ts` and
+ * `tests/csp.test.ts`, because the ids are inlined at build time and cannot be
+ * varied per test here.
+ */
+test.describe('Cherry Chat embed', () => {
+  test('renders nothing, and frames nothing, when unconfigured', async ({ page }) => {
+    await stubRpc(page, { withMiner: false });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'THE CHERRY TREE' })).toBeVisible();
+
+    await expect(page.getByTestId('community-chat')).toHaveCount(0);
+    await expect(page.locator('iframe')).toHaveCount(0);
+  });
+
+  /** The mini-app path must be entirely unaffected by the embed's existence. */
+  test('never appears inside the Cherry mini app', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    await expect(page.getByText('My grove')).toBeVisible();
+
+    // Inside Cherry the user is already in the room; framing Cherry here
+    // would be recursive.
+    await expect(page.getByTestId('community-chat')).toHaveCount(0);
+    await expect(page.locator('iframe')).toHaveCount(0);
   });
 });
 
@@ -273,7 +504,7 @@ test.describe('wallet address plumbing', () => {
     await stubCherryHost(page);
     await stubRpc(page);
     await page.goto('/');
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
 
     // The miner PDA is derived from the host-supplied wallet, so the wallet
     // itself shows up in the balance lookup.
@@ -307,6 +538,33 @@ test.describe('content security policy', () => {
     ]) {
       expect(csp, directive).toContain(directive);
     }
+  });
+
+  test("script-src admits scripts by nonce, never 'unsafe-inline'", async ({ page }) => {
+    const response = await page.goto('/');
+    const csp = response!.headers()['content-security-policy'] ?? '';
+    const directive = csp.match(/script-src ([^;]*)/)?.[1] ?? '';
+
+    // The nonce is minted per request by src/proxy.ts; the shape is pinned so
+    // neither a stale prerender nor a hand-edit can reintroduce the blanket
+    // allowance that used to cover Next's inline bootstrap and flight data.
+    expect(directive).toMatch(/^'self' 'nonce-[A-Za-z0-9_-]+' 'strict-dynamic'$/);
+    expect(directive).not.toContain("'unsafe-inline'");
+
+    // The nonce the header minted is the one Next stamped on the document's
+    // own scripts. Checked in the response body, not the DOM: the browser
+    // hides nonce content attributes after parse (nonce-hiding), and a
+    // mismatch here would mean the page is served unhydrated.
+    const nonce = directive.match(/'nonce-([^']+)'/)![1];
+    const body = await response!.text();
+    expect(body).toMatch(new RegExp(`<script[^>]*nonce="${nonce}">(self\\.)?__next_f`));
+    // Every script tag in the document carries it — inline or external.
+    expect(body.match(/<script(?![^>]*nonce=)[^>]*>/)).toBeNull();
+
+    // And a second load mints a fresh one.
+    const second = await page.goto('/');
+    const secondCsp = second!.headers()['content-security-policy'] ?? '';
+    expect(secondCsp.match(/'nonce-([^']+)'/)?.[1]).not.toBe(nonce);
   });
 });
 
@@ -345,11 +603,11 @@ test.describe('CSP is survivable', () => {
     await stubRpc(page);
     await page.goto('/');
 
-    await expect(page.getByText('My hashpower')).toBeVisible();
+    await expect(page.getByText('My grove')).toBeVisible();
     await expect(page.locator('.readout-value--hero')).toBeVisible();
     // A blocked event handler would only surface once something is clicked.
-    await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Hire 25 rigs/i })).toBeVisible();
+    await page.getByRole('button', { name: '0.25 SOL', exact: true }).click();
+    await expect(page.getByRole('button', { name: /for 24 seeds/i })).toBeVisible();
 
     expect(await collect()).toEqual([]);
   });
@@ -365,7 +623,7 @@ test.describe('CSP is survivable', () => {
   test('the blink card raises none', async ({ page }) => {
     const collect = await watchViolations(page);
     await page.goto('/result?kind=compound&rigs=54&compounded=12');
-    await expect(page.getByText('+12 RIGS')).toBeVisible();
+    await expect(page.getByText('+12 SEEDS REPLANTED')).toBeVisible();
     expect(await collect()).toEqual([]);
   });
 
@@ -377,8 +635,141 @@ test.describe('CSP is survivable', () => {
     // Reaching first paint with real rig data means the RPC call went out
     // and was not blocked by connect-src.
     await expect(
-      page.locator('.readout', { hasText: 'My hashpower' }).locator('.readout-value'),
-    ).toHaveText('42RIGS');
+      page.locator('.readout', { hasText: 'My grove' }).locator('.readout-value'),
+    ).toHaveText('42SEEDS');
     expect(await collect()).toEqual([]);
+  });
+});
+
+/**
+ * Genesis yield. The headline rate must be the rate the program state implies,
+ * computed by the same port that is vector-checked against the Rust engine.
+ */
+test.describe('genesis yield', () => {
+  const NOW = 1_780_000_000n;
+
+  test('shows the APR the program state implies, its phase and the disclosures', async ({
+    page,
+  }) => {
+    await stubRpc(page, { withMiner: true, now: NOW });
+    await stubCherryHost(page);
+    await page.goto('/');
+    const panel = page.getByTestId('yield-panel');
+    await expect(panel).toBeVisible();
+
+    const config = decodeConfig(configBytes({ now: NOW }));
+    const apr = aprBps(yieldInputs(config, NOW));
+    await expect(page.getByTestId('yield-apr')).toContainText(formatAprBps(apr));
+    await expect(panel).toContainText(`${PHASE_LABEL[phaseFromAprBps(apr)]} yield`);
+    // The opportunity as a newcomer reads it: rate, pool, runway, price.
+    for (const label of ['Reward pool', 'Funded runway', 'Seed price', 'Next decay']) {
+      await expect(panel.getByText(label)).toBeVisible();
+    }
+    // Personal figures belong to the cockpit, not the opportunity.
+    await expect(panel.getByText('Your effective rate')).toHaveCount(0);
+    await expect(panel).toContainText('Variable rate');
+    await expect(panel).toContainText("Genesis yields start absurd. They don't stay absurd.");
+  });
+
+  test('an exhausted pool reads 0% and Dormant, never a stale rate', async ({ page }) => {
+    await stubRpc(page, { withMiner: true, now: NOW, runwaySeconds: 0n });
+    await stubCherryHost(page);
+    await page.goto('/');
+    await expect(page.getByTestId('yield-apr')).toContainText('0.0%');
+    await expect(page.getByTestId('yield-panel')).toContainText('Dormant yield');
+    await expect(page.getByTestId('yield-panel')).toContainText('No funded emission · none scheduled');
+    // Dormant is a first-class state: runway 0, accrued still claimable, and
+    // nothing implies planting restarts emission or a refill is coming.
+    const status = page.getByTestId('grove-status');
+    await expect(status).toHaveAttribute('data-status', 'dormant');
+    await expect(status).toContainText('Planting new seeds does not restart emission');
+    await expect(status).toContainText('none is promised');
+    await expect(page.getByTestId('buy-dormant-note')).toBeVisible();
+  });
+
+  test('fits a phone without horizontal scroll', async ({ page }) => {
+    await stubRpc(page, { withMiner: true, now: NOW });
+    await stubCherryHost(page);
+    await page.goto('/');
+    await expect(page.getByTestId('yield-panel')).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(overflow).toBe(0);
+  });
+});
+
+/**
+ * Launch state. The phase shown is derived from `launch_t0` and the chain
+ * clock the stub serves — the browser clock is irrelevant, and the program
+ * enforces the same gate regardless of what this page shows.
+ */
+test.describe('launch activation and access phases', () => {
+  const NOW = 1_780_000_000n;
+  const phaseOf = (page: Page) => page.getByTestId('launch-panel').getAttribute('data-phase');
+
+  test('pre-launch: the grove is dormant and nobody can plant from the app', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: null });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('The grove is dormant');
+    await expect(page.getByTestId('launch-panel')).toContainText('Founder activation pending');
+    expect(await phaseOf(page)).toBe('preLaunch');
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
+    await expect(page.getByTestId('founder-activation')).toHaveCount(0);
+  });
+
+  test('genesis: .skr access with a countdown to Public from chain time', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: 3_600n });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('Genesis is live');
+    await expect(page.getByTestId('launch-panel')).toContainText('.SKR genesis access');
+    await expect(page.getByTestId('launch-countdown')).toContainText('Public access in 22:59:');
+    await expect(page.getByTestId('genesis-allowance')).toContainText('2470 remaining');
+    // This wallet has no .skr name in the stub: planting stays closed to it.
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
+  });
+
+  test('exactly T0 + 24h is Public with no second gate', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: 86_400n + 60n });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('The grove is open');
+    await expect(page.getByTestId('launch-countdown')).toHaveCount(0);
+    expect(await phaseOf(page)).toBe('public');
+  });
+
+  test('public: the grove is open', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: 2n * 86_400n });
+    await page.goto('/');
+    await expect(page.getByTestId('launch-panel')).toContainText('The grove is open');
+    await expect(page.getByTestId('launch-countdown')).toHaveCount(0);
+  });
+
+  test('founder activation fails closed and sends nothing when preflight fails', async ({
+    page,
+  }) => {
+    let sends = 0;
+    await stubCherryHost(page);
+    await stubRpc(page, { now: NOW, sinceLaunch: null, founder: WALLET });
+    page.on('request', (r) => {
+      const body = r.postData() ?? '';
+      if (/sendTransaction/.test(body)) sends += 1;
+    });
+    await page.goto('/');
+    const panel = page.getByTestId('founder-activation');
+    await expect(panel).toBeVisible();
+    // No default amount: preflight cannot even run until one is typed.
+    await expect(panel.getByRole('button', { name: 'Run preflight' })).toBeDisabled();
+    await panel.getByLabel('Seeds to plant').fill('10');
+    await panel.getByRole('button', { name: 'Run preflight' }).click();
+    // Either a failing check list or an error: both are fail-closed.
+    await expect(panel.locator('.preflight li.fail, .banner--alert').first()).toBeVisible();
+    // The stub is not mainnet: the preflight fails closed, so no confirmation
+    // field is offered, and nothing was sent.
+    await expect(panel.getByLabel(/Type ACTIVATE/)).toHaveCount(0);
+    expect(sends).toBe(0);
   });
 });

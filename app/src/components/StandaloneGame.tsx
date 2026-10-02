@@ -19,6 +19,7 @@ import { useWalletAccountTransactionSendingSigner } from '@solana/react';
 
 import { CLUSTER } from '../lib/env';
 import { walletStandardSigner } from '../lib/signer';
+import { CommunityChat } from './CommunityChat';
 import { Game, type Host } from './Game';
 
 const CHAIN = (CLUSTER === 'mainnet-beta'
@@ -73,7 +74,15 @@ function ConnectedGame({ account }: { account: UiWalletAccount }) {
     [account.address, sendingSigner],
   );
 
-  return <Game host={host} />;
+  return (
+    <>
+      <Game host={host} />
+      {/* The connected account is handed down so the chat can prove wallet
+          ownership to the token route. It signs a message for chat identity
+          only — never a transaction, and never the mining signer. */}
+      <CommunityChat account={account} />
+    </>
+  );
 }
 
 export function StandaloneGame() {
@@ -108,5 +117,10 @@ export function StandaloneGame() {
     ),
   };
 
-  return <Game host={host} />;
+  return (
+    <>
+      <Game host={host} />
+      <CommunityChat />
+    </>
+  );
 }

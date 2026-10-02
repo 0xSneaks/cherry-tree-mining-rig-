@@ -12,7 +12,7 @@
 import { json, requireSession } from '../../../../../lib/server/launchToken';
 import { allMiners } from '../../../../../lib/server/indexer';
 import { rateLimit } from '../../../../../lib/server/rateLimit';
-import { attributionStore } from '../../../../../lib/server/rooms';
+import { attributionStore, StoreUnavailableError } from '../../../../../lib/server/stores';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,17 +32,31 @@ export async function GET(
     return json({ error: 'launch token does not grant access to this room' }, 403);
   }
 
-  const limited = rateLimit(`leaderboard:${session.sub}`, 60, 60_000);
+  let limited;
+  try {
+    limited = await rateLimit(`leaderboard:${session.sub}`, 60, 60_000);
+  } catch (e) {
+    if (e instanceof StoreUnavailableError) {
+      return json({ error: 'server storage is not configured' }, 503);
+    }
+    throw e;
+  }
   if (!limited.ok) {
     return json({ error: 'rate limited' }, 429, {
       'retry-after': String(limited.retryAfterSeconds),
     });
   }
 
-  const [members, miners] = await Promise.all([
-    attributionStore.membersOf(id),
-    allMiners(),
-  ]);
+  let members;
+  try {
+    members = await attributionStore.membersOf(id);
+  } catch (e) {
+    if (e instanceof StoreUnavailableError) {
+      return json({ error: 'server storage is not configured' }, 503);
+    }
+    throw e;
+  }
+  const miners = await allMiners();
   const inRoom = new Set(members);
 
   const entries = miners

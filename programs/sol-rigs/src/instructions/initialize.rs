@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
-use rigs_engine::validate_pricing;
+use rigs_engine::{validate_fee_pair, validate_genesis_cap, validate_pricing};
 
 use crate::constants::*;
 use crate::error::{IntoAnchor, RigsError};
-use crate::events::Initialized;
+use crate::events::{CompoundFeeConfigured, GenesisCapConfigured, Initialized};
 use crate::state::{Config, Vault};
 
 #[derive(Accounts)]
@@ -48,6 +48,21 @@ pub struct Initialize<'info> {
     pub fee_vault: Account<'info, Vault>,
 
     pub system_program: Program<'info, System>,
+
+    /// SECURITY: initialize is bound to the program's upgrade authority, so no
+    /// other signer can claim `config.authority` or choose founder, reward
+    /// funder or fee recipient before the deployer does. The address is the
+    /// loader-derived ProgramData PDA of this program ID; only the upgradeable
+    /// loader can write it, and `Account<ProgramData>` pins its owner to that
+    /// loader. An immutable program (no upgrade authority) cannot initialize.
+    #[account(
+        seeds = [crate::ID.as_ref()],
+        bump,
+        seeds::program = <ProgramData as anchor_lang::Owner>::owner(),
+        constraint = program_data.upgrade_authority_address == Some(authority.key())
+            @ RigsError::UnauthorizedInitializer,
+    )]
+    pub program_data: Account<'info, ProgramData>,
 }
 
 pub fn handle_initialize(
@@ -55,9 +70,23 @@ pub fn handle_initialize(
     rig_price_lamports: u64,
     purchase_fee_bps: u16,
     reward_funder: Pubkey,
+    fee_recipient: Pubkey,
+    founder: Pubkey,
+    genesis_cap_rigs: u64,
+    compound_fee_bps: u16,
 ) -> Result<()> {
     validate_pricing(rig_price_lamports, purchase_fee_bps).anchor()?;
+    // First fee values are set here, before launch, without a delay; every
+    // later change goes through the 72-hour timelock (§7a item 3).
+    validate_fee_pair(purchase_fee_bps, compound_fee_bps).anchor()?;
+    validate_genesis_cap(genesis_cap_rigs).anchor()?;
+    // The founder is pinned here and nowhere else. An unset founder would
+    // make launch impossible to activate, so it is refused outright.
+    require_keys_neq!(founder, Pubkey::default(), RigsError::InvalidConfig);
     require_keys_neq!(reward_funder, Pubkey::default(), RigsError::InvalidConfig);
+    // The system program's own id is the "unset" pubkey. Accepting it would
+    // make every fee withdrawal a burn.
+    require_keys_neq!(fee_recipient, Pubkey::default(), RigsError::InvalidConfig);
 
     let now = Clock::get()?.unix_timestamp;
 
@@ -78,6 +107,7 @@ pub fn handle_initialize(
         authority: ctx.accounts.authority.key(),
         pending_authority: Pubkey::default(),
         reward_funder,
+        fee_recipient,
         paused: false,
 
         rig_price_lamports,
@@ -105,13 +135,35 @@ pub fn handle_initialize(
         fee_vault_bump: ctx.bumps.fee_vault,
         version: STATE_VERSION,
         bump: ctx.bumps.config,
+
+        founder,
+        // Initialising does not activate launch.
+        launch_t0: rigs_engine::NOT_ACTIVATED,
+        total_shares: 0,
+        total_claim_penalties: 0,
+        genesis_cap_rigs,
+
+        compound_fee_bps,
+        pending_purchase_fee_bps: 0,
+        pending_compound_fee_bps: 0,
+        fee_change_effective_at: 0,
+        reserved_commissions: 0,
+        total_commissions_reserved: 0,
+        total_commissions_paid: 0,
+        total_reward_to_fees: 0,
     });
 
     emit!(Initialized {
         authority: ctx.accounts.authority.key(),
         reward_funder,
+        fee_recipient,
         rig_price_lamports,
         purchase_fee_bps,
+        founder,
     });
+    // The cap rides its own event so the frozen V1 `Initialized` schema — and
+    // every historical decoder — stays byte-compatible.
+    emit!(GenesisCapConfigured { genesis_cap_rigs });
+    emit!(CompoundFeeConfigured { compound_fee_bps });
     Ok(())
 }

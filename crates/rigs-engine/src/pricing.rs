@@ -27,6 +27,21 @@ pub const MAX_RIGS_PER_PURCHASE: u64 = 1_000_000;
 /// inside the u128 accumulator with many orders of magnitude to spare.
 pub const MAX_TOTAL_RIGS: u64 = 1_000_000_000_000;
 
+/// Permanent per-wallet holding cap: `Miner.rigs <= MAX_WALLET_RIGS` after
+/// every purchase and compound. A current-holding cap, not a purchase-volume
+/// cap: it never expires, and compounding counts. Seeds are non-transferable
+/// and non-redeemable, so the only ways a position grows are
+/// [`crate::position::buy_rigs`] and [`crate::position::compound`], and both
+/// enforce it. A legacy position already above the cap is never clipped;
+/// its headroom is simply zero.
+pub const MAX_WALLET_RIGS: u64 = 250;
+
+/// Seeds `rigs` may still gain under [`MAX_WALLET_RIGS`]. Zero at or above
+/// the cap (a legacy position above it is frozen, never reduced).
+pub const fn wallet_headroom(rigs: u64) -> u64 {
+    MAX_WALLET_RIGS.saturating_sub(rigs)
+}
+
 /// Exact lamport breakdown of a rig purchase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PurchaseQuote {

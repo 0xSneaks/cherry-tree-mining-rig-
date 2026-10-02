@@ -62,3 +62,26 @@ pub fn deposit_from_wallet<'info>(
         amount,
     )
 }
+
+/// Fee-vault reservation invariant (architecture §7): the fee vault always
+/// covers every reserved, unclaimed referral commission.
+pub fn assert_commissions_backed(fee_vault: &AccountInfo, reserved_commissions: u64) -> Result<()> {
+    require!(
+        distributable(fee_vault)? >= reserved_commissions,
+        RigsError::CommissionReservationBroken
+    );
+    Ok(())
+}
+
+/// Protocol Treasury payouts (fee withdrawals, lock-forfeit releases) may
+/// never land in an account this program owns — a base vault, a Fruit vault
+/// or any other program PDA — so treasury revenue can never be recycled into
+/// reward backing or seeds (architecture §7a items 10 / 11, §10a inv. 9).
+pub fn require_external_destination(destination: &AccountInfo, program_id: &Pubkey) -> Result<()> {
+    require_keys_neq!(
+        *destination.owner,
+        *program_id,
+        RigsError::TreasuryDestinationInvalid
+    );
+    Ok(())
+}

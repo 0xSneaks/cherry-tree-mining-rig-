@@ -1,0 +1,933 @@
+{
+  "scheduleGrid": [
+    {
+      "amountSol": "25",
+      "durationDays": "30",
+      "rateLamportsPerSecond": "9645",
+      "emissionPerDayLamports": "833328000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "295305",
+          "perSeedPerDayLamports": "833328"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "29530",
+          "perSeedPerDayLamports": "83332"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "2953",
+          "perSeedPerDayLamports": "8333"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "295",
+          "perSeedPerDayLamports": "833"
+        }
+      ]
+    },
+    {
+      "amountSol": "25",
+      "durationDays": "90",
+      "rateLamportsPerSecond": "3215",
+      "emissionPerDayLamports": "277776000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "98435",
+          "perSeedPerDayLamports": "277776"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "9843",
+          "perSeedPerDayLamports": "27777"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "984",
+          "perSeedPerDayLamports": "2777"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "98",
+          "perSeedPerDayLamports": "277"
+        }
+      ]
+    },
+    {
+      "amountSol": "25",
+      "durationDays": "180",
+      "rateLamportsPerSecond": "1607",
+      "emissionPerDayLamports": "138844800",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "49202",
+          "perSeedPerDayLamports": "138844"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "4920",
+          "perSeedPerDayLamports": "13884"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "492",
+          "perSeedPerDayLamports": "1388"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "49",
+          "perSeedPerDayLamports": "138"
+        }
+      ]
+    },
+    {
+      "amountSol": "25",
+      "durationDays": "365",
+      "rateLamportsPerSecond": "792",
+      "emissionPerDayLamports": "68428800",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "24249",
+          "perSeedPerDayLamports": "68428"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "2424",
+          "perSeedPerDayLamports": "6842"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "242",
+          "perSeedPerDayLamports": "684"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "24",
+          "perSeedPerDayLamports": "68"
+        }
+      ]
+    },
+    {
+      "amountSol": "50",
+      "durationDays": "30",
+      "rateLamportsPerSecond": "19290",
+      "emissionPerDayLamports": "1666656000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "590611",
+          "perSeedPerDayLamports": "1666656"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "59061",
+          "perSeedPerDayLamports": "166665"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "5906",
+          "perSeedPerDayLamports": "16666"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "590",
+          "perSeedPerDayLamports": "1666"
+        }
+      ]
+    },
+    {
+      "amountSol": "50",
+      "durationDays": "90",
+      "rateLamportsPerSecond": "6430",
+      "emissionPerDayLamports": "555552000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "196870",
+          "perSeedPerDayLamports": "555552"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "19687",
+          "perSeedPerDayLamports": "55555"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "1968",
+          "perSeedPerDayLamports": "5555"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "196",
+          "perSeedPerDayLamports": "555"
+        }
+      ]
+    },
+    {
+      "amountSol": "50",
+      "durationDays": "180",
+      "rateLamportsPerSecond": "3215",
+      "emissionPerDayLamports": "277776000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "98435",
+          "perSeedPerDayLamports": "277776"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "9843",
+          "perSeedPerDayLamports": "27777"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "984",
+          "perSeedPerDayLamports": "2777"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "98",
+          "perSeedPerDayLamports": "277"
+        }
+      ]
+    },
+    {
+      "amountSol": "50",
+      "durationDays": "365",
+      "rateLamportsPerSecond": "1585",
+      "emissionPerDayLamports": "136944000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "48528",
+          "perSeedPerDayLamports": "136944"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "4852",
+          "perSeedPerDayLamports": "13694"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "485",
+          "perSeedPerDayLamports": "1369"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "48",
+          "perSeedPerDayLamports": "136"
+        }
+      ]
+    },
+    {
+      "amountSol": "100",
+      "durationDays": "30",
+      "rateLamportsPerSecond": "38580",
+      "emissionPerDayLamports": "3333312000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "1181222",
+          "perSeedPerDayLamports": "3333312"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "118122",
+          "perSeedPerDayLamports": "333331"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "11812",
+          "perSeedPerDayLamports": "33333"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "1181",
+          "perSeedPerDayLamports": "3333"
+        }
+      ]
+    },
+    {
+      "amountSol": "100",
+      "durationDays": "90",
+      "rateLamportsPerSecond": "12860",
+      "emissionPerDayLamports": "1111104000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "393740",
+          "perSeedPerDayLamports": "1111104"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "39374",
+          "perSeedPerDayLamports": "111110"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "3937",
+          "perSeedPerDayLamports": "11111"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "393",
+          "perSeedPerDayLamports": "1111"
+        }
+      ]
+    },
+    {
+      "amountSol": "100",
+      "durationDays": "180",
+      "rateLamportsPerSecond": "6430",
+      "emissionPerDayLamports": "555552000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "196870",
+          "perSeedPerDayLamports": "555552"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "19687",
+          "perSeedPerDayLamports": "55555"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "1968",
+          "perSeedPerDayLamports": "5555"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "196",
+          "perSeedPerDayLamports": "555"
+        }
+      ]
+    },
+    {
+      "amountSol": "100",
+      "durationDays": "365",
+      "rateLamportsPerSecond": "3170",
+      "emissionPerDayLamports": "273888000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "97057",
+          "perSeedPerDayLamports": "273888"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "9705",
+          "perSeedPerDayLamports": "27388"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "970",
+          "perSeedPerDayLamports": "2738"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "97",
+          "perSeedPerDayLamports": "273"
+        }
+      ]
+    },
+    {
+      "amountSol": "250",
+      "durationDays": "30",
+      "rateLamportsPerSecond": "96450",
+      "emissionPerDayLamports": "8333280000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "2953055",
+          "perSeedPerDayLamports": "8333280"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "295305",
+          "perSeedPerDayLamports": "833328"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "29530",
+          "perSeedPerDayLamports": "83332"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "2953",
+          "perSeedPerDayLamports": "8333"
+        }
+      ]
+    },
+    {
+      "amountSol": "250",
+      "durationDays": "90",
+      "rateLamportsPerSecond": "32150",
+      "emissionPerDayLamports": "2777760000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "984351",
+          "perSeedPerDayLamports": "2777760"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "98435",
+          "perSeedPerDayLamports": "277776"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "9843",
+          "perSeedPerDayLamports": "27777"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "984",
+          "perSeedPerDayLamports": "2777"
+        }
+      ]
+    },
+    {
+      "amountSol": "250",
+      "durationDays": "180",
+      "rateLamportsPerSecond": "16075",
+      "emissionPerDayLamports": "1388880000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "492175",
+          "perSeedPerDayLamports": "1388880"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "49217",
+          "perSeedPerDayLamports": "138888"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "4921",
+          "perSeedPerDayLamports": "13888"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "492",
+          "perSeedPerDayLamports": "1388"
+        }
+      ]
+    },
+    {
+      "amountSol": "250",
+      "durationDays": "365",
+      "rateLamportsPerSecond": "7927",
+      "emissionPerDayLamports": "684892800",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "242704",
+          "perSeedPerDayLamports": "684892"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "24270",
+          "perSeedPerDayLamports": "68489"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "2427",
+          "perSeedPerDayLamports": "6848"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "242",
+          "perSeedPerDayLamports": "684"
+        }
+      ]
+    },
+    {
+      "amountSol": "500",
+      "durationDays": "30",
+      "rateLamportsPerSecond": "192901",
+      "emissionPerDayLamports": "16666646400",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "5906141",
+          "perSeedPerDayLamports": "16666646"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "590614",
+          "perSeedPerDayLamports": "1666664"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "59061",
+          "perSeedPerDayLamports": "166666"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "5906",
+          "perSeedPerDayLamports": "16666"
+        }
+      ]
+    },
+    {
+      "amountSol": "500",
+      "durationDays": "90",
+      "rateLamportsPerSecond": "64300",
+      "emissionPerDayLamports": "5555520000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "1968703",
+          "perSeedPerDayLamports": "5555520"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "196870",
+          "perSeedPerDayLamports": "555552"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "19687",
+          "perSeedPerDayLamports": "55555"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "1968",
+          "perSeedPerDayLamports": "5555"
+        }
+      ]
+    },
+    {
+      "amountSol": "500",
+      "durationDays": "180",
+      "rateLamportsPerSecond": "32150",
+      "emissionPerDayLamports": "2777760000",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "984351",
+          "perSeedPerDayLamports": "2777760"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "98435",
+          "perSeedPerDayLamports": "277776"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "9843",
+          "perSeedPerDayLamports": "27777"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "984",
+          "perSeedPerDayLamports": "2777"
+        }
+      ]
+    },
+    {
+      "amountSol": "500",
+      "durationDays": "365",
+      "rateLamportsPerSecond": "15854",
+      "emissionPerDayLamports": "1369785600",
+      "levels": [
+        {
+          "seeds": "1000",
+          "aprBps": "485409",
+          "perSeedPerDayLamports": "1369785"
+        },
+        {
+          "seeds": "10000",
+          "aprBps": "48540",
+          "perSeedPerDayLamports": "136978"
+        },
+        {
+          "seeds": "100000",
+          "aprBps": "4854",
+          "perSeedPerDayLamports": "13697"
+        },
+        {
+          "seeds": "1000000",
+          "aprBps": "485",
+          "perSeedPerDayLamports": "1369"
+        }
+      ]
+    }
+  ],
+  "requiredFunding": [
+    {
+      "label": "Genesis floor 1,200%",
+      "bps": "120000",
+      "lamports": [
+        "30476712328",
+        "304767123287",
+        "3047671232876",
+        "30476712328767"
+      ]
+    },
+    {
+      "label": "Early Grove floor 600%",
+      "bps": "60000",
+      "lamports": [
+        "15238356164",
+        "152383561643",
+        "1523835616438",
+        "15238356164383"
+      ]
+    },
+    {
+      "label": "Growth floor 250%",
+      "bps": "25000",
+      "lamports": [
+        "6349315068",
+        "63493150684",
+        "634931506849",
+        "6349315068493"
+      ]
+    },
+    {
+      "label": "60%",
+      "bps": "6000",
+      "lamports": [
+        "1523835616",
+        "15238356164",
+        "152383561643",
+        "1523835616438"
+      ]
+    }
+  ],
+  "refills": [
+    {
+      "name": "A. 100 SOL / 180 d, no refill",
+      "samples": [
+        {
+          "day": "0",
+          "rate": "6430",
+          "runwayDays": "180",
+          "dormant": false
+        },
+        {
+          "day": "30",
+          "rate": "6430",
+          "runwayDays": "150",
+          "dormant": false
+        },
+        {
+          "day": "60",
+          "rate": "6430",
+          "runwayDays": "120",
+          "dormant": false
+        },
+        {
+          "day": "90",
+          "rate": "6430",
+          "runwayDays": "90",
+          "dormant": false
+        },
+        {
+          "day": "120",
+          "rate": "6430",
+          "runwayDays": "60",
+          "dormant": false
+        },
+        {
+          "day": "150",
+          "rate": "6430",
+          "runwayDays": "30",
+          "dormant": false
+        },
+        {
+          "day": "179",
+          "rate": "6430",
+          "runwayDays": "1",
+          "dormant": false
+        },
+        {
+          "day": "180",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        },
+        {
+          "day": "200",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        },
+        {
+          "day": "240",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        },
+        {
+          "day": "270",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        },
+        {
+          "day": "360",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        }
+      ],
+      "dormantFromDay": "180",
+      "totalFundedSol": "100"
+    },
+    {
+      "name": "B. 100 SOL / 180 d + 25 SOL / 90 d at day 150 (before exhaustion)",
+      "samples": [
+        {
+          "day": "0",
+          "rate": "6430",
+          "runwayDays": "180",
+          "dormant": false
+        },
+        {
+          "day": "30",
+          "rate": "6430",
+          "runwayDays": "150",
+          "dormant": false
+        },
+        {
+          "day": "60",
+          "rate": "6430",
+          "runwayDays": "120",
+          "dormant": false
+        },
+        {
+          "day": "90",
+          "rate": "6430",
+          "runwayDays": "90",
+          "dormant": false
+        },
+        {
+          "day": "120",
+          "rate": "6430",
+          "runwayDays": "60",
+          "dormant": false
+        },
+        {
+          "day": "150",
+          "rate": "5358",
+          "runwayDays": "90",
+          "dormant": false
+        },
+        {
+          "day": "179",
+          "rate": "5358",
+          "runwayDays": "61",
+          "dormant": false
+        },
+        {
+          "day": "180",
+          "rate": "5358",
+          "runwayDays": "60",
+          "dormant": false
+        },
+        {
+          "day": "200",
+          "rate": "5358",
+          "runwayDays": "40",
+          "dormant": false
+        },
+        {
+          "day": "240",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        },
+        {
+          "day": "270",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        },
+        {
+          "day": "360",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        }
+      ],
+      "dormantFromDay": "240",
+      "totalFundedSol": "125"
+    },
+    {
+      "name": "C. 100 SOL / 180 d, Dormant, then 50 SOL / 90 d at day 200 (separately funded restart)",
+      "samples": [
+        {
+          "day": "0",
+          "rate": "6430",
+          "runwayDays": "180",
+          "dormant": false
+        },
+        {
+          "day": "30",
+          "rate": "6430",
+          "runwayDays": "150",
+          "dormant": false
+        },
+        {
+          "day": "60",
+          "rate": "6430",
+          "runwayDays": "120",
+          "dormant": false
+        },
+        {
+          "day": "90",
+          "rate": "6430",
+          "runwayDays": "90",
+          "dormant": false
+        },
+        {
+          "day": "120",
+          "rate": "6430",
+          "runwayDays": "60",
+          "dormant": false
+        },
+        {
+          "day": "150",
+          "rate": "6430",
+          "runwayDays": "30",
+          "dormant": false
+        },
+        {
+          "day": "179",
+          "rate": "6430",
+          "runwayDays": "1",
+          "dormant": false
+        },
+        {
+          "day": "180",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        },
+        {
+          "day": "200",
+          "rate": "6430",
+          "runwayDays": "90",
+          "dormant": false
+        },
+        {
+          "day": "240",
+          "rate": "6430",
+          "runwayDays": "50",
+          "dormant": false
+        },
+        {
+          "day": "270",
+          "rate": "6430",
+          "runwayDays": "20",
+          "dormant": false
+        },
+        {
+          "day": "360",
+          "rate": "0",
+          "runwayDays": "0",
+          "dormant": true
+        }
+      ],
+      "dormantFromDay": "290",
+      "totalFundedSol": "150"
+    },
+    {
+      "name": "D. 100 SOL / 180 d + 5 SOL / 365 d at day 30 (small long top-up — LOWERS the rate)",
+      "samples": [
+        {
+          "day": "0",
+          "rate": "6430",
+          "runwayDays": "180",
+          "dormant": false
+        },
+        {
+          "day": "30",
+          "rate": "2801",
+          "runwayDays": "365",
+          "dormant": false
+        },
+        {
+          "day": "60",
+          "rate": "2801",
+          "runwayDays": "335",
+          "dormant": false
+        },
+        {
+          "day": "90",
+          "rate": "2801",
+          "runwayDays": "305",
+          "dormant": false
+        },
+        {
+          "day": "120",
+          "rate": "2801",
+          "runwayDays": "275",
+          "dormant": false
+        },
+        {
+          "day": "150",
+          "rate": "2801",
+          "runwayDays": "245",
+          "dormant": false
+        },
+        {
+          "day": "179",
+          "rate": "2801",
+          "runwayDays": "216",
+          "dormant": false
+        },
+        {
+          "day": "180",
+          "rate": "2801",
+          "runwayDays": "215",
+          "dormant": false
+        },
+        {
+          "day": "200",
+          "rate": "2801",
+          "runwayDays": "195",
+          "dormant": false
+        },
+        {
+          "day": "240",
+          "rate": "2801",
+          "runwayDays": "155",
+          "dormant": false
+        },
+        {
+          "day": "270",
+          "rate": "2801",
+          "runwayDays": "125",
+          "dormant": false
+        },
+        {
+          "day": "360",
+          "rate": "2801",
+          "runwayDays": "35",
+          "dormant": false
+        }
+      ],
+      "dormantFromDay": null,
+      "totalFundedSol": "105"
+    }
+  ],
+  "previewHazard": {
+    "next": {
+      "rate": "2801",
+      "finish": "34128000"
+    },
+    "rateChangeBps": -5643,
+    "leftoverLamports": "83332800000",
+    "lowersRate": true
+  }
+}

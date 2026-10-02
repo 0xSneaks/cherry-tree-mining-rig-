@@ -10,6 +10,6 @@ test('capture the embedded screen', async ({ page }) => {
   await stubCherryHost(page);
   await stubRpc(page);
   await page.goto('/');
-  await page.getByText('My hashpower').waitFor();
+  await page.getByText('My grove').waitFor();
   await page.screenshot({ path: 'e2e/__screenshots__/embedded.png', fullPage: true });
 });

@@ -20,7 +20,7 @@ export function OreBin({ lamports }: { lamports: bigint }) {
 
   return (
     <div className="readout">
-      <span className="readout-label">Ore bin · unclaimed SOL</span>
+      <span className="readout-label">Ready to harvest · unclaimed SOL</span>
       <span
         className="readout-value readout-value--hero"
         aria-label={`${full} SOL unclaimed`}

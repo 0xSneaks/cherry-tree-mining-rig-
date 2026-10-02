@@ -10,12 +10,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "emit:headers": "tsx scripts/emit-static-headers.ts"
   },
   "dependencies": {
+    "@cherrydotfun/chat-embed-sdk": "^0.1.7",
     "@cherrydotfun/miniapp-sdk": "^0.1.21",
     "@solana/kit": "^8.3.0",
     "@solana/react": "^8.3.0",
@@ -30,6 +32,8 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "9.39.5",
+    "eslint-config-next": "^16.3.5",
     "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vitest": "^5.0.1"

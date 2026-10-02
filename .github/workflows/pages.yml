@@ -66,9 +66,32 @@ jobs:
           STATIC_EXPORT: '1'
           # Project Pages serve from /<repo>, so assets need the subpath.
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          # Cherry Chat embed. Public identifiers, not secrets — so these are
+          # repository *variables*, visible and reviewable, never secrets.
+          #
+          # Deliberately unset until the deployment origin is added to the
+          # embed's Allowed origins at portal.cherry.fun: enabling it first
+          # would ship a chat that fails with an origin mismatch. Unset, the
+          # component renders nothing and the CSP keeps `frame-src 'none'`.
+          #
+          # To turn it on, set both repository variables under
+          # Settings -> Secrets and variables -> Actions -> Variables:
+          #   CHERRY_CHAT_APP_ID  = ee009264-9c63-47cc-b346-46a44b25ff29
+          #   CHERRY_CHAT_ROOM_ID = 934ad16c-61b7-4cdb-b015-cd61dd217df4
+          NEXT_PUBLIC_CHERRY_CHAT_APP_ID: ${{ vars.CHERRY_CHAT_APP_ID }}
+          NEXT_PUBLIC_CHERRY_CHAT_ROOM_ID: ${{ vars.CHERRY_CHAT_ROOM_ID }}
         run: npm run build
 
-      # Pages runs Jekyll otherwise, which strips the _next directory.
+      # Emit `_headers` alongside the build, from the same CSP the Node
+      # deployment serves. GitHub Pages ignores it; Cloudflare Pages and
+      # Netlify read it, so pointing either at this same build gives Cherry
+      # web the `frame-ancestors` header it needs with no code change.
+      - name: Emit static host headers
+        working-directory: app
+        run: npm run emit:headers
+
+      # Pages runs Jekyll otherwise, which strips the _next directory and
+      # every file whose name starts with an underscore, `_headers` included.
       - name: Disable Jekyll
         run: touch app/out/.nojekyll
 

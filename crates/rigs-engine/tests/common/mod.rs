@@ -21,8 +21,16 @@ pub struct World {
     pub fee_vault: u64,
 
     pub rig_price: u64,
+    /// Fresh-purchase fee.
     pub fee_bps: u16,
+    /// Compound fee (architecture §7a item 2). Defaults to `fee_bps`.
+    pub compound_fee_bps: u16,
     pub now: i64,
+
+    /// Every lamport that ever reached the fee vault, by source.
+    pub fees_from_purchases: u64,
+    pub fees_from_compounds: u64,
+    pub fees_from_early_claims: u64,
 
     /// Everything the funder has ever paid in. Used to prove no purchase
     /// lamport ever became reward backing.
@@ -45,9 +53,31 @@ impl World {
             fee_vault: 0,
             rig_price,
             fee_bps,
+            compound_fee_bps: fee_bps,
             now: 0,
+            fees_from_purchases: 0,
+            fees_from_compounds: 0,
+            fees_from_early_claims: 0,
             funded_in: 0,
         }
+    }
+
+    /// Wallets needed to hold `total` rigs under the 250-seed wallet cap.
+    pub fn wallets_for(total: u64) -> usize {
+        total.div_ceil(MAX_WALLET_RIGS) as usize
+    }
+
+    /// Plant `total` rigs across miners `from..`, at most `MAX_WALLET_RIGS`
+    /// each (the wallet cap). Returns the first miner index left unused.
+    pub fn plant_across(&mut self, from: usize, total: u64) -> usize {
+        let (mut who, mut left) = (from, total);
+        while left > 0 {
+            let n = left.min(MAX_WALLET_RIGS);
+            self.buy(who, n).unwrap();
+            left -= n;
+            who += 1;
+        }
+        who
     }
 
     pub fn warp(&mut self, secs: i64) {
@@ -87,6 +117,7 @@ impl World {
         self.wallets[who] -= quote.total_lamports;
         self.capital_vault += quote.capital_lamports;
         self.fee_vault += quote.fee_lamports;
+        self.fees_from_purchases += quote.fee_lamports;
         assert_eq!(
             self.reward_vault, reward_before,
             "buy_rigs must not touch the reward vault"
@@ -95,21 +126,41 @@ impl World {
         Ok(quote)
     }
 
-    /// `claim`: reward vault -> user wallet.
+    /// `claim`: reward vault -> user wallet (`net`) and reward vault -> fee
+    /// vault (the early-claim fee's 60% treasury share). The 40% grove share
+    /// stays in the reward vault, re-credited to the other shares. Returns
+    /// `net`.
     pub fn claim(&mut self, who: usize) -> EngineResult<u64> {
-        let amount = claim(
+        Ok(self.claim_outcome(who)?.net)
+    }
+
+    pub fn claim_outcome(&mut self, who: usize) -> EngineResult<ClaimOutcome> {
+        let (fee_before, cap_before) = (self.fee_vault, self.capital_vault);
+        let outcome = claim(
             &mut self.globals,
             &mut self.miners[who],
             &mut self.ledger,
             self.now,
         )?;
+        assert_eq!(outcome.gross, outcome.net + outcome.penalty);
+        assert_eq!(
+            outcome.penalty,
+            outcome.penalty_treasury + outcome.penalty_grove
+        );
         self.reward_vault = self
             .reward_vault
-            .checked_sub(amount)
+            .checked_sub(outcome.net + outcome.penalty_treasury)
             .expect("reward vault underflow — fully-funded invariant broken");
-        self.wallets[who] += amount;
+        self.wallets[who] += outcome.net;
+        self.fee_vault += outcome.penalty_treasury;
+        self.fees_from_early_claims += outcome.penalty_treasury;
+        assert_eq!(
+            (self.fee_vault, self.capital_vault),
+            (fee_before + outcome.penalty_treasury, cap_before),
+            "only the early-claim fee's treasury share reaches FEE; never CAPITAL"
+        );
         self.check_invariants();
-        Ok(amount)
+        Ok(outcome)
     }
 
     /// `compound`: reward vault -> capital vault + fee vault.
@@ -120,7 +171,7 @@ impl World {
             &mut self.ledger,
             self.now,
             self.rig_price,
-            self.fee_bps,
+            self.compound_fee_bps,
         )?;
         self.reward_vault = self
             .reward_vault
@@ -128,6 +179,7 @@ impl World {
             .expect("reward vault underflow — fully-funded invariant broken");
         self.capital_vault += outcome.capital_lamports;
         self.fee_vault += outcome.fee_lamports;
+        self.fees_from_compounds += outcome.fee_lamports;
         self.check_invariants();
         Ok(outcome)
     }
@@ -152,8 +204,11 @@ impl World {
         // Test 13: reward backing came only from the funder.
         assert_eq!(
             self.reward_vault,
-            self.funded_in - self.ledger.total_reward_claimed - self.ledger.total_reward_compounded,
-            "reward vault balance must equal funded - claimed - compounded"
+            self.funded_in
+                - self.ledger.total_reward_claimed
+                - self.ledger.total_reward_compounded
+                - self.ledger.total_reward_to_fees,
+            "reward vault balance must equal funded - claimed - compounded - early-claim treasury"
         );
 
         // Test 7: nothing distributed can exceed what was funded.
@@ -161,8 +216,30 @@ impl World {
             self.total_earned()
                 + self.ledger.total_reward_claimed
                 + self.ledger.total_reward_compounded
+                + self.ledger.total_reward_to_fees
                 <= self.ledger.total_reward_funded,
-            "earned + claimed + compounded exceeded funded"
+            "earned + claimed + compounded + treasury share exceeded funded"
         );
+
+        // §7a item 11: FEE holds exactly purchase + compound fees + early-claim
+        // treasury shares — never CAPITAL, never reward liabilities.
+        assert_eq!(
+            self.fee_vault,
+            self.fees_from_purchases + self.fees_from_compounds + self.fees_from_early_claims
+        );
+        assert_eq!(
+            self.fees_from_early_claims,
+            self.ledger.total_reward_to_fees
+        );
+
+        // Architecture §4 check 2 / test 10: no position ever holds more than
+        // the permanent wallet cap, whatever sequence of actions got it here.
+        for (i, m) in self.miners.iter().enumerate() {
+            assert!(
+                m.rigs <= MAX_WALLET_RIGS,
+                "miner {i} holds {} rigs, above the {MAX_WALLET_RIGS} wallet cap",
+                m.rigs
+            );
+        }
     }
 }

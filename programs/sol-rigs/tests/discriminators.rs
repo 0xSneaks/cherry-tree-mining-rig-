@@ -24,6 +24,10 @@ fn discriminators_match_the_typescript_client() {
             hex(sol_rigs::instruction::FundRewards::DISCRIMINATOR),
         ),
         (
+            "migrateV2",
+            hex(sol_rigs::instruction::MigrateV2::DISCRIMINATOR),
+        ),
+        (
             "buyRigs",
             hex(sol_rigs::instruction::BuyRigs::DISCRIMINATOR),
         ),
@@ -32,10 +36,108 @@ fn discriminators_match_the_typescript_client() {
             "compound",
             hex(sol_rigs::instruction::Compound::DISCRIMINATOR),
         ),
+        (
+            "setFeeRecipient",
+            hex(sol_rigs::instruction::SetFeeRecipient::DISCRIMINATOR),
+        ),
+        (
+            "withdrawFees",
+            hex(sol_rigs::instruction::WithdrawFees::DISCRIMINATOR),
+        ),
+        // §7a protocol fees
+        (
+            "claimCommission",
+            hex(sol_rigs::instruction::ClaimCommission::DISCRIMINATOR),
+        ),
+        (
+            "applyFeeChange",
+            hex(sol_rigs::instruction::ApplyFeeChange::DISCRIMINATOR),
+        ),
+        (
+            "scheduleFeeChange",
+            hex(sol_rigs::instruction::ScheduleFeeChange::DISCRIMINATOR),
+        ),
+        (
+            "cancelFeeChange",
+            hex(sol_rigs::instruction::CancelFeeChange::DISCRIMINATOR),
+        ),
+        (
+            "migrateV3",
+            hex(sol_rigs::instruction::MigrateV3::DISCRIMINATOR),
+        ),
+        // Lock Season (§8, Pass #7)
+        (
+            "commitLockPool",
+            hex(sol_rigs::instruction::CommitLockPool::DISCRIMINATOR),
+        ),
+        (
+            "registerLock",
+            hex(sol_rigs::instruction::RegisterLock::DISCRIMINATOR),
+        ),
+        (
+            "cancelLock",
+            hex(sol_rigs::instruction::CancelLock::DISCRIMINATOR),
+        ),
+        (
+            "postLockWeights",
+            hex(sol_rigs::instruction::PostLockWeights::DISCRIMINATOR),
+        ),
+        (
+            "sealLockWeights",
+            hex(sol_rigs::instruction::SealLockWeights::DISCRIMINATOR),
+        ),
+        (
+            "awardLockRegistrations",
+            hex(sol_rigs::instruction::AwardLockRegistrations::DISCRIMINATOR),
+        ),
+        (
+            "sealLockAwards",
+            hex(sol_rigs::instruction::SealLockAwards::DISCRIMINATOR),
+        ),
+        (
+            "vetoLockAllocation",
+            hex(sol_rigs::instruction::VetoLockAllocation::DISCRIMINATOR),
+        ),
+        (
+            "finalizeLockAllocation",
+            hex(sol_rigs::instruction::FinalizeLockAllocation::DISCRIMINATOR),
+        ),
+        (
+            "postLockRoot",
+            hex(sol_rigs::instruction::PostLockRoot::DISCRIMINATOR),
+        ),
+        (
+            "finalizeLockRoot",
+            hex(sol_rigs::instruction::FinalizeLockRoot::DISCRIMINATOR),
+        ),
+        (
+            "resolveLockPoolTerminal",
+            hex(sol_rigs::instruction::ResolveLockPoolTerminal::DISCRIMINATOR),
+        ),
+        (
+            "claimLock",
+            hex(sol_rigs::instruction::ClaimLock::DISCRIMINATOR),
+        ),
+        (
+            "closeLockPool",
+            hex(sol_rigs::instruction::CloseLockPool::DISCRIMINATOR),
+        ),
         // accounts
         ("Config", hex(sol_rigs::state::Config::DISCRIMINATOR)),
         ("Miner", hex(sol_rigs::state::Miner::DISCRIMINATOR)),
         ("Vault", hex(sol_rigs::state::Vault::DISCRIMINATOR)),
+        (
+            "ReferralLedger",
+            hex(sol_rigs::state::ReferralLedger::DISCRIMINATOR),
+        ),
+        (
+            "LockSeason",
+            hex(sol_rigs::fruit_state::LockSeason::DISCRIMINATOR),
+        ),
+        (
+            "LockRegistration",
+            hex(sol_rigs::fruit_state::LockRegistration::DISCRIMINATOR),
+        ),
     ];
 
     // Regenerate with: cargo test -p sol-rigs --test discriminators -- --nocapture
@@ -46,14 +148,40 @@ fn discriminators_match_the_typescript_client() {
     let expected: &[(&str, &str)] = &[
         ("initialize", "afaf6d1f0d989bed"),
         ("fundRewards", "7240a370afa71379"),
+        ("migrateV2", "bbcb121fceedfe29"),
         ("buyRigs", "0cfa7948abf4e5a3"),
         ("claim", "3ec6d6c1d59f6cd2"),
         ("compound", "a5d0fb4ef2a08d2f"),
+        ("setFeeRecipient", "e312d72aedf69742"),
+        ("withdrawFees", "c6d4ab6d90d7ae59"),
+        ("claimCommission", "0c090faa9beb7cfe"),
+        ("applyFeeChange", "e7b15c75f934c370"),
+        ("scheduleFeeChange", "4117d76e1094f993"),
+        ("cancelFeeChange", "a52beb3f1f674984"),
+        ("migrateV3", "f5aa677c90bb1566"),
+        ("commitLockPool", "c1ba6df208b5e124"),
+        ("registerLock", "52880400d0cab4c7"),
+        ("cancelLock", "139c6c7fbaef5f8a"),
+        ("postLockWeights", "2a99e134b1a77b54"),
+        ("sealLockWeights", "81f2808f1292f69d"),
+        ("awardLockRegistrations", "c9ed2b56f8bd4d2d"),
+        ("sealLockAwards", "31ebece092c7b362"),
+        ("vetoLockAllocation", "4c01759c354469be"),
+        ("finalizeLockAllocation", "cd059b8bf32a3cbe"),
+        ("postLockRoot", "3be6c66b30087f4e"),
+        ("finalizeLockRoot", "b7f122446573734e"),
+        ("resolveLockPoolTerminal", "1784afc44d7773e8"),
+        ("claimLock", "1b6cc228c82ef1d2"),
+        ("closeLockPool", "72625957d9a931b6"),
         ("Config", "9b0caae01efacc82"),
         ("Miner", "df710f367b7a8c64"),
         ("Vault", "d308e82b02987577"),
+        ("ReferralLedger", "a30861cf910b5b80"),
+        ("LockSeason", "e1527c8e3d57ca84"),
+        ("LockRegistration", "55d00114b6413c41"),
     ];
 
+    assert_eq!(pairs.len(), expected.len());
     for ((name, actual), (ename, eexpected)) in pairs.iter().zip(expected) {
         assert_eq!(name, ename);
         assert_eq!(
@@ -72,11 +200,15 @@ fn discriminators_match_the_typescript_client() {
 fn emit_account_fixtures_for_the_typescript_decoder() {
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::AccountSerialize;
+    use std::str::FromStr;
 
     let config = sol_rigs::state::Config {
         authority: Pubkey::new_from_array([1u8; 32]),
         pending_authority: Pubkey::new_from_array([2u8; 32]),
         reward_funder: Pubkey::new_from_array([3u8; 32]),
+        // The real production fee recipient, so the TypeScript decoder test
+        // asserts the exact address rather than a placeholder.
+        fee_recipient: Pubkey::from_str("4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF").unwrap(),
         paused: true,
         rig_price_lamports: 10_000_000,
         purchase_fee_bps: 300,
@@ -96,8 +228,26 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         capital_vault_bump: 250,
         reward_vault_bump: 251,
         fee_vault_bump: 252,
-        version: 1,
+        version: 3,
         bump: 253,
+        // The founder activation wallet the preflight expects.
+        founder: Pubkey::from_str("FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp").unwrap(),
+        launch_t0: 1_779_900_000,
+        // 14,156 base rigs + 125 referred rigs.
+        total_shares: 14_156 * 100 + 125 * 105,
+        total_claim_penalties: 2_500_000,
+        // Production V2 field — an explicit safe fixture value.
+        genesis_cap_rigs: 2_500,
+        // V3 protocol-fee fields (architecture §7a): distinct values so a
+        // decoder that shifts by one field fails loudly.
+        compound_fee_bps: 250,
+        pending_purchase_fee_bps: 900,
+        pending_compound_fee_bps: 800,
+        fee_change_effective_at: 1_780_259_200,
+        reserved_commissions: 3_333_333,
+        total_commissions_reserved: 4_444_444,
+        total_commissions_paid: 1_111_111,
+        total_reward_to_fees: 5_555_555,
     };
     let miner = sol_rigs::state::Miner {
         owner: Pubkey::new_from_array([9u8; 32]),
@@ -112,6 +262,9 @@ fn emit_account_fixtures_for_the_typescript_decoder() {
         created_at: 1_770_000_000,
         last_action_at: 1_785_000_000,
         bump: 254,
+        weight: 105,
+        referrer: Pubkey::new_from_array([7u8; 32]),
+        last_planted_at: 1_784_000_000,
     };
 
     let mut cbuf = Vec::new();

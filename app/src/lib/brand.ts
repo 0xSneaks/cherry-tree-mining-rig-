@@ -8,7 +8,7 @@
  */
 
 /** Full display name. Used for the wordmark and the document title. */
-export const PRODUCT_NAME = 'THE CHERRY TREE';
+export const PRODUCT_NAME = 'THE CHERRY TREE 🌸';
 
 /** Shorter reference, for running prose. */
 export const PRODUCT_NAME_SHORT = 'The Cherry Tree';
@@ -17,4 +17,4 @@ export const PRODUCT_NAME_SHORT = 'The Cherry Tree';
 export const PRODUCT_SLUG = 'cherry-tree';
 
 export const PRODUCT_DESCRIPTION =
-  'A Solana-native mining simulation with SOL-denominated rewards, paid from a funded reward vault.';
+  'A Solana-native planting simulation with SOL-denominated rewards, paid from a funded reward vault.';

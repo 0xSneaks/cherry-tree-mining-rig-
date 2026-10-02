@@ -1,88 +1,7 @@
 import type { NextConfig } from 'next';
 
-/**
- * Content Security Policy.
- *
- * Cherry embeds the mini-app in an iframe on Cherry web, so every HTML
- * response needs `frame-ancestors` naming chat.cherry.fun (spec §8, SDK step
- * 2b). `X-Frame-Options` is deliberately never set: a stray DENY/SAMEORIGIN
- * silently blocks the iframe in Chrome and Firefox.
- *
- * `connect-src` is derived from configuration rather than left open, so a
- * deployment only permits the origins it actually talks to: its own RPC and
- * the Cherry JWKS host. A blanket `https:` would let any injected script
- * exfiltrate to anywhere, which matters more here than in most apps because
- * the page holds a live wallet session.
- */
-const CHERRY_HOST = 'https://chat.cherry.fun';
-
-/** Origin of a URL, or null when it is unset or unparseable. */
-function origin(url: string | undefined): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).origin;
-  } catch {
-    return null;
-  }
-}
-
-function connectSrc(): string[] {
-  const sources = new Set<string>(["'self'"]);
-
-  // The RPC the browser actually calls, plus its websocket counterpart.
-  const rpc = origin(process.env.NEXT_PUBLIC_SOLANA_RPC_URL) ?? origin('https://api.devnet.solana.com');
-  if (rpc) {
-    sources.add(rpc);
-    sources.add(rpc.replace(/^http/, 'ws'));
-  }
-
-  // Cherry's JWKS endpoint, and any override pointed elsewhere.
-  sources.add(CHERRY_HOST);
-  const jwks = origin(process.env.CHERRY_JWKS_URL);
-  if (jwks) sources.add(jwks);
-
-  // An escape hatch for deployments behind a proxy or an extra RPC, as a
-  // space-separated allowlist. Still an allowlist, never a wildcard.
-  for (const extra of (process.env.CSP_EXTRA_CONNECT_SRC ?? '').split(/\s+/)) {
-    const o = origin(extra);
-    if (o) sources.add(o);
-  }
-
-  return [...sources];
-}
-
-function buildCsp({ dev }: { dev: boolean }): string {
-  const scriptSrc = [
-    "'self'",
-    // Next.js inlines a bootstrap script into the document. Serving it under
-    // a nonce would force every page to render dynamically, which costs the
-    // embedded path its prerendered first paint — the one thing the spec is
-    // most insistent about. Tracked in DEPLOY.md as pre-mainnet hardening.
-    "'unsafe-inline'",
-    // Only the dev server needs eval (React Refresh). Production does not.
-    ...(dev ? ["'unsafe-eval'"] : []),
-  ];
-
-  return [
-    "default-src 'self'",
-    `script-src ${scriptSrc.join(' ')}`,
-    // React sets element styles through the `style` attribute throughout the
-    // UI, which CSP counts as inline style.
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
-    "font-src 'self' data:",
-    `connect-src ${connectSrc().join(' ')}`,
-    `frame-ancestors 'self' ${CHERRY_HOST}`,
-    // Nothing in this app embeds a frame, loads a plugin, or posts a form.
-    "frame-src 'none'",
-    "object-src 'none'",
-    "form-action 'none'",
-    "base-uri 'self'",
-    "worker-src 'self'",
-    "manifest-src 'self'",
-    ...(dev ? [] : ['upgrade-insecure-requests']),
-  ].join('; ');
-}
+import { cherryChatEnabled } from './src/lib/cherryChat';
+import { staticSecurityHeaders } from './src/lib/csp';
 
 /**
  * Static-export mode, used by the GitHub Pages workflow.
@@ -95,18 +14,66 @@ function buildCsp({ dev }: { dev: boolean }): string {
  * `CHERRY_APP_ID` from Cherry registration, so a static deployment loses
  * nothing that works without one.
  *
- * The caveat that matters: headers cannot be set on a static host, and
- * `frame-ancestors` is ignored in a <meta> tag. Cherry's mobile WebView does
- * not need it, but Cherry *web* embeds in an iframe and does. A static
- * deployment is therefore good for Seeker and for a standalone browser, and
- * needs a real host for Cherry web.
+ * The caveat that matters: a static *host* is what sends headers, not Next,
+ * and `frame-ancestors` is ignored in a <meta> tag. So the export also writes
+ * a `_headers` file (`scripts/emit-static-headers.ts`) carrying the same
+ * policy. Hosts that read it — Cloudflare Pages, Netlify — then satisfy
+ * Cherry web's iframe requirement with no code change. GitHub Pages ignores
+ * it and cannot send headers at all, which is fine for Cherry's mobile
+ * WebView and for a standalone browser, and not enough for Cherry web.
  */
 const STATIC_EXPORT = process.env.STATIC_EXPORT === '1';
+
+/**
+ * The chat ids as Vercel holds them — `CHERRY_CHAT_APP_ID` / `_ROOM_ID`,
+ * unprefixed — bridged onto the `NEXT_PUBLIC_` names the code reads.
+ *
+ * Next only inlines `NEXT_PUBLIC_*` into the browser bundle, so unprefixed ids
+ * left the client config null: no chat, `frame-src 'none'`, and a token route
+ * answering 503. Both ids are public identifiers; only these two are bridged.
+ * `CHERRY_APP_SECRET` is never touched here and stays server-only.
+ *
+ * Assigning `process.env` covers this file's own reads (the CSP and the
+ * static-export guard below); the `env` block inlines the same values into
+ * the client and server bundles.
+ */
+const CHAT_ID_BRIDGE = {
+  NEXT_PUBLIC_CHERRY_CHAT_APP_ID: 'CHERRY_CHAT_APP_ID',
+  NEXT_PUBLIC_CHERRY_CHAT_ROOM_ID: 'CHERRY_CHAT_ROOM_ID',
+} as const;
+const chatEnv: Record<string, string> = {};
+for (const [publicName, serverName] of Object.entries(CHAT_ID_BRIDGE)) {
+  const value = process.env[publicName] || process.env[serverName];
+  if (value) {
+    process.env[publicName] = value;
+    chatEnv[publicName] = value;
+  }
+}
+
+/**
+ * The chat embed authenticates with `app-trusted+wallet`, which needs
+ * `/api/cherry-embed-nonce` and `/api/cherry-embed-token` — and a static
+ * export has no server to run them on (the Pages workflow deletes
+ * `src/app/api` outright). Configuring the embed into a static build would
+ * ship a chat whose every sign-in attempt 404s.
+ *
+ * Fail the build instead of discovering it in production.
+ */
+if (STATIC_EXPORT && cherryChatEnabled()) {
+  throw new Error(
+    'The Cherry Chat embed is configured (NEXT_PUBLIC_CHERRY_CHAT_APP_ID / ' +
+      '_ROOM_ID) but STATIC_EXPORT=1. Its auth mode is app-trusted+wallet, ' +
+      'which needs the /api/cherry-embed-* routes, and a static export has no ' +
+      'server to serve them. Either deploy to a host that runs Node, or leave ' +
+      'the chat ids unset for the static build.',
+  );
+}
 
 /** Repo-name subpath, e.g. "/cherry-tree-mining-rig-" on GitHub Pages. */
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 
 const nextConfig: NextConfig = {
+  env: chatEnv,
   ...(STATIC_EXPORT
     ? {
         output: 'export' as const,
@@ -117,19 +84,13 @@ const nextConfig: NextConfig = {
       }
     : {
         // `headers()` has no effect in a static export — the host sends them.
+        // The CSP is absent on purpose: it carries a per-request nonce, so
+        // `src/proxy.ts` serves it. A CSP built here would be nonce-less, and
+        // serving both would enforce their intersection — the static one's
+        // `'unsafe-inline'`-free script-src would block everything the proxy
+        // just nonced, or vice versa.
         async headers() {
-          const dev = process.env.NODE_ENV !== 'production';
-          return [
-            {
-              source: '/(.*)',
-              headers: [
-                { key: 'Content-Security-Policy', value: buildCsp({ dev }) },
-                { key: 'Referrer-Policy', value: 'no-referrer' },
-                { key: 'X-Content-Type-Options', value: 'nosniff' },
-                { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
-              ],
-            },
-          ];
+          return [{ source: '/(.*)', headers: staticSecurityHeaders }];
         },
       }),
 };

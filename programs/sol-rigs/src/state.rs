@@ -4,7 +4,7 @@
 //! through [`rigs_engine`]: read state out, run the transition, write it back.
 
 use anchor_lang::prelude::*;
-use rigs_engine::{MinerPosition, RewardGlobals, RewardLedger};
+use rigs_engine::{FeeSchedule, MinerPosition, RewardGlobals, RewardLedger};
 
 use crate::constants::VaultKind;
 
@@ -18,12 +18,21 @@ pub struct Config {
     pub pending_authority: Pubkey,
     /// The only signer permitted to call `fund_rewards`.
     pub reward_funder: Pubkey,
+    /// The only account protocol fees may be withdrawn TO.
+    ///
+    /// Deliberately not the same identity as `authority`: the authority can
+    /// trigger a withdrawal but cannot choose where it lands, and this account
+    /// never signs anything, so collecting fees never requires its key. Moving
+    /// it is an authority action and emits an event.
+    pub fee_recipient: Pubkey,
     /// Gates `buy_rigs` / `claim` / `compound`. Funding stays open so backing
     /// can be topped up while user actions are halted.
     pub paused: bool,
 
     // --- pricing (configurable; never hardcoded outside test fixtures) ---
     pub rig_price_lamports: u64,
+    /// Fresh-purchase fee. Changed only through the 72-hour fee timelock
+    /// after `initialize` (architecture §7a item 3).
     pub purchase_fee_bps: u16,
 
     // --- reward accumulator (mirrors rigs_engine::RewardGlobals) ---
@@ -49,12 +58,76 @@ pub struct Config {
     pub fee_vault_bump: u8,
     pub version: u16,
     pub bump: u8,
+
+    // --- launch (appended) ---
+    /// The only wallet whose purchase can activate launch. Pinned at
+    /// `initialize` and never writable afterwards: there is no setter.
+    pub founder: Pubkey,
+    /// T0: chain time of the founder activation purchase. `0` until then.
+    /// Written exactly once, inside that purchase; no instruction resets,
+    /// replaces or moves it.
+    pub launch_t0: i64,
+    /// `Σ rigs × weight` (mirrors `RewardGlobals::total_shares`).
+    pub total_shares: u64,
+
+    // --- claim penalty (appended) ---
+    /// Cumulative early-claim fees `x` (architecture §7a item 5), both shares:
+    /// the 60% treasury share (also counted in `total_reward_to_fees`) and
+    /// the 40% grove share kept in the reward vault for other planters.
+    pub total_claim_penalties: u64,
+
+    // --- genesis cap (appended, Production V2) ---
+    /// Cumulative per-wallet fresh-purchase cap during the gated launch period
+    /// [T0, T0 + 24h). Pinned at `initialize` or `migrate_v2`; there is no
+    /// setter. Compounding never consumes allowance; from T0 + 24h (Public)
+    /// the cap no longer applies.
+    pub genesis_cap_rigs: u64,
+
+    // --- protocol fees (appended, V3; architecture §7a) ---
+    /// Compound fee, used only by `compound`. Invariant at every moment:
+    /// `compound_fee_bps <= purchase_fee_bps <= MAX_PURCHASE_FEE_BPS`.
+    pub compound_fee_bps: u16,
+    /// Scheduled fee change (readable on-chain from the moment it is
+    /// scheduled). Meaningful only while `fee_change_effective_at != 0`.
+    pub pending_purchase_fee_bps: u16,
+    pub pending_compound_fee_bps: u16,
+    /// When the pending fee change may be applied; `0` = none pending.
+    pub fee_change_effective_at: i64,
+    /// Referral commissions reserved in the fee vault and not yet claimed.
+    /// `withdraw_fees` can never touch them.
+    pub reserved_commissions: u64,
+    /// Cumulative commissions ever reserved (paid + unpaid).
+    pub total_commissions_reserved: u64,
+    /// Cumulative commissions paid to referrers.
+    pub total_commissions_paid: u64,
+    /// Cumulative early-claim fee treasury shares moved REWARD → FEE. Also
+    /// counted in `total_protocol_fees` (gross protocol fees).
+    pub total_reward_to_fees: u64,
 }
 
 impl Config {
+    pub fn fee_schedule(&self) -> FeeSchedule {
+        FeeSchedule {
+            purchase_fee_bps: self.purchase_fee_bps,
+            compound_fee_bps: self.compound_fee_bps,
+            pending_purchase_fee_bps: self.pending_purchase_fee_bps,
+            pending_compound_fee_bps: self.pending_compound_fee_bps,
+            effective_at: self.fee_change_effective_at,
+        }
+    }
+
+    pub fn write_fee_schedule(&mut self, f: &FeeSchedule) {
+        self.purchase_fee_bps = f.purchase_fee_bps;
+        self.compound_fee_bps = f.compound_fee_bps;
+        self.pending_purchase_fee_bps = f.pending_purchase_fee_bps;
+        self.pending_compound_fee_bps = f.pending_compound_fee_bps;
+        self.fee_change_effective_at = f.effective_at;
+    }
+
     pub fn globals(&self) -> RewardGlobals {
         RewardGlobals {
             total_rigs: self.total_rigs,
+            total_shares: self.total_shares,
             reward_rate: self.reward_rate,
             reward_period_finish: self.reward_period_finish,
             reward_last_update: self.reward_last_update,
@@ -65,6 +138,7 @@ impl Config {
 
     pub fn write_globals(&mut self, g: &RewardGlobals) {
         self.total_rigs = g.total_rigs;
+        self.total_shares = g.total_shares;
         self.reward_rate = g.reward_rate;
         self.reward_period_finish = g.reward_period_finish;
         self.reward_last_update = g.reward_last_update;
@@ -77,6 +151,7 @@ impl Config {
             total_reward_funded: self.total_reward_funded,
             total_reward_claimed: self.total_reward_claimed,
             total_reward_compounded: self.total_reward_compounded,
+            total_reward_to_fees: self.total_reward_to_fees,
         }
     }
 
@@ -84,6 +159,7 @@ impl Config {
         self.total_reward_funded = l.total_reward_funded;
         self.total_reward_claimed = l.total_reward_claimed;
         self.total_reward_compounded = l.total_reward_compounded;
+        self.total_reward_to_fees = l.total_reward_to_fees;
     }
 }
 
@@ -103,6 +179,18 @@ pub struct Miner {
     pub created_at: i64,
     pub last_action_at: i64,
     pub bump: u8,
+
+    // --- referral (appended) ---
+    /// Reward weight per rig: 100 (base) or 105 (validly referred). Fixed at
+    /// the position's first purchase.
+    pub weight: u16,
+    /// Immutable referrer, or `Pubkey::default()` for none.
+    pub referrer: Pubkey,
+
+    // --- claim penalty (appended) ---
+    /// Chain time of this position's most recent purchase: the claim-penalty
+    /// anchor. Claims and replants never move it.
+    pub last_planted_at: i64,
 }
 
 impl Miner {
@@ -116,6 +204,8 @@ impl Miner {
             lifetime_sol_spent: self.lifetime_sol_spent,
             lifetime_sol_compounded: self.lifetime_sol_compounded,
             lifetime_sol_claimed: self.lifetime_sol_claimed,
+            weight: self.weight as u64,
+            last_planted_at: self.last_planted_at,
         }
     }
 
@@ -128,6 +218,46 @@ impl Miner {
         self.lifetime_sol_spent = p.lifetime_sol_spent;
         self.lifetime_sol_compounded = p.lifetime_sol_compounded;
         self.lifetime_sol_claimed = p.lifetime_sol_claimed;
+        self.last_planted_at = p.last_planted_at;
+    }
+}
+
+/// Day-1 `.skr` BINDING PDA — seeds `["skr_bind", name_account]`.
+///
+/// Created by the first Day-1 purchase that proves the domain; records the
+/// one wallet that domain opens Day-1 access for. No instruction writes,
+/// reassigns or closes it after creation. It gates nothing from T0 + 24h.
+#[account]
+#[derive(InitSpace, Debug)]
+pub struct SkrBinding {
+    /// The `.skr` ANS name account this binding is keyed by.
+    pub name_account: Pubkey,
+    /// The only wallet this domain opens Day-1 access for.
+    pub wallet: Pubkey,
+    /// Chain time of the binding purchase.
+    pub bound_at: i64,
+    pub bump: u8,
+}
+
+/// REFERRAL LEDGER PDA — seeds `["referral", referrer]` (architecture §7).
+///
+/// One per direct referrer, separate from `Miner` (no Miner realloc).
+/// `accrued_cum` rises only inside `buy_rigs` / `compound`, in the same
+/// instruction that receives the eligible fee; `claimed_cum` rises only in
+/// `claim_commission`. Unpaid = `accrued_cum - claimed_cum`, always backed by
+/// `Config.reserved_commissions` in the fee vault. Never closed.
+#[account]
+#[derive(InitSpace, Debug)]
+pub struct ReferralLedger {
+    pub referrer: Pubkey,
+    pub accrued_cum: u64,
+    pub claimed_cum: u64,
+    pub bump: u8,
+}
+
+impl ReferralLedger {
+    pub fn unpaid(&self) -> u64 {
+        self.accrued_cum.saturating_sub(self.claimed_cum)
     }
 }
 

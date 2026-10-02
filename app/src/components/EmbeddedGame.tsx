@@ -74,6 +74,7 @@ export function EmbeddedGame() {
       lifecycle: lifecycle.current,
       openProfile: (a: string) => void navigate.userProfile(a),
       share: async (payload: SharePayload) => {
+        const progressSeedCount = payload.kind === 'progress' ? payload.rigs : null;
         await share({
           route: '/result',
           // Snapshot data travels inside the signed token's `params`, never as
@@ -82,8 +83,10 @@ export function EmbeddedGame() {
           height: 'medium',
           caption:
             payload.kind === 'compound'
-              ? `+${payload.compounded} rigs`
-              : 'Claimed from the mine',
+              ? `+${payload.compounded} seeds replanted`
+              : payload.kind === 'claim'
+                ? 'Claimed from the grove'
+                : `${progressSeedCount} seeds · ${payload.rooted === 'yes' ? 'Rooted' : 'tending'}`,
           previewable: true,
         });
       },

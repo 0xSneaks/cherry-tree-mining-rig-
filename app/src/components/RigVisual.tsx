@@ -1,210 +1,225 @@
 /**
- * The mine shaft: a cross-section, not a scene.
+ * The grove: one cherry tree that grows with the seeds this wallet holds.
  *
- * Deterministic tier from the real rig count, cosmetic only — it never
- * affects a number. Individual machines are deliberately not drawn: at 500
- * rigs that is a pointless render, and a tier reads faster anyway.
+ * Cosmetic only — it never affects a number. The painting comes from the
+ * seed count (five illustrated stages: seed, sprout, young tree, blossoming
+ * tree, fruiting tree — `public/grove/*.webp`, transparent); within the
+ * sprout stage it grows with `rigTier` so the first few plantings visibly
+ * change it. The stage *name* and next-stage progress come from the growth
+ * layer (`groveTier`), the same names the share card and milestones use.
  *
- * The canvas is sized to its content so a small operation does not sit in a
- * field of empty rock.
+ * The painting stands in a small night scene: a blossom glow behind it,
+ * soft out-of-focus petals in the air, and its own reflection on the water
+ * below (a mirrored, masked copy of the same image — nothing extra to load).
+ *
+ * Petals fall and the crown sways only while the funded schedule is paying;
+ * those and the drifting bokeh stop under prefers-reduced-motion.
  */
+import type { CSSProperties } from 'react';
+
+import { formatCount } from '../lib/format';
+import { groveTier, nextGroveTier } from '../lib/growth/milestones';
+
 export type RigTier = {
-  key: string;
-  label: string;
-  /** Gallery levels cut into the rock. */
-  levels: number;
-  /** Machines drawn per gallery, split either side of the hoist shaft. */
-  perLevel: number;
+  key: 'empty' | 'hand' | 'small' | 'industrial' | 'multi' | 'facility';
 };
 
 export function rigTier(rigs: bigint): RigTier {
-  if (rigs >= 500n)
-    return { key: 'facility', label: 'MAJOR MINING FACILITY', levels: 4, perLevel: 6 };
-  if (rigs >= 100n)
-    return { key: 'multi', label: 'MULTI-RIG SHAFT', levels: 3, perLevel: 4 };
-  if (rigs >= 25n)
-    return { key: 'industrial', label: 'INDUSTRIAL RIG', levels: 2, perLevel: 3 };
-  if (rigs >= 5n)
-    return { key: 'small', label: 'SMALL MINING MACHINE', levels: 1, perLevel: 2 };
-  if (rigs >= 1n)
-    return { key: 'hand', label: 'HAND-OPERATED SHAFT', levels: 1, perLevel: 1 };
-  return { key: 'empty', label: 'SHAFT IDLE', levels: 1, perLevel: 0 };
+  if (rigs >= 500n) return { key: 'facility' };
+  if (rigs >= 100n) return { key: 'multi' };
+  if (rigs >= 25n) return { key: 'industrial' };
+  if (rigs >= 5n) return { key: 'small' };
+  if (rigs >= 1n) return { key: 'hand' };
+  return { key: 'empty' };
 }
 
-// A narrow viewBox on purpose: the SVG scales to the column width, so fewer
-// user units means larger machines on a 390px phone.
-const WIDTH = 300;
-const SURFACE_Y = 44;
-const LEVEL_GAP = 40;
-const CENTRE = WIDTH / 2;
-/** Half-width of the hoist shaft; galleries start clear of it. */
-const SHAFT_CLEARANCE = 22;
-const MARGIN = 22;
+type Art = { id: string; w: number; h: number; from: bigint; mark: string };
 
-/**
- * Machine positions along one gallery: evenly spaced either side of the
- * hoist shaft, with the left bank filled first so an odd count leans the way
- * the headframe does.
- */
-function galleryPositions(count: number): number[] {
-  if (count === 0) return [];
-  if (count === 1) return [CENTRE - SHAFT_CLEARANCE - 26];
+/** The five paintings, their pixel size, and the seed count each starts at. */
+const ART: readonly Art[] = [
+  { id: 'seed', w: 335, h: 260, from: 0n, mark: '0' },
+  { id: 'sprout', w: 347, h: 362, from: 1n, mark: '1+' },
+  { id: 'young', w: 351, h: 490, from: 100n, mark: '100+' },
+  { id: 'bloom', w: 459, h: 538, from: 1_000n, mark: '1K+' },
+  { id: 'fruit', w: 547, h: 581, from: 10_000n, mark: '10K+' },
+];
 
-  const left = Math.ceil(count / 2);
-  const right = count - left;
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+const src = (id: string) => `${BASE}/grove/${id}.webp`;
 
-  const spread = (n: number, from: number, to: number): number[] => {
-    if (n === 0) return [];
-    if (n === 1) return [(from + to) / 2];
-    const step = (to - from) / (n - 1);
-    return Array.from({ length: n }, (_, i) => from + step * i);
-  };
-
-  return [
-    ...spread(left, MARGIN + 14, CENTRE - SHAFT_CLEARANCE - 14),
-    ...spread(right, CENTRE + SHAFT_CLEARANCE + 14, WIDTH - MARGIN - 14),
-  ];
+/** The latest stage this seed count has reached, and its place in the row. */
+function artFor(seeds: bigint): { art: Art; index: number } {
+  let found = { art: ART[0] as Art, index: 0 };
+  ART.forEach((art, index) => {
+    if (seeds >= art.from) found = { art, index };
+  });
+  return found;
 }
 
-function Machine({
-  x,
-  y,
-  running,
-  delay,
-}: {
-  x: number;
-  y: number;
-  running: boolean;
-  delay: number;
-}) {
+/** Share of the frame width the painting fills: bigger stages stand wider. */
+function artWidth(seeds: bigint, index: number): number {
+  if (index === 1) {
+    const k = rigTier(seeds).key;
+    return k === 'hand' ? 0.4 : k === 'small' ? 0.48 : 0.56;
+  }
+  return [0.46, 0, 0.6, 0.78, 0.92][index] ?? 0.92;
+}
+
+/** Share of the frame's height given to the reflection under the island. */
+const WATER = 0.1;
+
+/** Falling petals: horizontal start (%), start height (%), delay (s), size (px). */
+const PETALS: readonly [number, number, number, number][] = [
+  [30, 30, 0, 7],
+  [62, 22, 1.4, 6],
+  [44, 40, 2.9, 5],
+  [72, 38, 4.1, 8],
+  [24, 48, 5.3, 6],
+  [55, 18, 6.2, 7],
+  [16, 26, 7.6, 5],
+  [82, 30, 3.4, 6],
+  [38, 12, 8.8, 8],
+  [66, 50, 2.2, 5],
+];
+
+export function RigVisual({ rigs: seeds, running }: { rigs: bigint; running: boolean }) {
+  const { art, index } = artFor(seeds);
+  const width = artWidth(seeds, index);
+  const named = groveTier(seeds);
+  const next = nextGroveTier(seeds);
+  const stageName = named?.label ?? 'Bare soil';
+  const growing = running && seeds > 0n;
+
+  // Progress from the current named stage to the next, in whole seeds.
+  const from = named?.minSeeds ?? 0n;
+  const progress =
+    next === null ? 100 : Number(((seeds - from) * 100n) / (next.tier.minSeeds - from));
+
   return (
-    <g>
-      {/* Drill head biting into the gallery floor */}
-      <line x1={x} y1={y - 4} x2={x} y2={y} stroke="var(--steel)" strokeWidth="1.2" />
-      <line x1={x - 3} y1={y - 1} x2={x + 3} y2={y - 1} stroke="var(--steel)" strokeWidth="1.2" />
-      {/* Housing */}
-      <rect
-        x={x - 11}
-        y={y - 17}
-        width="22"
-        height="13"
-        fill="var(--bg)"
-        stroke="var(--steel)"
-        strokeWidth="1.2"
-      />
-      {/* Status lamp — amber only while the schedule is actually paying */}
-      <rect
-        x={x - 8}
-        y={y - 14}
-        width="5"
-        height="7"
-        fill={running ? 'var(--blossom)' : 'var(--rule-strong)'}
+    <figure className="grove-visual" aria-label={`Your grove: ${stageName.toLowerCase()}, ${seeds.toString()} seeds`}>
+      <div
+        className="grove-art"
+        data-stage={art.id}
+        // The frame fits the painting at its stage width, plus a little
+        // headroom above and the reflection strip below.
+        style={{ aspectRatio: `1 / ${(((width * art.h) / art.w + 0.05) / (1 - WATER)).toFixed(3)}` }}
       >
-        {running ? (
-          <animate
-            attributeName="opacity"
-            values="0.25;1;0.25"
-            dur="1.8s"
-            begin={`${delay}s`}
-            repeatCount="indefinite"
+        <span className="grove-moon" aria-hidden="true" />
+        <span className="grove-bokeh" aria-hidden="true" />
+        <span className="grove-halo" aria-hidden="true" style={{ width: `${Math.min(width * 1.3, 1) * 100}%` }} />
+        {/* eslint-disable-next-line @next/next/no-img-element -- pre-sized transparent WebP; static export serves images unoptimised */}
+        <img
+          className={[
+            'grove-tree',
+            growing ? 'grove-tree--sway' : '',
+            seeds === 0n ? 'grove-tree--dormant' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          src={src(art.id)}
+          width={art.w}
+          height={art.h}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          style={{ width: `${width * 100}%` }}
+        />
+        <div className="grove-water" aria-hidden="true">
+          {/* eslint-disable-next-line @next/next/no-img-element -- the same painting, mirrored into the water */}
+          <img
+            className="grove-mirror"
+            src={src(art.id)}
+            width={art.w}
+            height={art.h}
+            alt=""
+            draggable={false}
+            style={{ width: `${width * 100}%` }}
           />
+        </div>
+        <span className="grove-horizon" aria-hidden="true" />
+        {growing
+          ? PETALS.map(([left, top, delay, size], i) => (
+              <span
+                key={i}
+                className="grove-petal"
+                aria-hidden="true"
+                style={{
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${size}px`,
+                  height: `${Math.round(size * 0.72)}px`,
+                  animationDelay: `${delay}s`,
+                  animationDuration: `${7 + (i % 4) * 1.3}s`,
+                }}
+              />
+            ))
+          : null}
+      </div>
+      <ol
+        className="grove-track"
+        aria-hidden="true"
+        // The timeline under the cards lights up to the current stage's dot.
+        style={{ '--grove-lit': `${index * 25}%` } as CSSProperties}
+      >
+        {ART.map((a, k) => (
+          <li
+            key={a.id}
+            className={k === index ? 'grove-step grove-step--now' : k < index ? 'grove-step grove-step--done' : 'grove-step'}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- same stage paintings as above, shown small */}
+            <img src={src(a.id)} alt="" width={a.w} height={a.h} loading="lazy" draggable={false} />
+            <span>{a.mark}</span>
+          </li>
+        ))}
+      </ol>
+      <figcaption className="grove-caption">
+        <div className="grove-caption-row">
+          <span className="grove-stage" data-testid="grove-stage">
+            {stageName}
+            <span className="grove-seeds">
+              {' '}
+              · {formatCount(seeds)} seed{seeds === 1n ? '' : 's'}
+            </span>
+          </span>
+          <span className={growing ? 'grove-state grove-state--live' : 'grove-state'}>
+            {seeds === 0n ? 'Not planted' : growing ? 'Growing' : 'Resting'}
+          </span>
+        </div>
+        {next ? (
+          <div className="grove-next">
+            <div className="grove-meter" aria-hidden="true">
+              <span style={{ width: `${Math.max(progress, 2)}%` }} />
+            </div>
+            <span>
+              {seeds === 0n
+                ? 'Plant your first seed to sprout a seedling'
+                : `${next.tier.label} at ${formatCount(next.tier.minSeeds)} seeds`}
+            </span>
+          </div>
         ) : null}
-      </rect>
-      {/* Vent slots */}
-      <line x1={x - 1} y1={y - 13} x2={x + 7} y2={y - 13} stroke="var(--rule-strong)" strokeWidth="1" />
-      <line x1={x - 1} y1={y - 10} x2={x + 7} y2={y - 10} stroke="var(--rule-strong)" strokeWidth="1" />
-      <line x1={x - 1} y1={y - 7} x2={x + 7} y2={y - 7} stroke="var(--rule-strong)" strokeWidth="1" />
-    </g>
+      </figcaption>
+    </figure>
   );
 }
 
-export function RigVisual({ rigs, running }: { rigs: bigint; running: boolean }) {
-  const tier = rigTier(rigs);
-  const height = SURFACE_Y + tier.levels * LEVEL_GAP + 16;
-  const shaftBottom = SURFACE_Y + tier.levels * LEVEL_GAP;
-
+/**
+ * The painted journey: all five stages on one moonlit lake. A banner only —
+ * it shows where a grove can go, not where this wallet's grove is.
+ */
+export function GroveJourney() {
   return (
-    <figure style={{ margin: '14px 0 0' }} aria-label={`Mine shaft: ${tier.label.toLowerCase()}`}>
-      <svg
-        viewBox={`0 0 ${WIDTH} ${height}`}
-        width="100%"
-        role="img"
-        aria-hidden="true"
-        style={{ display: 'block', background: 'var(--bg-inset)' }}
-      >
-        {/* Headframe: winding wheel and A-frame above the surface */}
-        <circle cx={CENTRE} cy="13" r="8" fill="none" stroke="var(--steel)" strokeWidth="1.4" />
-        <circle cx={CENTRE} cy="13" r="2" fill="var(--steel)" />
-        <path
-          d={`M${CENTRE - 24} ${SURFACE_Y} L${CENTRE} 20 L${CENTRE + 24} ${SURFACE_Y}`}
-          fill="none"
-          stroke="var(--steel)"
-          strokeWidth="1.4"
-        />
-        <line
-          x1={CENTRE - 12}
-          y1={SURFACE_Y - 11}
-          x2={CENTRE + 12}
-          y2={SURFACE_Y - 11}
-          stroke="var(--rule-strong)"
-          strokeWidth="1"
-        />
-
-        {/* Surface line */}
-        <line x1="0" y1={SURFACE_Y} x2={WIDTH} y2={SURFACE_Y} stroke="var(--rule-strong)" strokeWidth="1" />
-
-        {/* Hoist shaft */}
-        <line x1={CENTRE - 7} y1={SURFACE_Y} x2={CENTRE - 7} y2={shaftBottom} stroke="var(--rule-strong)" strokeWidth="1.2" />
-        <line x1={CENTRE + 7} y1={SURFACE_Y} x2={CENTRE + 7} y2={shaftBottom} stroke="var(--rule-strong)" strokeWidth="1.2" />
-        {/* Cage, riding the shaft only while the mine is producing */}
-        <rect x={CENTRE - 5} y={SURFACE_Y + 6} width="10" height="12" fill="var(--steel)" opacity="0.5">
-          {running ? (
-            <animate
-              attributeName="y"
-              values={`${SURFACE_Y + 6};${shaftBottom - 18};${SURFACE_Y + 6}`}
-              dur="7s"
-              repeatCount="indefinite"
-            />
-          ) : null}
-        </rect>
-
-        {Array.from({ length: tier.levels }, (_, level) => {
-          const y = SURFACE_Y + (level + 1) * LEVEL_GAP;
-          return (
-            <g key={level}>
-              {/* Gallery floor */}
-              <line x1={MARGIN} y1={y} x2={WIDTH - MARGIN} y2={y} stroke="var(--rule-strong)" strokeWidth="1.2" />
-              {/* Rock either side, hatched lightly */}
-              <line x1="0" y1={y} x2={MARGIN} y2={y} stroke="var(--rule)" strokeWidth="1" strokeDasharray="2 4" />
-              <line
-                x1={WIDTH - MARGIN}
-                y1={y}
-                x2={WIDTH}
-                y2={y}
-                stroke="var(--rule)"
-                strokeWidth="1"
-                strokeDasharray="2 4"
-              />
-              {galleryPositions(tier.perLevel).map((x, i) => (
-                <Machine key={i} x={x} y={y} running={running} delay={(level * 3 + i) * 0.23} />
-              ))}
-            </g>
-          );
-        })}
-      </svg>
-      <figcaption
-        style={{
-          fontSize: 11,
-          letterSpacing: '0.18em',
-          color: 'var(--text-faint)',
-          marginTop: 8,
-          display: 'flex',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span>{tier.label}</span>
-        <span>{running ? 'PRODUCING' : 'IDLE'}</span>
-      </figcaption>
-    </figure>
+    <div className="grove-journey" aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element -- pre-sized WebP pair; static export serves images unoptimised */}
+      <img
+        src={src('journey')}
+        srcSet={`${src('journey-768')} 768w, ${src('journey')} 1536w`}
+        sizes="(max-width: 452px) 100vw, 452px"
+        width={1536}
+        height={660}
+        alt=""
+        draggable={false}
+        fetchPriority="high"
+      />
+    </div>
   );
 }

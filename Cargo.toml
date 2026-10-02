@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/rigs-engine", "programs/sol-rigs"]
+members = ["crates/rigs-engine", "crates/eligibility-engine", "programs/sol-rigs"]
 resolver = "2"
 
 [profile.release]

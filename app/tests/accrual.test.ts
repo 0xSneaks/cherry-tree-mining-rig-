@@ -37,9 +37,18 @@ function baseConfig(over: Partial<Config>): Config {
     authority: 'x' as never,
     pendingAuthority: 'x' as never,
     rewardFunder: 'x' as never,
+    feeRecipient: 'x' as never,
     paused: false,
     rigPriceLamports: 10_000_000n,
     purchaseFeeBps: 300,
+    compoundFeeBps: 300,
+    pendingPurchaseFeeBps: 0,
+    pendingCompoundFeeBps: 0,
+    feeChangeEffectiveAt: 0n,
+    reservedCommissions: 0n,
+    totalCommissionsReserved: 0n,
+    totalCommissionsPaid: 0n,
+    totalRewardToFees: 0n,
     totalRigs: 0n,
     rewardRate: 0n,
     rewardPeriodFinish: 0n,
@@ -56,8 +65,13 @@ function baseConfig(over: Partial<Config>): Config {
     capitalVaultBump: 255,
     rewardVaultBump: 255,
     feeVaultBump: 255,
-    version: 1,
+    version: 2,
     bump: 255,
+    founder: 'x' as never,
+    launchT0: 0n,
+    totalShares: 0n,
+    totalClaimPenalties: 0n,
+    genesisCapRigs: 2_500n,
     ...over,
   };
 }
@@ -76,6 +90,9 @@ function baseMiner(over: Partial<Miner>): Miner {
     createdAt: 0n,
     lastActionAt: 0n,
     bump: 255,
+    weight: 0,
+    referrer: 'x' as never,
+    lastPlantedAt: 0n,
     ...over,
   };
 }
@@ -96,11 +113,13 @@ const rows: Row[] = raw
         rewardPeriodFinish: n(4),
         rewardLastUpdate: n(5),
         rewardPerRigStored: n(6),
+        totalShares: n(11),
       }),
       miner: baseMiner({
         rigs: n(7),
         rewardPerRigPaid: n(8),
         pendingRewards: n(9),
+        weight: Number(n(12)),
       }),
       earned: n(10),
     };
@@ -120,7 +139,7 @@ function snapshot(row: Row): ChainSnapshot {
 describe('projectedClaimable matches the on-chain accumulator', () => {
   it('has vectors covering every scenario', () => {
     expect(rows.length).toBeGreaterThan(30);
-    expect(new Set(rows.map((r) => r.name)).size).toBe(4);
+    expect(new Set(rows.map((r) => r.name)).size).toBe(5);
   });
 
   it('agrees with the engine at every timestamp', () => {
@@ -153,6 +172,7 @@ describe('the ticker clock', () => {
   const snap: ChainSnapshot = {
     config: baseConfig({
       totalRigs: 100n,
+      totalShares: 10_000n,
       rewardRate: 1_000_000n,
       rewardPeriodFinish: 1_000_000n,
       rewardLastUpdate: 1_000n,
@@ -204,6 +224,7 @@ describe('the ticker clock', () => {
 describe('display estimates', () => {
   const config = baseConfig({
     totalRigs: 14_281n,
+    totalShares: 1_428_100n,
     rewardRate: 25_462_962n,
     rewardPeriodFinish: 2_000_000n,
   });
@@ -211,7 +232,10 @@ describe('display estimates', () => {
   it('scales the user share of the emission rate', () => {
     const miner = baseMiner({ rigs: 42n });
     const perDay = estimatedOutputPerDay(config, miner, 1_000n);
-    expect(perDay).toBe(((42n * 25_462_962n) / 14_281n) * 86_400n);
+    expect(perDay).toBe(((4_200n * 25_462_962n) / 1_428_100n) * 86_400n);
+    // A referred planter's 42 rigs are 4,410 shares: 1.05× the slice.
+    const referred = estimatedOutputPerDay(config, baseMiner({ rigs: 42n, weight: 105 }), 1_000n);
+    expect(referred).toBe(((4_410n * 25_462_962n) / 1_428_100n) * 86_400n);
   });
 
   it('reports zero once the schedule has ended, never a stale rate', () => {

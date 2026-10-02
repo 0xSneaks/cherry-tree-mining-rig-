@@ -8,7 +8,12 @@
 import { unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AccountRole, address, createKeyPairSignerFromBytes } from '@solana/kit';
+import {
+  AccountRole,
+  address,
+  createKeyPairSignerFromBytes,
+  getAddressEncoder,
+} from '@solana/kit';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -16,10 +21,13 @@ import {
   PROGRAM_ID,
   SYSTEM_PROGRAM_ID,
 } from '../src/lib/program/constants';
-import type { ProgramAddresses } from '../src/lib/program/pdas';
+import { programDataPda, type ProgramAddresses } from '../src/lib/program/pdas';
 import {
   fundRewardsInstruction,
   initializeInstruction,
+  migrateV2Instruction,
+  setFeeRecipientInstruction,
+  withdrawFeesInstruction,
 } from '../scripts/ops/admin-instructions';
 import {
   GENESIS_HASH,
@@ -38,6 +46,10 @@ const PDAS: ProgramAddresses = {
 };
 const AUTHORITY = address('7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU');
 const FUNDER = address('So11111111111111111111111111111111111111112');
+/** THE CHERRY TREE protocol fee recipient. Public configuration; never signs. */
+const FEE_RECIPIENT = address('4FsYyXTbF1iftkUTtZVmzmvisxUaGvoYfZDj4DuGLvwF');
+const FOUNDER = address('FtuidxSaoNDeTuNTDuf9jLACVwqjgQeBwKTYC54f3GYp');
+const PROGRAM_DATA = address('11111111111111111111111111111116');
 
 // ------------------------------------------------------------- cluster guard
 
@@ -89,6 +101,22 @@ describe('requireDevnet', () => {
   it('accepts a local validator', () => {
     set('devnet', 'http://127.0.0.1:8899');
     expect(requireDevnet().rpcUrl).toBe('http://127.0.0.1:8899');
+  });
+});
+
+describe('migrate_v2 instruction', () => {
+  const ix = migrateV2Instruction(AUTHORITY, PDAS.config, 2_500n);
+
+  it('uses raw migration account order and appends the cap', () => {
+    expect(ix.accounts!.map((a) => a.address)).toEqual([
+      AUTHORITY,
+      PDAS.config,
+      SYSTEM_PROGRAM_ID,
+    ]);
+    expect(ix.accounts![0]!.role).toBe(AccountRole.WRITABLE_SIGNER);
+    expect(ix.data!.length).toBe(16);
+    expect(Array.from(ix.data!.slice(0, 8))).toEqual(Array.from(IX_DISCRIMINATOR.migrateV2));
+    expect(new DataView(ix.data!.buffer, ix.data!.byteOffset + 8, 8).getBigUint64(0, true)).toBe(2_500n);
   });
 });
 
@@ -200,11 +228,22 @@ describe('loadSigner', () => {
 
 // ------------------------------------------------------- admin instructions
 
+describe('program data address', () => {
+  it('is the loader PDA the program checks for initialize', async () => {
+    // Same literal is pinned in programs/sol-rigs/tests/initialize_security.rs.
+    expect(await programDataPda()).toBe('3W8FkxmT9RmES9Duj8jjp2BR9htCNqCZtrvnYLFsETVT');
+  });
+});
+
 describe('initialize instruction', () => {
-  const ix = initializeInstruction(AUTHORITY, PDAS, {
+  const ix = initializeInstruction(AUTHORITY, PDAS, PROGRAM_DATA, {
     rigPriceLamports: 10_000_000n,
     purchaseFeeBps: 300,
     rewardFunder: FUNDER,
+    feeRecipient: FEE_RECIPIENT,
+    founder: FOUNDER,
+    genesisCapRigs: 2_500n,
+    compoundFeeBps: 250,
   });
 
   it('targets the program', () => {
@@ -219,18 +258,98 @@ describe('initialize instruction', () => {
       PDAS.rewardVault,
       PDAS.feeVault,
       SYSTEM_PROGRAM_ID,
+      PROGRAM_DATA,
     ]);
     expect(ix.accounts![0]!.role).toBe(AccountRole.WRITABLE_SIGNER);
+    // The upgrade-authority binding account is read, never written.
+    expect(ix.accounts![6]!.role).toBe(AccountRole.READONLY);
   });
 
-  it('encodes u64 price, u16 bps and a 32-byte pubkey after the discriminator', () => {
+  it('encodes initialize args with the cap and then the §7a compound fee appended', () => {
     const data = ix.data!;
     expect(Array.from(data.slice(0, 8))).toEqual(Array.from(IX_DISCRIMINATOR.initialize));
     // 10_000_000 little-endian u64
     expect(Array.from(data.slice(8, 16))).toEqual([128, 150, 152, 0, 0, 0, 0, 0]);
     // 300 little-endian u16
     expect(Array.from(data.slice(16, 18))).toEqual([44, 1]);
-    expect(data.length).toBe(8 + 8 + 2 + 32);
+    // reward_funder, fee_recipient, founder, genesis_cap_rigs, compound_fee_bps
+    expect(data.length).toBe(8 + 8 + 2 + 32 + 32 + 32 + 8 + 2);
+    expect(new DataView(data.buffer, data.byteOffset + data.length - 10, 8).getBigUint64(0, true)).toBe(2_500n);
+    expect(new DataView(data.buffer, data.byteOffset + data.length - 2, 2).getUint16(0, true)).toBe(250);
+  });
+
+  it('carries the fee recipient after the reward funder', () => {
+    const data = ix.data!;
+    const encode = (a: string) =>
+      Array.from(new Uint8Array(getAddressEncoder().encode(address(a))));
+    expect(Array.from(data.slice(18, 50))).toEqual(encode(FUNDER));
+    expect(Array.from(data.slice(50, 82))).toEqual(encode(FEE_RECIPIENT));
+  });
+
+  it('does not pass the fee recipient as an account — it never signs', () => {
+    expect(ix.accounts!.map((a) => a.address)).not.toContain(FEE_RECIPIENT);
+  });
+});
+
+// --------------------------------------------------------- fee recipient
+
+describe('set_fee_recipient instruction', () => {
+  const ix = setFeeRecipientInstruction(AUTHORITY, PDAS, FEE_RECIPIENT);
+
+  it('makes the authority the only signer', () => {
+    const signers = ix.accounts!.filter(
+      (a) =>
+        a.role === AccountRole.WRITABLE_SIGNER || a.role === AccountRole.READONLY_SIGNER,
+    );
+    expect(signers.map((s) => s.address)).toEqual([AUTHORITY]);
+  });
+
+  it('touches config and nothing else — no vault is reachable from here', () => {
+    const addrs = ix.accounts!.map((a) => a.address);
+    expect(addrs).toEqual([AUTHORITY, PDAS.config]);
+    expect(addrs).not.toContain(PDAS.capitalVault);
+    expect(addrs).not.toContain(PDAS.rewardVault);
+    expect(addrs).not.toContain(PDAS.feeVault);
+  });
+
+  it('passes the new recipient as an argument, so its key is never needed', () => {
+    const data = ix.data!;
+    expect(Array.from(data.slice(0, 8))).toEqual(
+      Array.from(IX_DISCRIMINATOR.setFeeRecipient),
+    );
+    expect(Array.from(data.slice(8, 40))).toEqual(
+      Array.from(new Uint8Array(getAddressEncoder().encode(FEE_RECIPIENT))),
+    );
+    expect(data.length).toBe(40);
+    expect(ix.accounts!.map((a) => a.address)).not.toContain(FEE_RECIPIENT);
+  });
+});
+
+describe('withdraw_fees instruction', () => {
+  const ix = withdrawFeesInstruction(AUTHORITY, PDAS, FEE_RECIPIENT, 1_000_000n);
+
+  it('moves money out of the FEE vault only', () => {
+    const addrs = ix.accounts!.map((a) => a.address);
+    expect(addrs).toEqual([AUTHORITY, PDAS.config, PDAS.feeVault, FEE_RECIPIENT]);
+    expect(addrs).not.toContain(PDAS.rewardVault);
+    expect(addrs).not.toContain(PDAS.capitalVault);
+  });
+
+  it('pays the configured recipient, and the recipient does not sign', () => {
+    const recipient = ix.accounts!.find((a) => a.address === FEE_RECIPIENT)!;
+    expect(recipient.role).toBe(AccountRole.WRITABLE);
+    const signers = ix.accounts!.filter(
+      (a) =>
+        a.role === AccountRole.WRITABLE_SIGNER || a.role === AccountRole.READONLY_SIGNER,
+    );
+    expect(signers.map((s) => s.address)).toEqual([AUTHORITY]);
+  });
+
+  it('encodes the amount as a little-endian u64', () => {
+    const data = ix.data!;
+    expect(Array.from(data.slice(0, 8))).toEqual(Array.from(IX_DISCRIMINATOR.withdrawFees));
+    expect(Array.from(data.slice(8, 16))).toEqual([64, 66, 15, 0, 0, 0, 0, 0]);
+    expect(data.length).toBe(16);
   });
 });
 

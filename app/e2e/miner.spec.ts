@@ -23,11 +23,12 @@ test.describe('visual miner', () => {
     // parallel run, first paint can trail the socket by seconds.
     await expect(page.getByTestId('yield-panel')).toBeVisible({ timeout: 15_000 });
 
-    const figure = page.locator('figure[aria-label^="Grove:"]');
+    const figure = page.locator('figure[aria-label^="Your grove:"]');
     await expect(figure).toBeVisible({ timeout: 15_000 });
-    expect(await figure.getAttribute('aria-label')).toContain('young tree'); // 42 rigs → tier 3
+    // 42 seeds: drawn as a young tree, named with the shared grove tier.
+    expect(await figure.getAttribute('aria-label')).toContain('sapling, 42 seeds');
 
-    // DOM order: launch panel, then the grove, then the yield headline.
+    // DOM order: the grove, then (further down) the yield headline.
     const order = await page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('section, figure')).map((el, i) => ({
         i,
@@ -219,7 +220,7 @@ test.describe('miner cadence surfaces', () => {
     page.on('request', (request) => {
       if (/getLatestBlockhash/.test(request.postData() ?? '')) sends += 1;
     });
-    await page.getByRole('button', { name: /Plant 10 seeds · review/i }).click();
+    await page.getByRole('button', { name: /Review · 0\.0927 SOL for 9 seeds/i }).click();
     const confirm = page.getByTestId('buy-confirm');
     await expect(confirm).toBeVisible();
     expect(sends).toBe(0);
@@ -227,7 +228,7 @@ test.describe('miner cadence surfaces', () => {
     await expect(confirm).toHaveCount(0);
     expect(sends).toBe(0);
 
-    await page.getByRole('button', { name: /Plant 10 seeds · review/i }).click();
+    await page.getByRole('button', { name: /Review · 0\.0927 SOL for 9 seeds/i }).click();
     await page.getByTestId('buy-confirm').getByRole('button', { name: /Confirm plant/i }).click();
     await expect(page.getByTestId('buy-confirm')).toHaveCount(0);
     await expect.poll(() => sends).toBeGreaterThan(0);
@@ -272,6 +273,50 @@ test.describe('miner cadence surfaces', () => {
       return !!plant && !!cockpitEl && !!(plant.compareDocumentPosition(cockpitEl) & Node.DOCUMENT_POSITION_FOLLOWING);
     });
     expect(plantAboveCockpit).toBe(true);
+  });
+
+  test('a returning planter sees their grove and cockpit before Plant seeds', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    await expect(page.getByTestId('harvest-state')).toBeVisible({ timeout: 15_000 });
+    // The tree is named with the same tier the share card uses: 42 seeds is a Sapling.
+    await expect(page.getByTestId('grove-stage')).toContainText('Sapling');
+    await expect(page.getByTestId('grove-stage')).toContainText('42 seeds');
+    const order = await page.evaluate(() => {
+      const at = (el: Element | null | undefined) =>
+        el ? Array.from(document.querySelectorAll('*')).indexOf(el) : -1;
+      return {
+        cockpit: at(document.querySelector('[data-testid="miner-cockpit"]')),
+        plant: at(document.querySelector('[data-testid="plant-panel"]')),
+        yield: at(document.querySelector('[data-testid="yield-panel"]')),
+      };
+    });
+    expect(order.cockpit).toBeGreaterThan(-1);
+    expect(order.cockpit).toBeLessThan(order.plant);
+    expect(order.plant).toBeLessThan(order.yield);
+    await expect(page.getByTestId('global-grove')).toContainText('Global grove');
+  });
+
+  test('the stage painting loads, and the box you tap carries the blossom ring until you move on', async ({ page }) => {
+    await stubCherryHost(page);
+    await stubRpc(page);
+    await page.goto('/');
+    const tree = page.locator('.grove-art .grove-tree');
+    await expect(tree).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => tree.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
+
+    const plant = page.getByTestId('plant-panel');
+    const cockpit = page.getByTestId('miner-cockpit');
+    await plant.getByText('Amount to plant').click();
+    await expect(plant).toHaveAttribute('data-active', 'true');
+    await cockpit.getByText('My grove').click();
+    await expect(cockpit).toHaveAttribute('data-active', 'true');
+    await expect(plant).not.toHaveAttribute('data-active', 'true');
+    // Keyboard focus moves it too.
+    await page.getByLabel('Amount in SOL').focus();
+    await expect(plant).toHaveAttribute('data-active', 'true');
+    await expect(cockpit).not.toHaveAttribute('data-active', 'true');
   });
 
   test('trust panel separates proven data from unavailable authority metadata', async ({ page }) => {

@@ -4,7 +4,7 @@
  * The game. Identical in both modes — everything mode-specific arrives through
  * the `host` prop, so there is exactly one implementation of the loop.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Address } from '@solana/kit';
 
 import { buyRigs, claim, compound } from '../lib/actions';
@@ -29,7 +29,7 @@ import type { RigsSigner } from '../lib/signer';
 import { BuyPanel } from './BuyPanel';
 import { ClaimConfirm } from './ClaimConfirm';
 import { GroveRecord } from './GroveRecord';
-import { RigVisual } from './RigVisual';
+import { GroveJourney, RigVisual } from './RigVisual';
 import { RoomLeaderboard } from './RoomLeaderboard';
 import { ProgressShareCard, ShareCard, type SharePayload } from './ShareCard';
 import { TransparencyPanel } from './TransparencyPanel';
@@ -81,6 +81,48 @@ export type Host = {
   connectSlot?: React.ReactNode;
 };
 
+/**
+ * The boxes a person can "be in". Tapping or focusing inside one marks it
+ * active (a blossom arc runs round its edge, see globals.css) until another
+ * box is chosen or the person taps outside every box. Purely presentational:
+ * nothing reads the mark.
+ */
+const CARD_SELECTOR = [
+  '.grove-visual',
+  '.cockpit',
+  '.plant',
+  '.yield',
+  '.launch',
+  '.panel',
+  '.progress-card',
+  '[data-testid="grove-status"]',
+].join(', ');
+
+function useActiveCard() {
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    let active: Element | null = null;
+    const select = (e: Event) => {
+      const card = e.target instanceof Element ? e.target.closest(CARD_SELECTOR) : null;
+      const next = card && root.contains(card) ? card : null;
+      if (next === active) return;
+      active?.removeAttribute('data-active');
+      next?.setAttribute('data-active', 'true');
+      active = next;
+    };
+    root.addEventListener('pointerdown', select);
+    root.addEventListener('focusin', select);
+    return () => {
+      root.removeEventListener('pointerdown', select);
+      root.removeEventListener('focusin', select);
+      active?.removeAttribute('data-active');
+    };
+  }, []);
+  return ref;
+}
+
 /** A claim worth offering to share, rather than nagging on every dust claim. */
 const LARGE_CLAIM_LAMPORTS = 50_000_000n; // 0.05 SOL
 const CLAIM_ACTION_LABEL = 'Claim SOL';
@@ -91,6 +133,7 @@ export function Game({ host }: { host: Host }) {
     host.lifecycle,
   );
   const { claimable, chainTime } = useLiveAccrual(snapshot, live);
+  const shellRef = useActiveCard();
 
   // The name record this wallet can present. Display and account selection
   // only: the program re-verifies it on every purchase.
@@ -280,8 +323,53 @@ export function Game({ host }: { host: Host }) {
   const buyError = actionError?.kind === 'buy' ? actionError.message : null;
   const positionError = actionError && actionError.kind !== 'buy' ? actionError.message : null;
 
+  // The position (cockpit + claim confirmation) and the opportunity (yield)
+  // swap places by whether this wallet already holds seeds: see the page
+  // order below.
+  const positionBlock =
+    config && snap ? (
+      <>
+        <MinerCockpit
+          config={config}
+          miner={miner}
+          claimable={claimable}
+          rewardVaultLamports={snap.rewardVaultDistributable}
+          chainTime={chainTime}
+          currentOutputPerDay={outputPerDay}
+          canAct={canAct}
+          busy={busy}
+          onReplant={onCompound}
+          onHarvest={() => setConfirmingClaim(true)}
+          claimLabel={CLAIM_ACTION_LABEL}
+          error={positionError}
+        />
+        {confirmingClaim && claimQuote ? (
+          <ClaimConfirm
+            quote={claimQuote}
+            compoundFeeBps={config.compoundFeeBps}
+            busy={busy === 'claim'}
+            onConfirm={() => {
+              setConfirmingClaim(false);
+              onClaim();
+            }}
+            onCancel={() => setConfirmingClaim(false)}
+          />
+        ) : null}
+      </>
+    ) : null;
+  const opportunityBlock =
+    config && snap ? (
+      <YieldPanel
+        config={config}
+        miner={miner}
+        rewardVaultLamports={snap.rewardVaultDistributable}
+        chainTime={chainTime}
+        snapshotTime={snap.chainTimeSeconds}
+      />
+    ) : null;
+
   return (
-    <main className="shell">
+    <main className="shell" ref={shellRef}>
       {/* 1 · What this is, which network, whether it is live. */}
       <header className="masthead">
         <h1 className="wordmark">{PRODUCT_NAME}</h1>
@@ -306,10 +394,14 @@ export function Game({ host }: { host: Host }) {
         </p>
       ) : null}
 
+      <GroveJourney />
+
       <p className="lede">
-        Plant seeds with SOL. They share a funded SOL reward pool at a variable
-        rate.
+        Plant seeds with SOL to grow your own cherry tree. Your seeds earn a
+        share of a funded SOL reward pool at a variable rate. Harvest your SOL
+        or replant it to grow a bigger tree.
       </p>
+      <p className="lede-more">Scroll down for the full details.</p>
 
       {/* State-wide conditions that change what every button below does.
           "Disconnected" only when there is a wallet to reconnect — a
@@ -344,14 +436,11 @@ export function Game({ host }: { host: Host }) {
           {/* The grove itself, from the real seed count. */}
           <RigVisual rigs={rigs} running={scheduleLive && !paused} />
 
-          {/* 2 · The opportunity: rate, pool, runway, price. */}
-          <YieldPanel
-            config={config}
-            miner={miner}
-            rewardVaultLamports={snap.rewardVaultDistributable}
-            chainTime={chainTime}
-            snapshotTime={snap.chainTimeSeconds}
-          />
+          {/* 2 · A returning planter sees their own grove and its two
+              actions first — the daily loop is claim or replant, not a
+              re-read of the pitch. A first-time visitor sees the
+              opportunity instead, and the cockpit waits below Plant. */}
+          {hasPosition ? positionBlock : opportunityBlock}
 
           {/* 3 · The rules that decide whether and how this wallet can plant. */}
           <LaunchPanel
@@ -374,7 +463,7 @@ export function Game({ host }: { host: Host }) {
             <FounderActivation founder={host.address} signer={host.signer} onDone={refresh} />
           ) : null}
 
-          {/* 4 · The primary action. */}
+          {/* 4 · Planting, SOL first. */}
           <BuyPanel
             config={config}
             chainTime={chainTime}
@@ -399,42 +488,20 @@ export function Game({ host }: { host: Host }) {
             error={buyError}
           />
 
-          {/* 5 · The position and its two actions. */}
-          <MinerCockpit
-            config={config}
-            miner={miner}
-            claimable={claimable}
-            rewardVaultLamports={snap.rewardVaultDistributable}
-            chainTime={chainTime}
-            currentOutputPerDay={outputPerDay}
-            canAct={canAct}
-            busy={busy}
-            onReplant={onCompound}
-            onHarvest={() => setConfirmingClaim(true)}
-            claimLabel={CLAIM_ACTION_LABEL}
-            error={positionError}
-          />
-
-          {confirmingClaim && claimQuote ? (
-            <ClaimConfirm
-              quote={claimQuote}
-              compoundFeeBps={config.compoundFeeBps}
-              busy={busy === 'claim'}
-              onConfirm={() => {
-                setConfirmingClaim(false);
-                onClaim();
-              }}
-              onCancel={() => setConfirmingClaim(false)}
-            />
-          ) : null}
-
-          {/* 6 · The decoded account behind the position. */}
-          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
+          {hasPosition ? opportunityBlock : positionBlock}
 
           <hr className="rule" />
 
-          {/* 7 · Status and social: milestones, referrals, the room. */}
+          {/* 5 · Yours: the record, history, milestones, sharing, dilution. */}
+          {miner ? <GroveRecord miner={miner} chainTime={chainTime} /> : null}
+          <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
           {miner ? <MilestonesPanel config={config} miner={miner} chainTime={chainTime} /> : null}
+          <ProgressShareCard
+            wallet={host.address}
+            miner={miner}
+            chainTime={chainTime}
+            onShare={host.share}
+          />
           <ReferralPanel wallet={host.address} hasPosition={hasPosition} />
           {host.address ? (
             <CommissionPanel
@@ -444,6 +511,11 @@ export function Game({ host }: { host: Host }) {
               onClaimed={() => void refresh()}
             />
           ) : null}
+          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
+
+          <hr className="rule" />
+
+          {/* 6 · Everyone's: the room, the grove-wide distribution. */}
           {host.room ? (
             <RoomLeaderboard
               roomId={host.room.id}
@@ -453,25 +525,11 @@ export function Game({ host }: { host: Host }) {
               onOpenProfile={host.openProfile}
             />
           ) : null}
-
-          {/* 8 · Share the position; see how it dilutes. */}
-          <ProgressShareCard
-            wallet={host.address}
-            miner={miner}
-            chainTime={chainTime}
-            onShare={host.share}
-          />
-          <DilutionPanel config={config} miner={miner} chainTime={chainTime} />
-
-          <hr className="rule" />
-
-          {/* 9 · History: this wallet's, then the whole grove's. */}
-          <ActivityHistory wallet={host.address} refreshKey={miner?.lastActionAt ?? 0n} />
           <DistributionPanel viewer={host.address} />
 
           <hr className="rule" />
 
-          {/* 10 · Verification: vaults, accounts, authorities. */}
+          {/* 7 · Verification: vaults, accounts, authorities. */}
           <TransparencyPanel
             config={config}
             miner={miner}
@@ -484,13 +542,21 @@ export function Game({ host }: { host: Host }) {
             chainTime={chainTime}
           />
 
-          <p className="disclosure">
-            {PRODUCT_NAME_SHORT} is a planting <em>simulation</em>. SOL is not proof-of-work
-            mined: seeds do not participate in Solana consensus and do not
-            cryptographically produce new SOL. Rewards are paid from a funded
-            reward vault, are denominated in SOL, and vary with total seeds planted
-            and funding. Seed purchases are non-redeemable.
-          </p>
+          <hr className="rule" />
+
+          {/* 8 · What comes next. Planned only: no dates or terms on screen. */}
+          <section className="roadmap" data-testid="roadmap">
+            <p className="trust-kicker">Roadmap · Phase 2</p>
+            <h2 className="section-title">Coming next: stock baskets</h2>
+            <p>
+              The second phase brings stock baskets: the same grove you plant and
+              grow, with rewards paid in tokenized stocks on Solana instead of
+              SOL. Plant seeds, grow your tree and harvest a share of a funded
+              pool of stock tokens. Stock baskets are planned, not live. Which
+              stocks, when it opens and how its rewards are funded will be
+              announced before launch.
+            </p>
+          </section>
         </>
       )}
 

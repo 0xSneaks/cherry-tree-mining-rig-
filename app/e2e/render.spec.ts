@@ -151,17 +151,33 @@ test.describe('embedded path', () => {
       return (await row.locator('.readout-value').innerText()).replace(/[^\d.]/g, '');
     };
 
-    // Default 10 seeds at 0.01 SOL with a 3.00% fee.
-    expect(await value('Cost')).toBe('0.1000');
-    expect(await value('Fee')).toBe('0.0030');
-    expect(await value('Total')).toBe('0.1030');
+    // SOL first: the default 0.1 SOL buys 9 whole seeds at 0.01 SOL + 3.00%
+    // fee; the quote is exactly those 9 seeds, and what is left stays put.
+    await expect(page.getByLabel('Amount in SOL')).toHaveValue('0.1');
+    await expect(page.getByTestId('plant-seeds-preview')).toContainText('9 seeds');
+    expect(await value('Cost')).toBe('0.0900');
+    expect(await value('Fee')).toBe('0.0027');
+    expect(await value('Total')).toBe('0.0927');
+    await expect(page.getByTestId('plant-seeds-preview')).toContainText('0.0073 SOL stays in your wallet');
     await expect(page.getByText('Fee · 3.00%')).toBeVisible();
   });
 
   test('the quick-select buttons change the quote', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Plant 25 seeds/i })).toBeVisible();
+    await page.getByRole('button', { name: '0.25 SOL', exact: true }).click();
+    await expect(page.getByRole('button', { name: /Review · 0\.2472 SOL for 24 seeds/i })).toBeVisible();
+  });
+
+  test('a typed SOL amount sets the seeds, and too little says the minimum', async ({ page }) => {
+    await page.goto('/');
+    const amount = page.getByLabel('Amount in SOL');
+    await amount.fill('1');
+    await expect(page.getByRole('button', { name: /Review · 0\.9991 SOL for 97 seeds/i })).toBeVisible();
+    await amount.fill('0.005');
+    await expect(page.getByTestId('plant-seeds-preview')).toContainText(
+      'One seed needs at least 0.0103 SOL',
+    );
+    await expect(page.getByRole('button', { name: 'Plant seeds' })).toBeDisabled();
   });
 
   /** §2, §10 — honesty constraints and banned copy. */
@@ -249,7 +265,7 @@ test.describe('embedded path', () => {
     await expect(page.getByText(/Wallet disconnected/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
     await expect(page.getByRole('button', { name: /^Replant/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
 
     // Read-only state survives: the position is still rendered, not unmounted.
     await expect(
@@ -267,7 +283,7 @@ test.describe('embedded path', () => {
     await expect(page.getByText(/halted by its authority/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /Claim SOL/i })).toBeDisabled();
     await expect(page.getByRole('button', { name: /^Replant/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
     // Read-only state stays on screen.
     await expect(page.getByText('My grove')).toBeVisible();
   });
@@ -590,8 +606,8 @@ test.describe('CSP is survivable', () => {
     await expect(page.getByText('My grove')).toBeVisible();
     await expect(page.locator('.readout-value--hero')).toBeVisible();
     // A blocked event handler would only surface once something is clicked.
-    await page.getByRole('button', { name: '25', exact: true }).click();
-    await expect(page.getByRole('button', { name: /Plant 25 seeds/i })).toBeVisible();
+    await page.getByRole('button', { name: '0.25 SOL', exact: true }).click();
+    await expect(page.getByRole('button', { name: /for 24 seeds/i })).toBeVisible();
 
     expect(await collect()).toEqual([]);
   });
@@ -699,7 +715,7 @@ test.describe('launch activation and access phases', () => {
     await expect(page.getByTestId('launch-panel')).toContainText('The grove is dormant');
     await expect(page.getByTestId('launch-panel')).toContainText('Founder activation pending');
     expect(await phaseOf(page)).toBe('preLaunch');
-    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
     await expect(page.getByTestId('founder-activation')).toHaveCount(0);
   });
 
@@ -712,7 +728,7 @@ test.describe('launch activation and access phases', () => {
     await expect(page.getByTestId('launch-countdown')).toContainText('Public access in 22:59:');
     await expect(page.getByTestId('genesis-allowance')).toContainText('2470 remaining');
     // This wallet has no .skr name in the stub: planting stays closed to it.
-    await expect(page.getByRole('button', { name: /^Plant \d/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Review · [\d.]+ SOL for \d+ seeds?$/i })).toBeDisabled();
   });
 
   test('exactly T0 + 24h is Public with no second gate', async ({ page }) => {

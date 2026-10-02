@@ -471,6 +471,7 @@ See:
 - [`LAUNCH.md`](LAUNCH.md) — launch procedures
 - [`YIELD.md`](YIELD.md) — reward economics
 - [`CHERRY.md`](CHERRY.md) — Cherry integration
+- [`docs/tokenomics/PASS7_LOCK_DECISIONS.md`](docs/tokenomics/PASS7_LOCK_DECISIONS.md) — Pass #7 lock and loyalty decisions
 
 ---
 

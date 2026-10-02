@@ -4,6 +4,8 @@
 
 **THE CHERRY TREE** is a Solana-native yield game built for the Cherry ecosystem.
 
+**Live on Solana Devnet:** <https://cherry-tree-mining-rig.vercel.app>
+
 You plant **Seeds**.  
 Your Seeds generate a share of the funded SOL reward stream.  
 You can harvest your SOL — or **replant it into more Seeds and compound your production.**
@@ -119,9 +121,10 @@ The reward stream remains fully funded separately from Seed purchases.
 
 ---
 
-# 💰 Real SOL Rewards
+# 💰 Funded SOL Rewards
 
-THE CHERRY TREE is not a fake balance counter.
+THE CHERRY TREE distributes on-chain rewards from a transparently funded
+SOL reward vault.
 
 Rewards are denominated in **SOL** and backed by a dedicated reward vault.
 
@@ -418,7 +421,7 @@ The objective is for the accounting underneath it to remain understandable and v
 
 # ⚠️ What THE CHERRY TREE Is Not
 
-THE CHERRY TREE does **not** proof-of-work mine SOL.
+THE CHERRY TREE does **not** mine SOL through proof-of-work.
 
 Seeds do not participate in Solana consensus and do not cryptographically create new SOL.
 
@@ -486,5 +489,3 @@ The source may be reviewed, audited, studied and run locally under the terms of 
 Public deployment or commercial operation may require a separate commercial licence.
 
 See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) for complete terms.
-
-**THE CHERRY TREE**, its wordmark and associated branding remain trademarks of PhantomCapAI.

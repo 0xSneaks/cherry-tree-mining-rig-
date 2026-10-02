@@ -42,7 +42,7 @@ C = future program version, requires fresh qualification.
 5. Seasons and any separately funded prizes.
 6. Custody: multisig members, thresholds, timelocks, fee-recipient destination, revocation date.
 7. CAPITAL future use (recommended: none).
-8. Production host; Cherry registration (`CHERRY_APP_ID`).
+8. Cherry registration (`CHERRY_APP_ID`) — production host chosen: Vercel ([CHERRY_INTEGRATION_READINESS](CHERRY_INTEGRATION_READINESS.md) §3).
 
 ## External actions (cannot be done from this repository)
 

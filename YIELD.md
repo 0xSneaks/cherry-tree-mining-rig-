@@ -159,7 +159,7 @@ applies to the whole claimed amount:
   `withdraw_fees` can only move `distributable(FEE) − reserved_commissions`,
   and only to a recipient this program does not own.
 
-## Simulation results
+## Modeled yield scenarios
 
 `cargo test -p rigs-engine --test yield_sim -- --nocapture --test-threads=1`
 

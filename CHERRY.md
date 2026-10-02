@@ -10,7 +10,7 @@ the other.
 | SDK | `@cherrydotfun/miniapp-sdk` 0.1.21 | `@cherrydotfun/chat-embed-sdk` 0.1.7 |
 | Auth | launch token (RS256/JWKS), Cherry wallet bridge | `app-trusted+wallet` — backend token + wallet signature |
 | Secret | none | `CHERRY_APP_SECRET`, server-side only |
-| Identifier | `CHERRY_APP_ID` (blocked, not yet issued) | `NEXT_PUBLIC_CHERRY_CHAT_APP_ID` (issued) |
+| Identifier | `CHERRY_APP_ID` (not yet issued — registration issues it) | `NEXT_PUBLIC_CHERRY_CHAT_APP_ID` (issued) |
 | Renders when | `isInsideCherry({ strict: true })` | **not** inside Cherry, and configured |
 
 The embed deliberately never mounts inside the mini app: there the user is
@@ -48,16 +48,17 @@ Copy and paste:
 Product name:        THE CHERRY TREE
 Short name:          CHERRY TREE
 Slug:                cherry-tree
-Category:            Game / simulation (Solana)
+Category:            Game (Solana)
 
 Description:
-  A Solana mining simulation. Players hire "rigs" with SOL and earn SOL from a
-  transparently funded reward vault on a published schedule. Rewards are paid
-  only from what has actually been funded — there is no yield promise, no
-  redemption of principal, and every figure on screen is read live from chain
-  state. Rigs are non-redeemable. The reward vault, the capital vault and the
-  fee vault are separate program-owned accounts; only the fee vault is
-  withdrawable by the program authority.
+  THE CHERRY TREE is a Solana-native grove you tend inside Cherry: plant
+  Seeds, compound harvests into more Seeds, and claim funded SOL rewards
+  from a transparent on-chain reward vault. Every figure on screen is read
+  live from chain state. Rewards are variable and paid only from funded
+  emission — Seeds are non-redeemable productive capacity, not deposits.
+  The reward, capital and fee vaults are separate program-owned accounts;
+  only the fee vault is withdrawable by the program authority. Live on
+  Solana Devnet.
 
 Deployment URL:      https://cherry-tree-mining-rig.vercel.app
 Origin:              https://cherry-tree-mining-rig.vercel.app
@@ -65,8 +66,9 @@ Origin:              https://cherry-tree-mining-rig.vercel.app
    `frame-ancestors` for Cherry WEB and every `/api/*` route the mini-app
    backend needs. The former GitHub Pages origin is historical only.)
 
-Icon:                Cherry Tree logo, square PNG, transparent background.
-                     Supply at 512×512 and 1024×1024.
+Icon:                THE CHERRY TREE logo — square transparent PNG, 512×512
+                     and 1024×1024 preferred. A brand asset, not a
+                     registration blocker; final artwork is pending.
 
 Requested permissions:
   wallet:connect     — the game is entirely wallet-signed: buy, compound and
@@ -86,7 +88,7 @@ Community / room:    THE CHERRY TREE — private Cherry community, owned by the
                      submitter, created on Solana Seeker. Branded logo and
                      1500×500 cover already in place.
 
-Contact:             PhantomCapAI
+Contact:             THE CHERRY TREE team
 ```
 
 **Once Cherry issues the app id**, set it as configuration — no code changes:
@@ -112,7 +114,7 @@ Contact:             PhantomCapAI
 | 6 — hide standalone-only UI | `EmbeddedGame.tsx` renders no connect step at all | done |
 | 7 — navigation | `useCherryNavigate().userProfile` on the leaderboard | done |
 | 7b — sharing / blinks | `EmbeddedGame.tsx` → `useCherryShare`, rendered by `/result` | done |
-| 8 — backend token verification | `app/src/lib/server/launchToken.ts` | done, blocked on `CHERRY_APP_ID` |
+| 8 — backend token verification | `app/src/lib/server/launchToken.ts` | done, pending `CHERRY_APP_ID` (registration issues it) |
 | 9 — verify both modes | `app/e2e/render.spec.ts`, `app/e2e/blink.spec.ts` | done for standalone + embedded + blink; real Cherry host untested |
 | Lifecycle events | `EmbeddedGame.tsx` (`walletDisconnected`), `useLiveAccrual` (suspend/resume) | done |
 
@@ -328,3 +330,40 @@ is not yet confirmed, `pages.yml` reads the ids from repository *variables*
 Note the static-export guard above: setting those variables on the Pages
 workflow will now **fail the build** rather than deploy a broken chat. That is
 deliberate — it is the signal to move the deployment to a Node host first.
+
+---
+
+## Cherry Submission Packet
+
+§1 holds the full registration packet; this is the concise, current
+submission view.
+
+Product:
+THE CHERRY TREE
+
+Production URL:
+https://cherry-tree-mining-rig.vercel.app
+
+Origin:
+https://cherry-tree-mining-rig.vercel.app
+
+Network:
+Solana Devnet during review
+
+Integration:
+@cherrydotfun/miniapp-sdk
+
+Requested Cherry permissions:
+- wallet:connect
+- inline:render
+
+Status:
+- production web app live
+- Cherry embedded integration implemented
+- real Cherry-host validation pending Cherry registration/app ID
+- mainnet not enabled
+
+Description:
+A Solana-native grove you tend inside Cherry — plant Seeds, compound
+harvests into more Seeds, and claim funded SOL rewards from a transparent
+on-chain reward vault. Live on Solana Devnet.

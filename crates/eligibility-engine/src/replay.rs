@@ -23,7 +23,10 @@
 //!   carried in across the boundary) fixes that epoch's asset; a later
 //!   `Register` naming a different asset is a deferred switch, effective
 //!   NEXT epoch — including after an exit, so exit + re-register cannot
-//!   buy an immediate same-epoch switch. Exiting itself is immediate.
+//!   buy an immediate same-epoch switch. Exiting itself is immediate and
+//!   ABANDONS any queued switch (exit never implies future
+//!   re-registration); re-registering the epoch's anchored asset likewise
+//!   abandons a queued switch (the latest finalized intent wins).
 //! * Valuation (Pass #5): units are carried as FIFO lots. Units held at the
 //!   reference timestamp use the committed reference price; units added or
 //!   registered after it use `min(reference, verified price at the event)`
@@ -231,6 +234,10 @@ struct State<'a> {
     /// Reference overrides from verified reset/recovery events
     /// (`EmergencyNav`, `RouteResumed`); the epoch commit backs the rest.
     active: BTreeMap<PriceKey, UnitPrice>,
+    /// Keys whose `active` override is an UNRESOLVED emergency (no
+    /// published recovery since): these alone cross the epoch boundary and
+    /// stay authoritative over a new committed reference (P6-D7 item 5).
+    emergency_active: BTreeSet<PriceKey>,
     /// Latest verified in-epoch observation per mint (basis-checked), with
     /// the finalized time it was observed at: an observation is usable only
     /// inside the adapter's calibrated freshness window (`None` = never).
@@ -269,8 +276,10 @@ impl State<'_> {
         (now.saturating_sub(observed_at) <= max_age).then_some(obs)
     }
 
-    /// Acquisition price for units credited at `ts` (test 30): reference
-    /// basis at or before the epoch start; afterwards
+    /// Acquisition price for units credited at `ts` (test 30): the price in
+    /// force at or before the epoch start — a still-active verified reset
+    /// stays authoritative over the committed reference until a published
+    /// recovery (P6-D7 item 5) — otherwise the reference; afterwards
     /// `min(active reference, verified observation)`, or unpriced when no
     /// usable (basis-correct, fresh) observation exists.
     fn acquisition(
@@ -283,7 +292,10 @@ impl State<'_> {
             return Ok((None, LotBasis::Reference));
         };
         if ts <= commit.epoch_start {
-            return Ok((Some(commit.price), LotBasis::Reference));
+            return Ok((
+                Some(self.price(&key).unwrap_or(commit.price)),
+                LotBasis::Reference,
+            ));
         }
         let reference = self.price(&key).unwrap_or(commit.price);
         match self.observation_for(mint, ts) {
@@ -751,12 +763,12 @@ impl State<'_> {
             EventKind::Register { wallet, asset } => {
                 // Epoch-level selection gating (Pass #6, P6-D3). First
                 // activation of the epoch, or re-activation of the epoch's
-                // anchored asset (a duplicate, or a rejoin after an exit):
-                // immediate — "a later join accrues only from its
-                // finalized registration" (§5), and the rebase is a no-op
-                // for already-anchored holders (Pass #5). A registration
-                // naming a DIFFERENT asset is a switch: effective next
-                // epoch, never within this one.
+                // anchored asset (a duplicate, a rejoin after an exit, or
+                // an explicit switch-BACK): immediate — "a later join
+                // accrues only from its finalized registration" (§5), and
+                // the rebase is a no-op for already-anchored holders
+                // (Pass #5). A registration naming a DIFFERENT asset is a
+                // switch: effective next epoch, never within this one.
                 match self.anchors.get(wallet) {
                     None => {
                         self.anchors.insert(*wallet, *asset);
@@ -764,10 +776,17 @@ impl State<'_> {
                         self.registration_rebase(wallet, *asset, ts)?;
                     }
                     Some(&anchored) if anchored == *asset => {
+                        // The wallet's latest finalized intent is to stay
+                        // on the anchored asset, so any earlier deferred
+                        // switch is ABANDONED — it must not activate next
+                        // epoch (P6R-5).
+                        self.deferred.remove(wallet);
                         self.registrations.insert(*wallet, *asset);
                         self.registration_rebase(wallet, *asset, ts)?;
                     }
                     Some(_) => {
+                        // A switch request; the LATEST request wins (an
+                        // earlier abandoned intent never outlives it).
                         self.deferred.insert(*wallet, *asset);
                     }
                 }
@@ -777,8 +796,12 @@ impl State<'_> {
                 // immediately (§5). The epoch's anchor SURVIVES the exit,
                 // so a later same-epoch registration of a different asset
                 // is still a deferred switch: exit + re-register must not
-                // permit an immediate same-epoch switch (P6-D3).
+                // permit an immediate same-epoch switch (P6-D3). The exit
+                // also ABANDONS any deferred switch — exit must not imply
+                // future re-registration (P6R-5); a later explicit
+                // re-registration re-defers on its own.
                 self.registrations.remove(wallet);
+                self.deferred.remove(wallet);
             }
             EventKind::DebtObserved {
                 wallet,
@@ -837,7 +860,7 @@ impl State<'_> {
                 }
             }
             EventKind::EmergencyNav { mint, price } => {
-                self.apply_reset(*mint, *price)?;
+                self.apply_reset(*mint, *price, true)?;
             }
             EventKind::RouteHalt { mint } => {
                 if self.config.adapter_of_mint(mint).is_some() {
@@ -847,7 +870,7 @@ impl State<'_> {
             EventKind::RouteResumed { mint, price } => {
                 if self.config.adapter_of_mint(mint).is_some() {
                     self.halted_mints.remove(mint);
-                    self.apply_reset(*mint, *price)?;
+                    self.apply_reset(*mint, *price, false)?;
                 }
             }
             EventKind::DeclaredGap => self.in_sync = false,
@@ -875,19 +898,36 @@ impl State<'_> {
     /// A verified reset (emergency NAV or published recovery reference):
     /// from this event the mint prices at `price`, prospectively only
     /// (settled segments were already committed). Wrong basis = unusable
-    /// datum: recognition pauses (fail closed).
-    fn apply_reset(&mut self, mint: Addr, price: UnitPrice) -> EligibilityResult<()> {
+    /// datum: recognition pauses (fail closed). An `emergency` reset marks
+    /// the override UNRESOLVED: it stays authoritative across epoch
+    /// boundaries until a published recovery (P6-D7 item 5); a recovery
+    /// (`emergency = false`) resolves the override, which then ends at the
+    /// boundary where the next epoch's committed reference takes over.
+    fn apply_reset(
+        &mut self,
+        mint: Addr,
+        price: UnitPrice,
+        emergency: bool,
+    ) -> EligibilityResult<()> {
         if price.units_den == 0 {
+            self.emergency_active.remove(&PriceKey::Mint(mint));
             self.nav_invalid.insert(mint);
             return Ok(());
         }
         match self.config.adapter_of_mint(&mint) {
             Some(adapter) if price.basis == adapter.asset.required_basis() => {
                 self.nav_invalid.remove(&mint);
-                self.active.insert(PriceKey::Mint(mint), price);
+                let key = PriceKey::Mint(mint);
+                self.active.insert(key, price);
+                if emergency {
+                    self.emergency_active.insert(key);
+                } else {
+                    self.emergency_active.remove(&key);
+                }
                 self.lots.rebase_mint(mint, price)
             }
             _ => {
+                self.emergency_active.remove(&PriceKey::Mint(mint));
                 self.nav_invalid.insert(mint);
                 Ok(())
             }
@@ -931,10 +971,18 @@ pub struct EpochCarry {
     /// persists across the boundary until a `RouteResumed` event lifts it
     /// (P6-D7); it is not erased by a new reference commit.
     pub halted_mints: BTreeSet<Addr>,
-    /// Emergency/reset price overrides still in force at the boundary.
-    /// Superseded here by the new epoch's committed reference for the same
-    /// key (P6-D7: "until superseded by a later committed reference").
+    /// Emergency price overrides still UNRESOLVED at the boundary
+    /// (P6-D7 item 5). A new epoch's committed reference does NOT clear
+    /// them: a still-active emergency NAV stays authoritative over the new
+    /// reference until a published recovery event (`RouteResumed`). A
+    /// resolved recovery override is NOT carried: from the next boundary
+    /// the fresh committed reference governs again.
     pub active_prices: BTreeMap<PriceKey, UnitPrice>,
+    /// Mints whose latest NAV/reset datum was unusable (wrong basis) when
+    /// the epoch ended: recognition stays paused (fail closed) across the
+    /// boundary until a basis-correct reset datum arrives (P6-D7 item 5 —
+    /// Safe Mode state crosses the boundary unchanged).
+    pub nav_invalid: BTreeSet<Addr>,
 }
 
 /// The result of one epoch's replay: its report plus the state to carry
@@ -949,17 +997,50 @@ pub struct EpochReplay {
 /// [`EpochCarry`] (Pass #6). The carried selections are active from the
 /// boundary — a switch requested last epoch is effective now, with no
 /// registration event of its own — and anchor pre-reference credits exactly
-/// like a registration at the boundary would. Carried route halts stay in
-/// force; carried reset prices survive only where the new epoch did not
-/// commit a fresh reference.
+/// like a registration at the boundary would. Carried route halts and
+/// unresolved emergency prices stay in force (P6-D7 item 5).
+///
+/// Epoch anchoring (P6-D7 item 1 / P6R-8): `epoch_start` is the epoch's
+/// start boundary, and the replay VALIDATES it instead of trusting the
+/// caller's event stream shape —
+///
+/// * every committed reference must carry exactly this `epoch_start`
+///   (references belong to one epoch; [`EpochReferences::with`] on
+///   disagreeing commits is rejected here);
+/// * the event stream must contain a finalized `Checkpoint` at exactly
+///   `ts == epoch_start`: the epoch begins from chain state observed at
+///   its own start boundary, never from an arbitrary earlier or later
+///   state (events before the boundary are pre-epoch history the anchor
+///   adopts; a checkpoint merely NEAR the boundary is rejected);
+/// * `end` must be after `epoch_start` (an epoch replays forward).
 pub fn replay_epoch(
     config: &EligibilityConfig,
     references: &EpochReferences,
     carry: EpochCarry,
+    epoch_start: i64,
     events: Vec<Event>,
     end: i64,
 ) -> EligibilityResult<EpochReplay> {
-    replay_inner(config, references, carry, events, end)
+    if let Some(s) = references.common_epoch_start()? {
+        if s != epoch_start {
+            return Err(EligibilityError::InvariantViolation(
+                "references committed for a different epoch start",
+            ));
+        }
+    }
+    if end <= epoch_start {
+        return Err(EligibilityError::InvariantViolation("empty epoch window"));
+    }
+    let ordered = order_events(events)?;
+    let anchored = ordered
+        .iter()
+        .any(|e| e.unix_timestamp == epoch_start && matches!(e.kind, EventKind::Checkpoint { .. }));
+    if !anchored {
+        return Err(EligibilityError::InvariantViolation(
+            "epoch must start from a checkpoint at its exact start boundary",
+        ));
+    }
+    replay_inner(config, references, carry, ordered, end)
 }
 
 fn replay_inner(
@@ -983,10 +1064,11 @@ fn replay_inner(
         .map(|a| a.asset)
         .collect();
     // Carried selections are both the active selection and the epoch's
-    // anchor: this epoch can no longer switch them. Carried halts apply
-    // only to mints a configured adapter still claims. A carried reset
-    // price survives only where this epoch's references did not supersede
-    // it with a fresh committed reference.
+    // anchor: this epoch can no longer switch them. Carried Safe-Mode
+    // state — halts, unresolved emergency prices and unusable NAV data —
+    // crosses the boundary unchanged (P6-D7 item 5): a new committed
+    // reference never clears it, only a recovery/reset event can. All of
+    // it applies only to mints a configured adapter still claims.
     let mut st = State {
         config,
         references,
@@ -1000,16 +1082,25 @@ fn replay_inner(
         observed_versions: BTreeMap::new(),
         active: carry
             .active_prices
+            .clone()
             .into_iter()
-            .filter(|(k, _)| references.get(k).is_none())
+            .filter(|(k, _)| match k {
+                PriceKey::Mint(m) => config.adapter_of_mint(m).is_some(),
+                PriceKey::Sol => false,
+            })
             .collect(),
+        emergency_active: carry.active_prices.keys().copied().collect(),
         observations: BTreeMap::new(),
         halted_mints: carry
             .halted_mints
             .into_iter()
             .filter(|m| config.adapter_of_mint(m).is_some())
             .collect(),
-        nav_invalid: BTreeSet::new(),
+        nav_invalid: carry
+            .nav_invalid
+            .into_iter()
+            .filter(|m| config.adapter_of_mint(m).is_some())
+            .collect(),
         lots: LotLedger::default(),
     };
     let mut report = ReplayReport::default();
@@ -1112,8 +1203,10 @@ fn replay_inner(
     commit(&mut report, window, IntervalStatus::NotReconciled)?;
 
     // Carry out: a deferred switch wins over the still-active selection
-    // (it was requested later); halts and surviving reset prices persist
-    // into the next epoch (P6-D7).
+    // (it was requested later); halts, UNRESOLVED emergency prices and
+    // unusable NAV data persist into the next epoch (P6-D7 item 5), while a
+    // resolved (recovery) override ends here — the next epoch's committed
+    // reference takes over from the boundary.
     let mut selections = st.deferred.clone();
     for (w, a) in &st.registrations {
         selections.entry(*w).or_insert(*a);
@@ -1121,7 +1214,12 @@ fn replay_inner(
     let out = EpochCarry {
         selections,
         halted_mints: st.halted_mints.clone(),
-        active_prices: st.active.clone(),
+        active_prices: st
+            .emergency_active
+            .iter()
+            .filter_map(|k| st.active.get(k).map(|p| (*k, *p)))
+            .collect(),
+        nav_invalid: st.nav_invalid.clone(),
     };
     Ok(EpochReplay { report, carry: out })
 }

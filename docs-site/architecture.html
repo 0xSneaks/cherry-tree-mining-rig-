@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="THE CHERRY TREE architecture — Next.js frontend, pure Rust engine, Anchor program, tests, and the canonical program identity.">
+<meta name="theme-color" content="#080c16">
+<meta property="og:title" content="Architecture — THE CHERRY TREE Docs">
+<meta property="og:description" content="The frontend is the interface, the Rust engine is the accounting calculator, and the Solana program checks accounts and moves SOL.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/cherry-tree-hero.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='%23ff5ba8'%3E%3Ccircle cx='16' cy='9.5' r='5.6'/%3E%3Ccircle cx='9.8' cy='14' r='5.6'/%3E%3Ccircle cx='12.2' cy='21.3' r='5.6'/%3E%3Ccircle cx='19.8' cy='21.3' r='5.6'/%3E%3Ccircle cx='22.2' cy='14' r='5.6'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23080c16'/%3E%3C/g%3E%3C/svg%3E">
+<title>Architecture — THE CHERRY TREE Docs</title>
+<link rel="stylesheet" href="assets/style.css?v=3">
+<script src="assets/site.js?v=3" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <button class="menu-btn" aria-expanded="false" aria-controls="sidebar" aria-label="Open menu">☰ MENU</button>
+  <a class="brand" href="index.html">
+    <img src="assets/cherry-tree-hero.png" alt="" width="28" height="28">
+    <span class="wordmark">THE CHERRY TREE</span>
+  </a>
+  <a class="gh" href="https://github.com/PhantomCapAI/cherry-tree-mining-rig-">GitHub ↗</a>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Documentation">
+      <input class="nav-search" type="search" placeholder="FILTER" aria-label="Filter pages by title">
+      <div class="nav-group">
+        <b>START</b>
+        <a class="page" href="index.html">Overview</a>
+        <a class="page" href="user-flow.html">User flow</a>
+        <a class="page" href="glossary.html">Glossary</a>
+      </div>
+      <div class="nav-group">
+        <b>HOW IT WORKS</b>
+        <a class="page" href="architecture.html">Architecture</a>
+        <a class="page" href="protocol.html">Protocol</a>
+        <a class="page" href="economics.html">Economics</a>
+        <a class="page" href="security.html">Security</a>
+      </div>
+      <div class="nav-group">
+        <b>BUILD &amp; RUN</b>
+        <a class="page" href="development.html">Development</a>
+        <a class="page" href="deployment.html">Deployment</a>
+        <a class="page" href="operations.html">Operations</a>
+      </div>
+      <a class="page gh-side" href="https://github.com/PhantomCapAI/cherry-tree-mining-rig-">GitHub ↗</a>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <article>
+      <p class="eyebrow page-eyebrow">HOW IT WORKS</p>
+      <h1>Architecture</h1>
+
+      <h2 id="plain-english">Plain English</h2>
+      <p>The frontend is the interface, the Rust engine is the accounting calculator, and the Solana program checks accounts and moves SOL. The backend is intended to read/index state and authenticate integration requests; it does not hold a user-transaction signing key.</p>
+
+      <h2 id="technical-detail">Technical detail</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Layer</th><th>Location</th><th>Responsibility</th></tr></thead>
+          <tbody>
+            <tr><td>UI/integration</td><td><code>app/src/</code></td><td>Next.js, wallet signing, chain reads, Cherry surfaces</td></tr>
+            <tr><td>Pure engine</td><td><code>crates/rigs-engine/src/</code></td><td>pricing, accrual, shares, penalties, APR</td></tr>
+            <tr><td>Anchor program</td><td><code>programs/sol-rigs/src/</code></td><td>constraints, state transitions, lamport movement</td></tr>
+            <tr><td>Tests</td><td><code>crates/rigs-engine/tests/</code>, <code>programs/sol-rigs/tests/</code>, <code>app/tests/</code>, <code>app/e2e/</code></td><td>unit, native program-test, browser, parity</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="program-identity">Program identity</h2>
+      <p>The canonical program identity in the primary source is <code>C9fJ8nRCXNE2iZPNkuyARyReykkmKceqYd9nF2qobBUt</code>, declared in <code>programs/sol-rigs/src/lib.rs</code> and <code>Anchor.toml</code>. The release reconciliation branch independently confirms it; that branch was inspected read-only and not combined with this worktree.</p>
+    </article>
+
+    <nav class="prevnext" aria-label="Pagination">
+      <a class="pagenav prev" href="glossary.html"><span class="dir">← Previous</span><b>Glossary</b></a>
+      <a class="pagenav next" href="protocol.html"><span class="dir">Next →</span><b>Protocol</b></a>
+    </nav>
+  </main>
+
+  <aside class="rail" aria-label="On this page">
+    <b class="rail-title">ON THIS PAGE</b>
+    <nav class="toc"></nav>
+  </aside>
+</div>
+
+<footer><p class="powered">POWERED BY <a href="https://cherry.fun" rel="noopener">CHERRY</a> · PART OF THE FAMILY</p>
+Implementation source is available under the Business Source License 1.1. This documentation is not a yield promise, investment advice, or a claim that a live deployment exists.</footer>
+</body>
+</html>

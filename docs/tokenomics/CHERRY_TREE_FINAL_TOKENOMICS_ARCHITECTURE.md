@@ -339,7 +339,7 @@ Rounding favours the grove share. The base fully-funded check covers the transfe
 
 **6. Claim-anchor reset (retained behaviour, mandatory warning).** A fresh purchase sets `last_planted_at = now` for the whole position, so all pending rewards, including older ones, fall back under the 30% tier. This protocol behaviour is kept. Before any top-up purchase by a wallet with pending rewards above zero, the product must show, and the user must see before signing:
 
-> **Buying more seeds restarts your early-claim timer.** Your unclaimed rewards (X SOL) would then carry the 30% early-claim fee for the next 24 hours. Claim them first to keep the full amount.
+> **Buying more seeds restarts your early-claim timer.** Your unclaimed rewards (X SOL) would then carry the 30% early-claim fee for the next 24 hours. Claiming them first avoids restarting their timer, but that claim still pays the early-claim fee tier in effect at the time.
 
 `X` is the current gross pending amount. The warning is not shown when nothing is pending. Compounding does not move the anchor and needs no warning.
 

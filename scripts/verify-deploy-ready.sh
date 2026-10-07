@@ -38,7 +38,10 @@ if grep -rn "SOL RIGS" --include="*.tsx" --include="*.ts" app/src 2>/dev/null | 
 else
   pass "no stale 'SOL RIGS' in app/src"
 fi
-for needle in "PRODUCT_NAME = 'THE CHERRY TREE'"; do
+# The canonical product name is THE CHERRY TREE (checked in README below).
+# The single frontend display constant intentionally adds the blossom as
+# wordmark decoration; commit 956314d restored that presentation explicitly.
+for needle in "PRODUCT_NAME = 'THE CHERRY TREE 🌸'"; do
   grep -q "$needle" app/src/lib/brand.ts \
     && pass "brand module declares THE CHERRY TREE" \
     || bad "app/src/lib/brand.ts does not declare the product name"

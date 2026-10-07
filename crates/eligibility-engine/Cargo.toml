@@ -9,3 +9,7 @@ license = "BUSL-1.1"
 
 [dev-dependencies]
 proptest = "1"
+# Integration-only: the epochs_timeline suite exercises the rigs-engine
+# fruit schedule planner (tests 40–43) alongside this crate's settlement
+# (tests 44–46). No production coupling in either direction.
+rigs-engine = { path = "../rigs-engine" }
